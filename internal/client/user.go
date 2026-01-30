@@ -42,7 +42,6 @@ func GetUserInfo(userID string, opts GetUserInfoOptions) (*UserInfo, error) {
 		return nil, err
 	}
 
-	// Default user ID type
 	if opts.UserIDType == "" {
 		opts.UserIDType = "open_id"
 	}
@@ -69,32 +68,26 @@ func GetUserInfo(userID string, opts GetUserInfoOptions) (*UserInfo, error) {
 		return nil, fmt.Errorf("用户不存在")
 	}
 
-	info := &UserInfo{}
+	info := &UserInfo{
+		UserID:       StringVal(user.UserId),
+		OpenID:       StringVal(user.OpenId),
+		UnionID:      StringVal(user.UnionId),
+		Name:         StringVal(user.Name),
+		EnName:       StringVal(user.EnName),
+		Nickname:     StringVal(user.Nickname),
+		Email:        StringVal(user.Email),
+		Mobile:       StringVal(user.Mobile),
+		EmployeeNo:   StringVal(user.EmployeeNo),
+		EmployeeType: IntVal(user.EmployeeType),
+		Gender:       IntVal(user.Gender),
+		City:         StringVal(user.City),
+		Country:      StringVal(user.Country),
+		WorkStation:  StringVal(user.WorkStation),
+		JoinTime:     IntVal(user.JoinTime),
+		IsTenantMgr:  BoolVal(user.IsTenantManager),
+		JobTitle:     StringVal(user.JobTitle),
+	}
 
-	if user.UserId != nil {
-		info.UserID = *user.UserId
-	}
-	if user.OpenId != nil {
-		info.OpenID = *user.OpenId
-	}
-	if user.UnionId != nil {
-		info.UnionID = *user.UnionId
-	}
-	if user.Name != nil {
-		info.Name = *user.Name
-	}
-	if user.EnName != nil {
-		info.EnName = *user.EnName
-	}
-	if user.Nickname != nil {
-		info.Nickname = *user.Nickname
-	}
-	if user.Email != nil {
-		info.Email = *user.Email
-	}
-	if user.Mobile != nil {
-		info.Mobile = *user.Mobile
-	}
 	if user.Avatar != nil && user.Avatar.AvatarOrigin != nil {
 		info.Avatar = *user.Avatar.AvatarOrigin
 	}
@@ -104,33 +97,6 @@ func GetUserInfo(userID string, opts GetUserInfoOptions) (*UserInfo, error) {
 		} else {
 			info.Status = "active"
 		}
-	}
-	if user.EmployeeNo != nil {
-		info.EmployeeNo = *user.EmployeeNo
-	}
-	if user.EmployeeType != nil {
-		info.EmployeeType = *user.EmployeeType
-	}
-	if user.Gender != nil {
-		info.Gender = *user.Gender
-	}
-	if user.City != nil {
-		info.City = *user.City
-	}
-	if user.Country != nil {
-		info.Country = *user.Country
-	}
-	if user.WorkStation != nil {
-		info.WorkStation = *user.WorkStation
-	}
-	if user.JoinTime != nil {
-		info.JoinTime = *user.JoinTime
-	}
-	if user.IsTenantManager != nil {
-		info.IsTenantMgr = *user.IsTenantManager
-	}
-	if user.JobTitle != nil {
-		info.JobTitle = *user.JobTitle
 	}
 
 	return info, nil

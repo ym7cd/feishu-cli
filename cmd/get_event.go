@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -50,8 +49,9 @@ var getEventCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(event, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(event); err != nil {
+				return err
+			}
 		} else {
 			fmt.Println("日程详情:")
 			fmt.Printf("  日程 ID:     %s\n", event.EventID)

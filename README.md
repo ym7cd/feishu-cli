@@ -122,7 +122,7 @@ Bob --> Alice: Hi
 ```
 ````
 
-**支持的 Mermaid 图表类型**：flowchart、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt、pie
+**支持的 Mermaid 图表类型**：flowchart、sequenceDiagram、classDiagram、stateDiagram-v2、erDiagram、gantt、pie、mindmap
 
 **PlantUML**：支持时序图、活动图、类图、用例图、组件图、ER 图、思维导图等（` ```plantuml ` 或 ` ```puml `）
 

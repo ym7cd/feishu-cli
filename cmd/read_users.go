@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -56,12 +55,13 @@ var readUsersCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]interface{}{
+			if err := printJSON(map[string]any{
 				"items":      result.Items,
 				"page_token": result.PageToken,
 				"has_more":   result.HasMore,
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("已读用户列表（共 %d 人）:\n", len(result.Items))
 			for i, user := range result.Items {

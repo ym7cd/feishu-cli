@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -32,7 +31,7 @@ var sheetImageAddCmd = &cobra.Command{
 		height, _ := cmd.Flags().GetFloat64("height")
 		offsetX, _ := cmd.Flags().GetFloat64("offset-x")
 		offsetY, _ := cmd.Flags().GetFloat64("offset-y")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		image := &client.FloatImage{
 			FloatImageToken: imageToken,
@@ -48,9 +47,10 @@ var sheetImageAddCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("浮动图片添加成功！\n")
 			fmt.Printf("  图片 ID: %s\n", result.FloatImageID)
@@ -69,16 +69,17 @@ var sheetImageListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		spreadsheetToken := args[0]
 		sheetID := args[1]
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		images, err := client.QueryFloatImages(client.Context(), spreadsheetToken, sheetID)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(images, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(images); err != nil {
+				return err
+			}
 		} else {
 			if len(images) == 0 {
 				fmt.Println("没有浮动图片")

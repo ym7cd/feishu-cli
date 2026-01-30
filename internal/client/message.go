@@ -25,15 +25,15 @@ func SendMessage(receiveIDType string, receiveID string, msgType string, content
 
 	resp, err := client.Im.Message.Create(Context(), req)
 	if err != nil {
-		return "", fmt.Errorf("failed to send message: %w", err)
+		return "", fmt.Errorf("发送消息失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return "", fmt.Errorf("failed to send message: code=%d, msg=%s", resp.Code, resp.Msg)
+		return "", fmt.Errorf("发送消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data.MessageId == nil {
-		return "", fmt.Errorf("message sent but no message ID returned")
+		return "", fmt.Errorf("消息已发送但未返回消息 ID")
 	}
 
 	return *resp.Data.MessageId, nil
@@ -56,15 +56,15 @@ func ReplyMessage(messageID string, msgType string, content string) (string, err
 
 	resp, err := client.Im.Message.Reply(Context(), req)
 	if err != nil {
-		return "", fmt.Errorf("failed to reply message: %w", err)
+		return "", fmt.Errorf("回复消息失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return "", fmt.Errorf("failed to reply message: code=%d, msg=%s", resp.Code, resp.Msg)
+		return "", fmt.Errorf("回复消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data.MessageId == nil {
-		return "", fmt.Errorf("reply sent but no message ID returned")
+		return "", fmt.Errorf("回复已发送但未返回消息 ID")
 	}
 
 	return *resp.Data.MessageId, nil
@@ -86,27 +86,28 @@ func UpdateMessage(messageID string, content string) error {
 
 	resp, err := client.Im.Message.Patch(Context(), req)
 	if err != nil {
-		return fmt.Errorf("failed to update message: %w", err)
+		return fmt.Errorf("更新消息失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("failed to update message: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("更新消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return nil
 }
 
-// CreateTextMessageContent creates content for a text message
+// CreateTextMessageContent creates content for a text message.
+// json.Marshal 对 map[string]string 不会失败，因此忽略错误。
 func CreateTextMessageContent(text string) string {
 	content := map[string]string{"text": text}
 	data, _ := json.Marshal(content)
 	return string(data)
 }
 
-// CreateRichTextMessageContent creates content for a rich text (post) message
-func CreateRichTextMessageContent(title string, content [][]map[string]interface{}) string {
-	post := map[string]interface{}{
-		"zh_cn": map[string]interface{}{
+// CreateRichTextMessageContent creates content for a rich text (post) message.
+func CreateRichTextMessageContent(title string, content [][]map[string]any) string {
+	post := map[string]any{
+		"zh_cn": map[string]any{
 			"title":   title,
 			"content": content,
 		},
@@ -115,8 +116,8 @@ func CreateRichTextMessageContent(title string, content [][]map[string]interface
 	return string(data)
 }
 
-// CreateInteractiveCardContent creates content for an interactive card message
-func CreateInteractiveCardContent(card map[string]interface{}) string {
+// CreateInteractiveCardContent creates content for an interactive card message.
+func CreateInteractiveCardContent(card map[string]any) string {
 	data, _ := json.Marshal(card)
 	return string(data)
 }
@@ -197,17 +198,11 @@ func ListMessages(containerID string, opts ListMessagesOptions) (*ListMessagesRe
 		return nil, fmt.Errorf("获取消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	result := &ListMessagesResult{
-		Items: resp.Data.Items,
-	}
-	if resp.Data.PageToken != nil {
-		result.PageToken = *resp.Data.PageToken
-	}
-	if resp.Data.HasMore != nil {
-		result.HasMore = *resp.Data.HasMore
-	}
-
-	return result, nil
+	return &ListMessagesResult{
+		Items:     resp.Data.Items,
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}, nil
 }
 
 // GetMessageResult contains the result of getting a message
@@ -235,7 +230,6 @@ func GetMessage(messageID string) (*GetMessageResult, error) {
 		return nil, fmt.Errorf("获取消息详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	// Get returns a list but we want the first message
 	if len(resp.Data.Items) == 0 {
 		return nil, fmt.Errorf("消息不存在")
 	}
@@ -322,7 +316,6 @@ func SearchChats(opts SearchChatsOptions) (*SearchChatsResult, error) {
 		return nil, err
 	}
 
-	// Default user ID type
 	if opts.UserIDType == "" {
 		opts.UserIDType = "open_id"
 	}
@@ -346,36 +339,23 @@ func SearchChats(opts SearchChatsOptions) (*SearchChatsResult, error) {
 		return nil, fmt.Errorf("搜索群聊失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	result := &SearchChatsResult{}
+	result := &SearchChatsResult{
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}
 	for _, chat := range resp.Data.Items {
-		info := &ChatInfo{}
-		if chat.ChatId != nil {
-			info.ChatID = *chat.ChatId
-		}
-		if chat.Name != nil {
-			info.Name = *chat.Name
-		}
-		if chat.Description != nil {
-			info.Description = *chat.Description
-		}
-		if chat.OwnerId != nil {
-			info.OwnerID = *chat.OwnerId
-		}
-		if chat.External != nil {
-			info.External = *chat.External
+		info := &ChatInfo{
+			ChatID:      StringVal(chat.ChatId),
+			Name:        StringVal(chat.Name),
+			Description: StringVal(chat.Description),
+			OwnerID:     StringVal(chat.OwnerId),
+			External:    BoolVal(chat.External),
 		}
 
 		// Filter by query if specified
 		if opts.Query == "" || containsIgnoreCase(info.Name, opts.Query) || containsIgnoreCase(info.Description, opts.Query) {
 			result.Items = append(result.Items, info)
 		}
-	}
-
-	if resp.Data.PageToken != nil {
-		result.PageToken = *resp.Data.PageToken
-	}
-	if resp.Data.HasMore != nil {
-		result.HasMore = *resp.Data.HasMore
 	}
 
 	return result, nil
@@ -444,29 +424,17 @@ func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken s
 		return nil, fmt.Errorf("查询消息已读用户失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	result := &ReadUsersResult{}
+	result := &ReadUsersResult{
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}
 	for _, item := range resp.Data.Items {
-		user := &ReadUser{}
-		if item.UserIdType != nil {
-			user.UserIDType = *item.UserIdType
-		}
-		if item.UserId != nil {
-			user.UserID = *item.UserId
-		}
-		if item.Timestamp != nil {
-			user.Timestamp = *item.Timestamp
-		}
-		if item.TenantKey != nil {
-			user.TenantKey = *item.TenantKey
-		}
-		result.Items = append(result.Items, user)
-	}
-
-	if resp.Data.PageToken != nil {
-		result.PageToken = *resp.Data.PageToken
-	}
-	if resp.Data.HasMore != nil {
-		result.HasMore = *resp.Data.HasMore
+		result.Items = append(result.Items, &ReadUser{
+			UserIDType: StringVal(item.UserIdType),
+			UserID:     StringVal(item.UserId),
+			Timestamp:  StringVal(item.Timestamp),
+			TenantKey:  StringVal(item.TenantKey),
+		})
 	}
 
 	return result, nil

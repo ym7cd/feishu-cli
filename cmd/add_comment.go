@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -42,10 +41,11 @@ var addCommentCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]string{
+			if err := printJSON(map[string]string{
 				"comment_id": commentID,
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("评论添加成功！\n")
 			fmt.Printf("  评论 ID: %s\n", commentID)

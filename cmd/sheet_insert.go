@@ -71,7 +71,7 @@ var sheetInsertCmd = &cobra.Command{
 
 		if simple {
 			// 简单模式：二维数组转换为三维数组
-			var simpleValues [][]interface{}
+			var simpleValues [][]any
 			if err := json.Unmarshal([]byte(jsonData), &simpleValues); err != nil {
 				return fmt.Errorf("解析数据失败（需要 JSON 二维数组）: %w", err)
 			}

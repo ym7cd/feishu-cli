@@ -1,6 +1,6 @@
 ---
 name: feishu-cli-import
-description: 从 Markdown 文件导入创建飞书文档，支持 Mermaid/PlantUML 图表自动转画板、大表格自动拆分。当用户请求"导入 Markdown"、"从 md 创建文档"、"上传 Markdown"时使用。
+description: 从 Markdown 文件导入创建飞书文档，支持嵌套列表、Mermaid/PlantUML 图表自动转画板、大表格自动拆分。当用户请求"导入 Markdown"、"从 md 创建文档"、"上传 Markdown"时使用。
 argument-hint: <markdown_file> [--title "标题"] [--verbose]
 user-invocable: true
 allowed-tools: Bash, Read
@@ -84,7 +84,7 @@ allowed-tools: Bash, Read
 
 - 标题（# ~ ######）
 - 段落文本
-- 无序/有序列表
+- 无序/有序列表（支持无限深度嵌套、混合嵌套）
 - 任务列表（- [ ] / - [x]）
 - 代码块（带语言标识）
 - **Mermaid/PlantUML 图表** → 自动转换为飞书画板
@@ -122,6 +122,7 @@ Bob --> Alice: Hi
 - ✅ erDiagram（ER 图）
 - ✅ gantt（甘特图）
 - ✅ pie（饼图）
+- ✅ mindmap（思维导图）
 
 ## 输出格式
 
@@ -153,8 +154,8 @@ Bob --> Alice: Hi
 |--------------|---------|------|
 | 标题（# ~ ######） | ✅ 正常 | |
 | 段落文本 | ✅ 正常 | |
-| 无序列表 | ✅ 正常 | |
-| 有序列表 | ✅ 正常 | |
+| 无序列表（含嵌套） | ✅ 正常 | 支持无限深度嵌套 |
+| 有序列表（含嵌套） | ✅ 正常 | 支持无限深度嵌套 |
 | 任务列表 | ✅ 正常 | |
 | 代码块 | ✅ 正常 | |
 | **Mermaid/PlantUML 图表** | ✅ 正常 | 自动转为飞书画板 |

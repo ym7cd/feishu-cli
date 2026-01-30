@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -54,8 +53,9 @@ var createWikiNodeCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("知识库节点创建成功！\n")
 			fmt.Printf("  空间 ID:    %s\n", result.SpaceID)

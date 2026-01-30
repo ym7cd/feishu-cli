@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -44,8 +43,9 @@ var getDocumentCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(doc, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(doc); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("文档信息:\n")
 			fmt.Printf("  文档ID: %s\n", documentID)

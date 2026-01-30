@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -51,8 +50,9 @@ var createShortcutCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(info, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(info); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("快捷方式创建成功！\n")
 			fmt.Printf("  快捷方式 Token: %s\n", info.Token)

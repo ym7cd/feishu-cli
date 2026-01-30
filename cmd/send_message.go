@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -99,10 +98,11 @@ var sendMessageCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]string{
+			if err := printJSON(map[string]string{
 				"message_id": messageID,
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("消息发送成功！\n")
 			fmt.Printf("  消息 ID: %s\n", messageID)

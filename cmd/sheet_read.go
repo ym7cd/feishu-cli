@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -30,7 +29,7 @@ var sheetReadCmd = &cobra.Command{
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
 		valueRenderOption, _ := cmd.Flags().GetString("value-render")
 		dateTimeRenderOption, _ := cmd.Flags().GetString("datetime-render")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		// 处理 shell 转义
 		rangeStr = unescapeSheetRange(rangeStr)
@@ -45,9 +44,10 @@ var sheetReadCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(cellRange, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(cellRange); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("范围: %s\n", cellRange.Range)
 			if len(cellRange.Values) == 0 {

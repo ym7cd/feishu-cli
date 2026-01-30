@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"fmt"
 	"strconv"
 	"time"
@@ -57,7 +56,7 @@ func ListCalendars(pageSize int, pageToken string) ([]*Calendar, string, bool, e
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Calendar.Calendar.List(context.Background(), reqBuilder.Build())
+	resp, err := client.Calendar.Calendar.List(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取日历列表失败: %w", err)
 	}
@@ -69,50 +68,26 @@ func ListCalendars(pageSize int, pageToken string) ([]*Calendar, string, bool, e
 	var calendars []*Calendar
 	if resp.Data != nil && resp.Data.CalendarList != nil {
 		for _, item := range resp.Data.CalendarList {
-			cal := &Calendar{}
-			if item.CalendarId != nil {
-				cal.CalendarID = *item.CalendarId
-			}
-			if item.Summary != nil {
-				cal.Summary = *item.Summary
-			}
-			if item.Description != nil {
-				cal.Description = *item.Description
-			}
-			if item.Permissions != nil {
-				cal.Permissions = *item.Permissions
-			}
-			if item.Type != nil {
-				cal.Type = *item.Type
-			}
-			if item.Color != nil {
-				cal.Color = *item.Color
-			}
-			if item.Role != nil {
-				cal.Role = *item.Role
-			}
-			if item.SummaryAlias != nil {
-				cal.SummaryAlias = *item.SummaryAlias
-			}
-			if item.IsDeleted != nil {
-				cal.IsDeleted = *item.IsDeleted
-			}
-			if item.IsThirdParty != nil {
-				cal.IsThirdParty = *item.IsThirdParty
-			}
-			calendars = append(calendars, cal)
+			calendars = append(calendars, &Calendar{
+				CalendarID:   StringVal(item.CalendarId),
+				Summary:      StringVal(item.Summary),
+				Description:  StringVal(item.Description),
+				Permissions:  StringVal(item.Permissions),
+				Type:         StringVal(item.Type),
+				Color:        IntVal(item.Color),
+				Role:         StringVal(item.Role),
+				SummaryAlias: StringVal(item.SummaryAlias),
+				IsDeleted:    BoolVal(item.IsDeleted),
+				IsThirdParty: BoolVal(item.IsThirdParty),
+			})
 		}
 	}
 
 	var nextPageToken string
 	var hasMore bool
 	if resp.Data != nil {
-		if resp.Data.PageToken != nil {
-			nextPageToken = *resp.Data.PageToken
-		}
-		if resp.Data.HasMore != nil {
-			hasMore = *resp.Data.HasMore
-		}
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
 	}
 
 	return calendars, nextPageToken, hasMore, nil
@@ -136,7 +111,6 @@ func CreateEvent(params *CreateEventParams) (*CalendarEvent, error) {
 		return nil, err
 	}
 
-	// 解析时间
 	startTs, err := parseTimeToTimestamp(params.StartTime)
 	if err != nil {
 		return nil, fmt.Errorf("解析开始时间失败: %w", err)
@@ -146,7 +120,6 @@ func CreateEvent(params *CreateEventParams) (*CalendarEvent, error) {
 		return nil, fmt.Errorf("解析结束时间失败: %w", err)
 	}
 
-	// 构建时间对象
 	startTime := larkcalendar.NewTimeInfoBuilder().
 		Timestamp(startTs).
 		Build()
@@ -154,7 +127,6 @@ func CreateEvent(params *CreateEventParams) (*CalendarEvent, error) {
 		Timestamp(endTs).
 		Build()
 
-	// 构建日程对象
 	eventBuilder := larkcalendar.NewCalendarEventBuilder().
 		Summary(params.Summary).
 		StartTime(startTime).
@@ -176,7 +148,7 @@ func CreateEvent(params *CreateEventParams) (*CalendarEvent, error) {
 		CalendarEvent(eventBuilder.Build()).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Create(context.Background(), req)
+	resp, err := client.Calendar.CalendarEvent.Create(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("创建日程失败: %w", err)
 	}
@@ -204,7 +176,7 @@ func GetEvent(calendarID, eventID string) (*CalendarEvent, error) {
 		EventId(eventID).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Get(context.Background(), req)
+	resp, err := client.Calendar.CalendarEvent.Get(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("获取日程详情失败: %w", err)
 	}
@@ -263,7 +235,7 @@ func ListEvents(params *ListEventsParams) ([]*CalendarEvent, string, bool, error
 		reqBuilder.PageToken(params.PageToken)
 	}
 
-	resp, err := client.Calendar.CalendarEvent.List(context.Background(), reqBuilder.Build())
+	resp, err := client.Calendar.CalendarEvent.List(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取日程列表失败: %w", err)
 	}
@@ -282,12 +254,8 @@ func ListEvents(params *ListEventsParams) ([]*CalendarEvent, string, bool, error
 	var nextPageToken string
 	var hasMore bool
 	if resp.Data != nil {
-		if resp.Data.PageToken != nil {
-			nextPageToken = *resp.Data.PageToken
-		}
-		if resp.Data.HasMore != nil {
-			hasMore = *resp.Data.HasMore
-		}
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
 	}
 
 	return events, nextPageToken, hasMore, nil
@@ -356,7 +324,7 @@ func UpdateEvent(params *UpdateEventParams) (*CalendarEvent, error) {
 		CalendarEvent(eventBuilder.Build()).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Patch(context.Background(), req)
+	resp, err := client.Calendar.CalendarEvent.Patch(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("更新日程失败: %w", err)
 	}
@@ -384,7 +352,7 @@ func DeleteEvent(calendarID, eventID string) error {
 		EventId(eventID).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Delete(context.Background(), req)
+	resp, err := client.Calendar.CalendarEvent.Delete(Context(), req)
 	if err != nil {
 		return fmt.Errorf("删除日程失败: %w", err)
 	}
@@ -431,19 +399,17 @@ func convertEvent(event *larkcalendar.CalendarEvent) *CalendarEvent {
 		return nil
 	}
 
-	result := &CalendarEvent{}
-
-	if event.EventId != nil {
-		result.EventID = *event.EventId
-	}
-	if event.OrganizerCalendarId != nil {
-		result.OrganizerID = *event.OrganizerCalendarId
-	}
-	if event.Summary != nil {
-		result.Summary = *event.Summary
-	}
-	if event.Description != nil {
-		result.Description = *event.Description
+	result := &CalendarEvent{
+		EventID:     StringVal(event.EventId),
+		OrganizerID: StringVal(event.OrganizerCalendarId),
+		Summary:     StringVal(event.Summary),
+		Description: StringVal(event.Description),
+		Status:      StringVal(event.Status),
+		Visibility:  StringVal(event.Visibility),
+		RecurringID: StringVal(event.RecurringEventId),
+		IsException: BoolVal(event.IsException),
+		AppLink:     StringVal(event.AppLink),
+		Color:       IntVal(event.Color),
 	}
 
 	// 时区
@@ -453,40 +419,18 @@ func convertEvent(event *larkcalendar.CalendarEvent) *CalendarEvent {
 		result.TimeZone = tz
 	}
 
-	// 开始时间
+	// 时间转换
 	if event.StartTime != nil && event.StartTime.Timestamp != nil {
 		result.StartTime = timestampToRFC3339(*event.StartTime.Timestamp, tz)
 	}
-	// 结束时间
 	if event.EndTime != nil && event.EndTime.Timestamp != nil {
 		result.EndTime = timestampToRFC3339(*event.EndTime.Timestamp, tz)
 	}
-
-	// 地点
 	if event.Location != nil && event.Location.Name != nil {
 		result.Location = *event.Location.Name
 	}
-
-	if event.Status != nil {
-		result.Status = *event.Status
-	}
-	if event.Visibility != nil {
-		result.Visibility = *event.Visibility
-	}
 	if event.CreateTime != nil {
 		result.CreateTime = timestampToRFC3339(*event.CreateTime, tz)
-	}
-	if event.RecurringEventId != nil {
-		result.RecurringID = *event.RecurringEventId
-	}
-	if event.IsException != nil {
-		result.IsException = *event.IsException
-	}
-	if event.AppLink != nil {
-		result.AppLink = *event.AppLink
-	}
-	if event.Color != nil {
-		result.Color = *event.Color
 	}
 
 	return result

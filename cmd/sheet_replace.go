@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -28,16 +27,17 @@ var sheetReplaceCmd = &cobra.Command{
 		rangeStr, _ := cmd.Flags().GetString("range")
 		matchCase, _ := cmd.Flags().GetBool("match-case")
 		matchEntireCell, _ := cmd.Flags().GetBool("match-entire-cell")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		result, err := client.ReplaceCells(client.Context(), spreadsheetToken, sheetID, findStr, replacement, matchCase, matchEntireCell, rangeStr)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("替换完成:\n")
 			fmt.Printf("  替换单元格: %d 个\n", len(result.MatchedCells))

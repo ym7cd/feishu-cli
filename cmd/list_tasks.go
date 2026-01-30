@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -62,8 +61,9 @@ var listTasksCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			if len(result.Tasks) == 0 {
 				fmt.Println("没有找到任务")

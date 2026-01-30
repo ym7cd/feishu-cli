@@ -31,7 +31,6 @@ func UploadMedia(filePath string, parentType string, parentNode string, fileName
 	}
 	defer file.Close()
 
-	// Get file size
 	stat, err := file.Stat()
 	if err != nil {
 		return "", fmt.Errorf("获取文件信息失败: %w", err)
@@ -70,7 +69,6 @@ func UploadMedia(filePath string, parentType string, parentNode string, fileName
 
 // DownloadMedia downloads a file from Feishu drive
 func DownloadMedia(fileToken string, outputPath string) error {
-	// 路径安全检查
 	if err := validatePath(outputPath); err != nil {
 		return err
 	}
@@ -93,29 +91,7 @@ func DownloadMedia(fileToken string, outputPath string) error {
 		return fmt.Errorf("下载素材失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	outFile, err := os.Create(outputPath)
-	if err != nil {
-		return fmt.Errorf("创建输出文件失败: %w", err)
-	}
-	defer outFile.Close()
-
-	// 使用 LimitedReader 限制下载大小
-	limitedReader := io.LimitReader(resp.File, maxDownloadSize)
-	written, err := io.Copy(outFile, limitedReader)
-	if err != nil {
-		// 下载失败时删除未完成的文件
-		outFile.Close()
-		os.Remove(outputPath)
-		return fmt.Errorf("写入文件失败: %w", err)
-	}
-
-	if written >= maxDownloadSize {
-		outFile.Close()
-		os.Remove(outputPath)
-		return fmt.Errorf("文件超过大小限制 (%d MB)", maxDownloadSize/(1024*1024))
-	}
-
-	return nil
+	return saveToFile(resp.File, outputPath)
 }
 
 // GetMediaTempURL gets a temporary download URL for a media file
@@ -151,12 +127,10 @@ func GetMediaTempURL(fileToken string) (string, error) {
 
 // DownloadFromURL downloads a file from a URL with size limit
 func DownloadFromURL(url string, outputPath string) error {
-	// 路径安全检查
 	if err := validatePath(outputPath); err != nil {
 		return err
 	}
 
-	// 创建带超时的 HTTP 客户端
 	httpClient := &http.Client{
 		Timeout: downloadTimeout,
 	}
@@ -171,23 +145,25 @@ func DownloadFromURL(url string, outputPath string) error {
 		return fmt.Errorf("下载失败: HTTP 状态码 %d", resp.StatusCode)
 	}
 
-	// 检查 Content-Length
 	if resp.ContentLength > maxDownloadSize {
 		return fmt.Errorf("文件超过大小限制: %d MB (限制 %d MB)",
 			resp.ContentLength/(1024*1024), maxDownloadSize/(1024*1024))
 	}
 
+	return saveToFile(resp.Body, outputPath)
+}
+
+// saveToFile 将 reader 内容写入文件，限制最大大小
+func saveToFile(reader io.Reader, outputPath string) error {
 	outFile, err := os.Create(outputPath)
 	if err != nil {
 		return fmt.Errorf("创建输出文件失败: %w", err)
 	}
 	defer outFile.Close()
 
-	// 使用 LimitedReader 限制下载大小
-	limitedReader := io.LimitReader(resp.Body, maxDownloadSize)
+	limitedReader := io.LimitReader(reader, maxDownloadSize)
 	written, err := io.Copy(outFile, limitedReader)
 	if err != nil {
-		// 下载失败时删除未完成的文件
 		outFile.Close()
 		os.Remove(outputPath)
 		return fmt.Errorf("写入文件失败: %w", err)
@@ -253,44 +229,24 @@ func ListFiles(folderToken string, pageSize int, pageToken string) ([]*DriveFile
 	var files []*DriveFile
 	if resp.Data != nil && resp.Data.Files != nil {
 		for _, f := range resp.Data.Files {
-			file := &DriveFile{}
-			if f.Token != nil {
-				file.Token = *f.Token
-			}
-			if f.Name != nil {
-				file.Name = *f.Name
-			}
-			if f.Type != nil {
-				file.Type = *f.Type
-			}
-			if f.ParentToken != nil {
-				file.ParentToken = *f.ParentToken
-			}
-			if f.Url != nil {
-				file.URL = *f.Url
-			}
-			if f.CreatedTime != nil {
-				file.CreatedTime = *f.CreatedTime
-			}
-			if f.ModifiedTime != nil {
-				file.ModifiedTime = *f.ModifiedTime
-			}
-			if f.OwnerId != nil {
-				file.OwnerID = *f.OwnerId
-			}
-			files = append(files, file)
+			files = append(files, &DriveFile{
+				Token:        StringVal(f.Token),
+				Name:         StringVal(f.Name),
+				Type:         StringVal(f.Type),
+				ParentToken:  StringVal(f.ParentToken),
+				URL:          StringVal(f.Url),
+				CreatedTime:  StringVal(f.CreatedTime),
+				ModifiedTime: StringVal(f.ModifiedTime),
+				OwnerID:      StringVal(f.OwnerId),
+			})
 		}
 	}
 
 	var nextPageToken string
 	var hasMore bool
 	if resp.Data != nil {
-		if resp.Data.NextPageToken != nil {
-			nextPageToken = *resp.Data.NextPageToken
-		}
-		if resp.Data.HasMore != nil {
-			hasMore = *resp.Data.HasMore
-		}
+		nextPageToken = StringVal(resp.Data.NextPageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
 	}
 
 	return files, nextPageToken, hasMore, nil
@@ -321,12 +277,8 @@ func CreateFolder(name string, folderToken string) (string, string, error) {
 
 	var token, url string
 	if resp.Data != nil {
-		if resp.Data.Token != nil {
-			token = *resp.Data.Token
-		}
-		if resp.Data.Url != nil {
-			url = *resp.Data.Url
-		}
+		token = StringVal(resp.Data.Token)
+		url = StringVal(resp.Data.Url)
 	}
 
 	return token, url, nil
@@ -356,7 +308,6 @@ func MoveFile(fileToken string, targetFolderToken string, fileType string) (stri
 		return "", fmt.Errorf("移动文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	// 返回任务 ID（异步操作）
 	if resp.Data != nil && resp.Data.TaskId != nil {
 		return *resp.Data.TaskId, nil
 	}
@@ -395,12 +346,8 @@ func CopyFile(fileToken string, targetFolderToken string, name string, fileType 
 
 	var token, url string
 	if resp.Data != nil && resp.Data.File != nil {
-		if resp.Data.File.Token != nil {
-			token = *resp.Data.File.Token
-		}
-		if resp.Data.File.Url != nil {
-			url = *resp.Data.File.Url
-		}
+		token = StringVal(resp.Data.File.Token)
+		url = StringVal(resp.Data.File.Url)
 	}
 
 	return token, url, nil
@@ -427,7 +374,6 @@ func DeleteFile(fileToken string, fileType string) (string, error) {
 		return "", fmt.Errorf("删除文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	// 返回任务 ID（异步操作）
 	if resp.Data != nil && resp.Data.TaskId != nil {
 		return *resp.Data.TaskId, nil
 	}
@@ -469,18 +415,13 @@ func CreateShortcut(parentToken string, targetFileToken string, targetType strin
 		return nil, fmt.Errorf("创建快捷方式失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	info := &ShortcutInfo{}
+	info := &ShortcutInfo{
+		TargetToken: targetFileToken,
+		TargetType:  targetType,
+	}
 	if resp.Data != nil && resp.Data.SuccShortcutNode != nil {
-		if resp.Data.SuccShortcutNode.Token != nil {
-			info.Token = *resp.Data.SuccShortcutNode.Token
-		}
-		// Note: TargetToken and TargetType fields are not available in current SDK version
-		// Using Token as fallback for TargetToken
-		info.TargetToken = targetFileToken
-		info.TargetType = targetType
-		if resp.Data.SuccShortcutNode.ParentToken != nil {
-			info.ParentToken = *resp.Data.SuccShortcutNode.ParentToken
-		}
+		info.Token = StringVal(resp.Data.SuccShortcutNode.Token)
+		info.ParentToken = StringVal(resp.Data.SuccShortcutNode.ParentToken)
 	}
 
 	return info, nil

@@ -2,6 +2,7 @@ package converter
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,6 +69,14 @@ func NewBlockToMarkdown(blocks []*larkdocx.Block, options ConvertOptions) *Block
 			}
 		case BlockTypeCallout, BlockTypeQuoteContainer, BlockTypeGrid:
 			// 这些容器块的子块需要跳过
+			if block.Children != nil {
+				for _, childID := range block.Children {
+					childBlockIDs[childID] = true
+					collectChildren(childID)
+				}
+			}
+		case BlockTypeBullet, BlockTypeOrdered:
+			// 嵌套列表：子块由父列表递归处理
 			if block.Children != nil {
 				for _, childID := range block.Children {
 					childBlockIDs[childID] = true
@@ -153,9 +162,9 @@ func (c *BlockToMarkdown) convertBlockWithDepth(block *larkdocx.Block, indent in
 		BlockTypeHeading7, BlockTypeHeading8, BlockTypeHeading9:
 		return c.convertHeading(block, blockType)
 	case BlockTypeBullet:
-		return c.convertBullet(block, indent)
+		return c.convertBullet(block, indent, depth)
 	case BlockTypeOrdered:
-		return c.convertOrdered(block, indent)
+		return c.convertOrdered(block, indent, depth)
 	case BlockTypeCode:
 		return c.convertCode(block)
 	case BlockTypeQuote:
@@ -257,22 +266,46 @@ func (c *BlockToMarkdown) convertHeading(block *larkdocx.Block, blockType BlockT
 	return fmt.Sprintf("%s %s\n", strings.Repeat("#", level), text), nil
 }
 
-func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent int) (string, error) {
+func (c *BlockToMarkdown) convertBullet(block *larkdocx.Block, indent, depth int) (string, error) {
 	if block.Bullet == nil {
 		return "", nil
 	}
 	text := c.convertTextElements(block.Bullet.Elements)
 	prefix := strings.Repeat("  ", indent)
-	return fmt.Sprintf("%s- %s\n", prefix, text), nil
+	result := fmt.Sprintf("%s- %s\n", prefix, text)
+
+	// 递归处理嵌套子列表
+	if block.Children != nil {
+		for _, childID := range block.Children {
+			childBlock := c.blockMap[childID]
+			if childBlock != nil {
+				childMd, _ := c.convertBlockWithDepth(childBlock, indent+1, depth+1)
+				result += childMd
+			}
+		}
+	}
+	return result, nil
 }
 
-func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent int) (string, error) {
+func (c *BlockToMarkdown) convertOrdered(block *larkdocx.Block, indent, depth int) (string, error) {
 	if block.Ordered == nil {
 		return "", nil
 	}
 	text := c.convertTextElements(block.Ordered.Elements)
 	prefix := strings.Repeat("  ", indent)
-	return fmt.Sprintf("%s1. %s\n", prefix, text), nil
+	result := fmt.Sprintf("%s1. %s\n", prefix, text)
+
+	// 递归处理嵌套子列表
+	if block.Children != nil {
+		for _, childID := range block.Children {
+			childBlock := c.blockMap[childID]
+			if childBlock != nil {
+				childMd, _ := c.convertBlockWithDepth(childBlock, indent+1, depth+1)
+				result += childMd
+			}
+		}
+	}
+	return result, nil
 }
 
 func (c *BlockToMarkdown) convertCode(block *larkdocx.Block) (string, error) {
@@ -344,25 +377,25 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 		filename := fmt.Sprintf("image_%d.png", c.imageCount)
 
 		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
-			return "", fmt.Errorf("failed to create assets directory: %w", err)
+			return "", fmt.Errorf("创建资源目录失败: %w", err)
 		}
 
 		localPath := filepath.Join(c.options.AssetsDir, filename)
 
-		// Try to get temp URL and download
-		url, err := client.GetMediaTempURL(token)
-		if err == nil {
-			if err := client.DownloadFromURL(url, localPath); err == nil {
+		// 方式一：获取临时 URL 后下载
+		tmpURL, urlErr := client.GetMediaTempURL(token)
+		if urlErr == nil {
+			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
 				return fmt.Sprintf("![image](%s)\n", localPath), nil
 			}
 		}
 
-		// Fallback: try direct download
-		if err := client.DownloadMedia(token, localPath); err == nil {
+		// 方式二：SDK 直接下载
+		if sdkErr := client.DownloadMedia(token, localPath); sdkErr == nil {
 			return fmt.Sprintf("![image](%s)\n", localPath), nil
 		}
 
-		// If all fails, use token reference
+		// 全部失败，保留 token 引用（可能因权限不足）
 		return fmt.Sprintf("![image](feishu://media/%s)\n", token), nil
 	}
 
@@ -465,17 +498,24 @@ func (c *BlockToMarkdown) getCellTextWithDepth(block *larkdocx.Block, depth int)
 	}
 
 	// Table cells may contain nested blocks
-	// For now, we'll handle simple text content
 	if block.Children != nil {
 		var texts []string
 		for _, childID := range block.Children {
 			childBlock := c.blockMap[childID]
 			if childBlock != nil {
 				text, _ := c.convertBlockWithDepth(childBlock, 0, depth+1)
-				texts = append(texts, strings.TrimSpace(text))
+				trimmed := strings.TrimSpace(text)
+				if trimmed != "" {
+					texts = append(texts, trimmed)
+				}
 			}
 		}
-		return strings.Join(texts, " ")
+		// 使用 <br> 连接多个块，保留单元格内的结构（标题、列表等）
+		result := strings.Join(texts, "<br>")
+		// 替换残留的换行符为 <br>，避免破坏 markdown 表格结构
+		result = strings.ReplaceAll(result, "\n", "<br>")
+		result = strings.ReplaceAll(result, "\r", "")
+		return result
 	}
 	return ""
 }
@@ -786,7 +826,12 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 
 				// Handle link last (outermost)
 				if style.Link != nil && style.Link.Url != nil {
-					text = fmt.Sprintf("[%s](%s)", text, *style.Link.Url)
+					linkURL := *style.Link.Url
+					// 解码完全 URL 编码的链接（如 https%3A%2F%2F...），提升可读性
+					if decoded, err := url.QueryUnescape(linkURL); err == nil && decoded != linkURL {
+						linkURL = decoded
+					}
+					text = fmt.Sprintf("[%s](%s)", text, linkURL)
 				}
 			}
 
@@ -802,15 +847,20 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 		}
 
 		if elem.MentionDoc != nil {
-			token := ""
-			if elem.MentionDoc.Token != nil {
-				token = *elem.MentionDoc.Token
-			}
 			title := ""
 			if elem.MentionDoc.Title != nil {
 				title = *elem.MentionDoc.Title
 			}
-			result.WriteString(fmt.Sprintf("[%s](feishu://doc/%s)", title, token))
+			// 优先使用 API 返回的 URL（包含正确的域名和 wiki/docx 路径）
+			if elem.MentionDoc.Url != nil && *elem.MentionDoc.Url != "" {
+				result.WriteString(fmt.Sprintf("[%s](%s)", title, *elem.MentionDoc.Url))
+			} else {
+				token := ""
+				if elem.MentionDoc.Token != nil {
+					token = *elem.MentionDoc.Token
+				}
+				result.WriteString(fmt.Sprintf("[%s](feishu://doc/%s)", title, token))
+			}
 		}
 
 		if elem.Equation != nil {

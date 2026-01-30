@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -129,13 +128,14 @@ var addCalloutCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			result := map[string]interface{}{
+			result := map[string]any{
 				"block_id":     calloutBlockID,
 				"callout_type": calloutType,
 				"content":      content,
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("高亮块添加成功！\n")
 			fmt.Printf("  块 ID: %s\n", calloutBlockID)

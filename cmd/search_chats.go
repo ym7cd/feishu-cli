@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -57,8 +56,9 @@ var searchChatsCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("找到 %d 个群聊:\n\n", len(result.Items))
 			for i, chat := range result.Items {

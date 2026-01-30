@@ -1,7 +1,6 @@
 package client
 
 import (
-	"context"
 	"fmt"
 
 	larkwiki "github.com/larksuite/oapi-sdk-go/v3/service/wiki/v2"
@@ -43,7 +42,7 @@ func GetWikiNode(token string) (*WikiNode, error) {
 		Token(token).
 		Build()
 
-	resp, err := client.Wiki.Space.GetNode(context.Background(), req)
+	resp, err := client.Wiki.Space.GetNode(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("获取节点信息失败: %w", err)
 	}
@@ -57,45 +56,20 @@ func GetWikiNode(token string) (*WikiNode, error) {
 		return nil, fmt.Errorf("节点不存在")
 	}
 
-	result := &WikiNode{
-		NodeToken: token,
-	}
-
-	if node.SpaceId != nil {
-		result.SpaceID = *node.SpaceId
-	}
-	if node.ObjToken != nil {
-		result.ObjToken = *node.ObjToken
-	}
-	if node.ObjType != nil {
-		result.ObjType = *node.ObjType
-	}
-	if node.ParentNodeToken != nil {
-		result.ParentNodeToken = *node.ParentNodeToken
-	}
-	if node.NodeType != nil {
-		result.NodeType = *node.NodeType
-	}
-	if node.Title != nil {
-		result.Title = *node.Title
-	}
-	if node.HasChild != nil {
-		result.HasChild = *node.HasChild
-	}
-	if node.Creator != nil {
-		result.Creator = *node.Creator
-	}
-	if node.Owner != nil {
-		result.Owner = *node.Owner
-	}
-	if node.ObjCreateTime != nil {
-		result.ObjCreateTime = *node.ObjCreateTime
-	}
-	if node.ObjEditTime != nil {
-		result.ObjEditTime = *node.ObjEditTime
-	}
-
-	return result, nil
+	return &WikiNode{
+		NodeToken:       token,
+		SpaceID:         StringVal(node.SpaceId),
+		ObjToken:        StringVal(node.ObjToken),
+		ObjType:         StringVal(node.ObjType),
+		ParentNodeToken: StringVal(node.ParentNodeToken),
+		NodeType:        StringVal(node.NodeType),
+		Title:           StringVal(node.Title),
+		HasChild:        BoolVal(node.HasChild),
+		Creator:         StringVal(node.Creator),
+		Owner:           StringVal(node.Owner),
+		ObjCreateTime:   StringVal(node.ObjCreateTime),
+		ObjEditTime:     StringVal(node.ObjEditTime),
+	}, nil
 }
 
 // ListWikiSpaces 获取知识空间列表
@@ -113,7 +87,7 @@ func ListWikiSpaces(pageSize int, pageToken string) ([]*WikiSpace, string, bool,
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Wiki.Space.List(context.Background(), reqBuilder.Build())
+	resp, err := client.Wiki.Space.List(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取知识空间列表失败: %w", err)
 	}
@@ -125,35 +99,21 @@ func ListWikiSpaces(pageSize int, pageToken string) ([]*WikiSpace, string, bool,
 	var spaces []*WikiSpace
 	if resp.Data != nil && resp.Data.Items != nil {
 		for _, item := range resp.Data.Items {
-			space := &WikiSpace{}
-			if item.SpaceId != nil {
-				space.SpaceID = *item.SpaceId
-			}
-			if item.Name != nil {
-				space.Name = *item.Name
-			}
-			if item.Description != nil {
-				space.Description = *item.Description
-			}
-			if item.SpaceType != nil {
-				space.SpaceType = *item.SpaceType
-			}
-			if item.Visibility != nil {
-				space.Visibility = *item.Visibility
-			}
-			spaces = append(spaces, space)
+			spaces = append(spaces, &WikiSpace{
+				SpaceID:     StringVal(item.SpaceId),
+				Name:        StringVal(item.Name),
+				Description: StringVal(item.Description),
+				SpaceType:   StringVal(item.SpaceType),
+				Visibility:  StringVal(item.Visibility),
+			})
 		}
 	}
 
 	var nextPageToken string
 	var hasMore bool
 	if resp.Data != nil {
-		if resp.Data.PageToken != nil {
-			nextPageToken = *resp.Data.PageToken
-		}
-		if resp.Data.HasMore != nil {
-			hasMore = *resp.Data.HasMore
-		}
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
 	}
 
 	return spaces, nextPageToken, hasMore, nil
@@ -179,7 +139,7 @@ func ListWikiNodes(spaceID string, parentNodeToken string, pageSize int, pageTok
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Wiki.SpaceNode.List(context.Background(), reqBuilder.Build())
+	resp, err := client.Wiki.SpaceNode.List(Context(), reqBuilder.Build())
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取节点列表失败: %w", err)
 	}
@@ -191,50 +151,26 @@ func ListWikiNodes(spaceID string, parentNodeToken string, pageSize int, pageTok
 	var nodes []*WikiNode
 	if resp.Data != nil && resp.Data.Items != nil {
 		for _, item := range resp.Data.Items {
-			node := &WikiNode{}
-			if item.SpaceId != nil {
-				node.SpaceID = *item.SpaceId
-			}
-			if item.NodeToken != nil {
-				node.NodeToken = *item.NodeToken
-			}
-			if item.ObjToken != nil {
-				node.ObjToken = *item.ObjToken
-			}
-			if item.ObjType != nil {
-				node.ObjType = *item.ObjType
-			}
-			if item.ParentNodeToken != nil {
-				node.ParentNodeToken = *item.ParentNodeToken
-			}
-			if item.NodeType != nil {
-				node.NodeType = *item.NodeType
-			}
-			if item.Title != nil {
-				node.Title = *item.Title
-			}
-			if item.HasChild != nil {
-				node.HasChild = *item.HasChild
-			}
-			if item.Creator != nil {
-				node.Creator = *item.Creator
-			}
-			if item.Owner != nil {
-				node.Owner = *item.Owner
-			}
-			nodes = append(nodes, node)
+			nodes = append(nodes, &WikiNode{
+				SpaceID:         StringVal(item.SpaceId),
+				NodeToken:       StringVal(item.NodeToken),
+				ObjToken:        StringVal(item.ObjToken),
+				ObjType:         StringVal(item.ObjType),
+				ParentNodeToken: StringVal(item.ParentNodeToken),
+				NodeType:        StringVal(item.NodeType),
+				Title:           StringVal(item.Title),
+				HasChild:        BoolVal(item.HasChild),
+				Creator:         StringVal(item.Creator),
+				Owner:           StringVal(item.Owner),
+			})
 		}
 	}
 
 	var nextPageToken string
 	var hasMore bool
 	if resp.Data != nil {
-		if resp.Data.PageToken != nil {
-			nextPageToken = *resp.Data.PageToken
-		}
-		if resp.Data.HasMore != nil {
-			hasMore = *resp.Data.HasMore
-		}
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
 	}
 
 	return nodes, nextPageToken, hasMore, nil
@@ -255,17 +191,14 @@ func CreateWikiNode(spaceID, title, parentNode, nodeType string) (*CreateWikiNod
 		return nil, err
 	}
 
-	// 构建节点信息
 	nodeBuilder := larkwiki.NewNodeBuilder().
 		Title(title)
 
-	// 设置节点类型，默认为 docx
 	if nodeType == "" {
 		nodeType = larkwiki.ObjTypeObjTypeDocx
 	}
 	nodeBuilder.ObjType(nodeType)
 
-	// 设置父节点
 	if parentNode != "" {
 		nodeBuilder.ParentNodeToken(parentNode)
 	}
@@ -275,7 +208,7 @@ func CreateWikiNode(spaceID, title, parentNode, nodeType string) (*CreateWikiNod
 		Node(nodeBuilder.Build()).
 		Build()
 
-	resp, err := client.Wiki.SpaceNode.Create(context.Background(), req)
+	resp, err := client.Wiki.SpaceNode.Create(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("创建知识库节点失败: %w", err)
 	}
@@ -288,23 +221,13 @@ func CreateWikiNode(spaceID, title, parentNode, nodeType string) (*CreateWikiNod
 		return nil, fmt.Errorf("创建节点成功但未返回节点信息")
 	}
 
-	result := &CreateWikiNodeResult{}
 	node := resp.Data.Node
-
-	if node.SpaceId != nil {
-		result.SpaceID = *node.SpaceId
-	}
-	if node.NodeToken != nil {
-		result.NodeToken = *node.NodeToken
-	}
-	if node.ObjToken != nil {
-		result.ObjToken = *node.ObjToken
-	}
-	if node.ObjType != nil {
-		result.ObjType = *node.ObjType
-	}
-
-	return result, nil
+	return &CreateWikiNodeResult{
+		SpaceID:   StringVal(node.SpaceId),
+		NodeToken: StringVal(node.NodeToken),
+		ObjToken:  StringVal(node.ObjToken),
+		ObjType:   StringVal(node.ObjType),
+	}, nil
 }
 
 // UpdateWikiNode 更新知识库节点标题
@@ -324,7 +247,7 @@ func UpdateWikiNode(spaceID, nodeToken, title string) error {
 		Body(body).
 		Build()
 
-	resp, err := client.Wiki.SpaceNode.UpdateTitle(context.Background(), req)
+	resp, err := client.Wiki.SpaceNode.UpdateTitle(Context(), req)
 	if err != nil {
 		return fmt.Errorf("更新知识库节点标题失败: %w", err)
 	}
@@ -361,7 +284,7 @@ func MoveWikiNode(spaceID, nodeToken, targetSpaceID, targetParent string) (*Move
 		Body(bodyBuilder.Build()).
 		Build()
 
-	resp, err := client.Wiki.SpaceNode.Move(context.Background(), req)
+	resp, err := client.Wiki.SpaceNode.Move(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("移动知识库节点失败: %w", err)
 	}
@@ -371,8 +294,8 @@ func MoveWikiNode(spaceID, nodeToken, targetSpaceID, targetParent string) (*Move
 	}
 
 	result := &MoveWikiNodeResult{}
-	if resp.Data != nil && resp.Data.Node != nil && resp.Data.Node.NodeToken != nil {
-		result.NodeToken = *resp.Data.Node.NodeToken
+	if resp.Data != nil && resp.Data.Node != nil {
+		result.NodeToken = StringVal(resp.Data.Node.NodeToken)
 	}
 
 	return result, nil

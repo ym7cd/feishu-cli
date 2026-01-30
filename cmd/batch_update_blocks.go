@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -82,8 +81,9 @@ var batchUpdateBlocksCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("批量更新成功！\n")
 			fmt.Printf("  文档 ID: %s\n", documentID)

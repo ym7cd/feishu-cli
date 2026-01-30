@@ -55,7 +55,7 @@ var createDocumentCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			if err := printJSON(map[string]interface{}{
+			if err := printJSON(map[string]any{
 				"document_id": documentID,
 				"title":       docTitle,
 				"revision_id": revisionID,

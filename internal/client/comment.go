@@ -62,44 +62,24 @@ func ListComments(fileToken string, fileType string, pageSize int, pageToken str
 	var comments []*Comment
 	if resp.Data != nil && resp.Data.Items != nil {
 		for _, item := range resp.Data.Items {
-			comment := &Comment{}
-			if item.CommentId != nil {
-				comment.CommentID = *item.CommentId
-			}
-			if item.UserId != nil {
-				comment.UserID = *item.UserId
-			}
-			if item.CreateTime != nil {
-				comment.CreateTime = *item.CreateTime
-			}
-			if item.UpdateTime != nil {
-				comment.UpdateTime = *item.UpdateTime
-			}
-			if item.IsSolved != nil {
-				comment.IsSolved = *item.IsSolved
-			}
-			if item.SolvedTime != nil {
-				comment.SolvedTime = *item.SolvedTime
-			}
-			if item.SolverUserId != nil {
-				comment.SolverUserID = *item.SolverUserId
-			}
-			if item.IsWhole != nil {
-				comment.IsWhole = *item.IsWhole
-			}
-			comments = append(comments, comment)
+			comments = append(comments, &Comment{
+				CommentID:    StringVal(item.CommentId),
+				UserID:       StringVal(item.UserId),
+				CreateTime:   IntVal(item.CreateTime),
+				UpdateTime:   IntVal(item.UpdateTime),
+				IsSolved:     BoolVal(item.IsSolved),
+				SolvedTime:   IntVal(item.SolvedTime),
+				SolverUserID: StringVal(item.SolverUserId),
+				IsWhole:      BoolVal(item.IsWhole),
+			})
 		}
 	}
 
 	var nextPageToken string
 	var hasMore bool
 	if resp.Data != nil {
-		if resp.Data.PageToken != nil {
-			nextPageToken = *resp.Data.PageToken
-		}
-		if resp.Data.HasMore != nil {
-			hasMore = *resp.Data.HasMore
-		}
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
 	}
 
 	return comments, nextPageToken, hasMore, nil
@@ -112,7 +92,6 @@ func CreateComment(fileToken string, fileType string, content string) (string, e
 		return "", err
 	}
 
-	// 构建评论内容
 	textRun := larkdrive.NewTextRunBuilder().
 		Text(content).
 		Build()
@@ -179,24 +158,13 @@ func GetComment(fileToken string, commentID string, fileType string) (*Comment, 
 		return nil, fmt.Errorf("评论不存在")
 	}
 
-	comment := &Comment{}
-	if resp.Data.CommentId != nil {
-		comment.CommentID = *resp.Data.CommentId
-	}
-	if resp.Data.UserId != nil {
-		comment.UserID = *resp.Data.UserId
-	}
-	if resp.Data.CreateTime != nil {
-		comment.CreateTime = *resp.Data.CreateTime
-	}
-	if resp.Data.IsSolved != nil {
-		comment.IsSolved = *resp.Data.IsSolved
-	}
-	if resp.Data.IsWhole != nil {
-		comment.IsWhole = *resp.Data.IsWhole
-	}
-
-	return comment, nil
+	return &Comment{
+		CommentID:  StringVal(resp.Data.CommentId),
+		UserID:     StringVal(resp.Data.UserId),
+		CreateTime: IntVal(resp.Data.CreateTime),
+		IsSolved:   BoolVal(resp.Data.IsSolved),
+		IsWhole:    BoolVal(resp.Data.IsWhole),
+	}, nil
 }
 
 // DeleteComment 删除评论

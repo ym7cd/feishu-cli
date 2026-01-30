@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -351,6 +350,14 @@ var importMarkdownCmd = &cobra.Command{
 
 		// === 阶段 2/3: 并发处理 ===
 		if len(dTasks) > 0 || len(tTasks) > 0 {
+			// 阶段 1 大量 API 调用后等待配额恢复，避免阶段 2 立即触发频率限制
+			if stats.totalBlocks > 30 {
+				cooldown := 5 * time.Second
+				if verbose {
+					fmt.Printf("等待 API 配额恢复 (%.0fs)...\n", cooldown.Seconds())
+				}
+				time.Sleep(cooldown)
+			}
 			fmt.Printf("=== 阶段 2/3: 并发处理 (图表×%d, 表格×%d) ===\n", diagramWorkers, tableWorkers)
 			phase2Start := time.Now()
 
@@ -381,24 +388,25 @@ var importMarkdownCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]any{
-				"document_id":       documentID,
-				"blocks":            stats.totalBlocks,
-				"diagram_total":     stats.diagramTotal,
-				"diagram_success":   stats.diagramSuccess,
-				"diagram_failed":    stats.diagramFailed,
-				"mermaid_count":     stats.mermaidCount,
-				"plantuml_count":    stats.plantumlCount,
-				"diagram_fallback":  stats.fallbackSuccess,
-				"table_total":       stats.tableTotal,
-				"table_success":     stats.tableSuccess,
-				"table_failed":      stats.tableFailed,
-				"duration_seconds":  totalDuration.Seconds(),
-				"phase1_seconds":    stats.phase1Duration.Seconds(),
-				"phase2_seconds":    stats.phase2Duration.Seconds(),
-				"phase3_seconds":    stats.phase3Duration.Seconds(),
-			}, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(map[string]any{
+				"document_id":      documentID,
+				"blocks":           stats.totalBlocks,
+				"diagram_total":    stats.diagramTotal,
+				"diagram_success":  stats.diagramSuccess,
+				"diagram_failed":   stats.diagramFailed,
+				"mermaid_count":    stats.mermaidCount,
+				"plantuml_count":   stats.plantumlCount,
+				"diagram_fallback": stats.fallbackSuccess,
+				"table_total":      stats.tableTotal,
+				"table_success":    stats.tableSuccess,
+				"table_failed":     stats.tableFailed,
+				"duration_seconds": totalDuration.Seconds(),
+				"phase1_seconds":   stats.phase1Duration.Seconds(),
+				"phase2_seconds":   stats.phase2Duration.Seconds(),
+				"phase3_seconds":   stats.phase3Duration.Seconds(),
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Println("导入完成!")
 			fmt.Printf("  文档ID: %s\n", documentID)
@@ -456,27 +464,38 @@ func phase1CreateBlocks(
 				return nil, nil, fmt.Errorf("转换 Markdown 失败 (段落 %d): %w", segIdx+1, err)
 			}
 
-			if len(result.Blocks) == 0 {
+			if len(result.BlockNodes) == 0 {
 				continue
+			}
+
+			// 提取顶层块，记录带有嵌套子块的节点
+			var topLevelBlocks []*larkdocx.Block
+			nodeChildrenMap := map[int][]*converter.BlockNode{} // 顶层索引 → 嵌套子节点
+
+			for i, node := range result.BlockNodes {
+				topLevelBlocks = append(topLevelBlocks, node.Block)
+				if len(node.Children) > 0 {
+					nodeChildrenMap[i] = node.Children
+				}
 			}
 
 			// 记录表格块的索引
 			var tableIndices []int
-			for i, block := range result.Blocks {
+			for i, block := range topLevelBlocks {
 				if block.BlockType != nil && *block.BlockType == 31 { // BlockTypeTable
 					tableIndices = append(tableIndices, i)
 				}
 			}
 
-			// 批量添加块（飞书 API 限制每次最多 50 个块）
+			// 批量添加顶层块（飞书 API 限制每次最多 50 个块）
 			const batchSize = 50
 			var createdBlockIDs []string
-			for i := 0; i < len(result.Blocks); i += batchSize {
+			for i := 0; i < len(topLevelBlocks); i += batchSize {
 				end := i + batchSize
-				if end > len(result.Blocks) {
-					end = len(result.Blocks)
+				if end > len(topLevelBlocks) {
+					end = len(topLevelBlocks)
 				}
-				batch := result.Blocks[i:end]
+				batch := topLevelBlocks[i:end]
 
 				createdBlocks, err := client.CreateBlock(documentID, documentID, batch, -1)
 				if err != nil {
@@ -488,6 +507,20 @@ func phase1CreateBlocks(
 					if block.BlockId != nil {
 						createdBlockIDs = append(createdBlockIDs, *block.BlockId)
 					}
+				}
+			}
+
+			// 递归创建嵌套子块（如嵌套列表）
+			for idx, children := range nodeChildrenMap {
+				if idx < len(createdBlockIDs) {
+					parentID := createdBlockIDs[idx]
+					nestedCount, nestedErr := createNestedChildren(documentID, parentID, children)
+					if nestedErr != nil {
+						if verbose {
+							syncPrintf("  ⚠ 段落 %d 嵌套子块创建失败: %v\n", segIdx+1, nestedErr)
+						}
+					}
+					stats.totalBlocks += nestedCount
 				}
 			}
 
@@ -652,22 +685,13 @@ func processDiagramTask(task diagramTask, maxRetries int, verbose bool) diagramR
 		lastErr = err
 
 		// 判断是否值得重试
-		errMsg := err.Error()
-
 		// 语法解析错误不可重试
-		isPermanentError := strings.Contains(errMsg, "Parse error") ||
-			strings.Contains(errMsg, "Invalid request parameter")
-		if isPermanentError {
+		if client.IsPermanentError(err) {
 			syncPrintf("  ✗ %s %d 语法错误 (不重试): %v\n", syntaxLabel, task.index, err)
 			return diagramResult{task: task, success: false, err: err, retries: retry}
 		}
 
-		isRetryable := strings.Contains(errMsg, "500") ||
-			strings.Contains(errMsg, "502") ||
-			strings.Contains(errMsg, "503") ||
-			strings.Contains(errMsg, "429") ||
-			strings.Contains(errMsg, "internal error") ||
-			strings.Contains(errMsg, "rate limit")
+		isRetryable := client.IsRetryableError(err)
 
 		if !isRetryable {
 			break
@@ -692,7 +716,7 @@ func processTableTask(documentID string, task tableTask, verbose bool) tableResu
 		syncPrintf("  [表格 %d] 填充 %d×%d...\n", task.index, task.tableData.Rows, task.tableData.Cols)
 	}
 
-	const maxRetries = 3
+	const maxRetries = 5
 
 	for retry := 0; retry <= maxRetries; retry++ {
 		if retry > 0 {
@@ -742,16 +766,59 @@ func processTableTask(documentID string, task tableTask, verbose bool) tableResu
 	return tableResult{task: task, success: false, err: fmt.Errorf("重试耗尽")}
 }
 
-// isRateLimitError 判断是否为频率限制错误
-func isRateLimitError(err error) bool {
-	if err == nil {
-		return false
+// createNestedChildren 递归创建嵌套子块（如嵌套列表的父子关系）
+// 返回创建的块总数和可能的错误
+func createNestedChildren(documentID string, parentBlockID string, children []*converter.BlockNode) (int, error) {
+	if len(children) == 0 {
+		return 0, nil
 	}
-	msg := err.Error()
-	return strings.Contains(msg, "429") ||
-		strings.Contains(msg, "99991400") ||
-		strings.Contains(msg, "frequency limit") ||
-		strings.Contains(msg, "rate limit")
+
+	var childBlocks []*larkdocx.Block
+	for _, c := range children {
+		childBlocks = append(childBlocks, c.Block)
+	}
+
+	const batchSize = 50
+	var createdBlockIDs []string
+	totalCreated := 0
+
+	for i := 0; i < len(childBlocks); i += batchSize {
+		end := i + batchSize
+		if end > len(childBlocks) {
+			end = len(childBlocks)
+		}
+		batch := childBlocks[i:end]
+
+		createdBlocks, err := client.CreateBlock(documentID, parentBlockID, batch, -1)
+		if err != nil {
+			return totalCreated, fmt.Errorf("创建嵌套子块失败 (parent=%s): %w", parentBlockID, err)
+		}
+		totalCreated += len(createdBlocks)
+
+		for _, block := range createdBlocks {
+			if block.BlockId != nil {
+				createdBlockIDs = append(createdBlockIDs, *block.BlockId)
+			}
+		}
+	}
+
+	// 递归创建更深层的子块
+	for i, child := range children {
+		if len(child.Children) > 0 && i < len(createdBlockIDs) {
+			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children)
+			totalCreated += nestedCount
+			if err != nil {
+				return totalCreated, err
+			}
+		}
+	}
+
+	return totalCreated, nil
+}
+
+// isRateLimitError 判断是否为频率限制错误（委托给 client 包统一实现）
+func isRateLimitError(err error) bool {
+	return client.IsRateLimitError(err)
 }
 
 // phase3HandleFallbacks 处理失败的图表，降级为代码块

@@ -92,12 +92,8 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 
 	result := &SearchMessagesResult{
 		MessageIDs: resp.Data.Items,
-	}
-	if resp.Data.PageToken != nil {
-		result.PageToken = *resp.Data.PageToken
-	}
-	if resp.Data.HasMore != nil {
-		result.HasMore = *resp.Data.HasMore
+		PageToken:  StringVal(resp.Data.PageToken),
+		HasMore:    BoolVal(resp.Data.HasMore),
 	}
 
 	return result, nil
@@ -153,13 +149,9 @@ func SearchApps(opts SearchAppsOptions, userAccessToken string) (*SearchAppsResu
 	}
 
 	result := &SearchAppsResult{
-		AppIDs: resp.Data.Items,
-	}
-	if resp.Data.PageToken != nil {
-		result.PageToken = *resp.Data.PageToken
-	}
-	if resp.Data.HasMore != nil {
-		result.HasMore = *resp.Data.HasMore
+		AppIDs:    resp.Data.Items,
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
 	}
 
 	return result, nil

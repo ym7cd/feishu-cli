@@ -22,10 +22,26 @@ feishu-cli doc import doc.md --title "技术文档" --verbose
 - ✅ erDiagram（ER 图）
 - ✅ gantt（甘特图）
 - ✅ pie（饼图）
+- ✅ mindmap（思维导图）
 
 PlantUML 支持：时序图、活动图、类图、用例图、组件图、ER 图、思维导图等全部 PlantUML 图表类型。
 
 **技术实现**：使用飞书画板 API `/nodes/plantuml` 端点，`syntax_type=1` 表示 PlantUML，`syntax_type=2` 表示 Mermaid。
+
+### 嵌套列表支持（2026-01-30 更新）
+
+无序/有序列表支持**无限深度嵌套**，导入时自动保留 Markdown 的缩进层级结构，导出时自动还原：
+
+```markdown
+- 父级项目
+  - 子级项目 1
+    - 孙级项目
+  - 子级项目 2
+```
+
+- **导入**：通过 `BlockNode` 树结构保存层级关系，递归创建父子块（`CreateBlock(docID, parentBlockID, children, -1)`）
+- **导出**：递归遍历 `block.Children`，每层增加 2 空格缩进
+- **混合嵌套**：支持无序列表中嵌套有序列表，反之亦然
 
 ### 大表格自动拆分
 
@@ -326,8 +342,8 @@ app_secret: "xxx"
 | 1 | Page | 根节点 | 文档根节点 |
 | 2 | Text | 段落 | 普通文本 |
 | 3-11 | Heading1-9 | `#` ~ `######` | 标题 |
-| 12 | Bullet | `- item` | 无序列表 |
-| 13 | Ordered | `1. item` | 有序列表 |
+| 12 | Bullet | `- item` | 无序列表（支持嵌套） |
+| 13 | Ordered | `1. item` | 有序列表（支持嵌套） |
 | 14 | Code | ` ```lang ``` ` | 代码块 |
 | 15 | Quote | `> text` | 引用 |
 | 16 | Equation | `$$formula$$` | 公式 |
@@ -434,6 +450,7 @@ gh release create v1.4.0 \
 - V3 富文本数据使用三维数组：`[[[[{"type":"text","text":{"text":"Hello"}}]]]]`
 - **表格单元格**：飞书 API 创建表格时会自动在每个单元格内创建空的 Text 块，填充内容时应更新现有块而非创建新块（否则会出现空行）
 - **表格列宽**：通过 `TableProperty.ColumnWidth` 设置，单位为像素，数组长度需与列数一致
+- **嵌套列表**：通过 `BlockNode` 树结构实现，导入时递归调用 `CreateBlock(docID, parentBlockID, children, -1)` 创建父子关系
 
 ## Claude Code 技能
 
@@ -545,6 +562,7 @@ export FEISHU_APP_SECRET=<your_app_secret>
 
 ```
 ✅ doc create/get/blocks/blocks --all/export/import
+✅ doc import 嵌套列表（无序/有序混合嵌套，父子块层级关系）
 ✅ doc add (JSON/Markdown)
 ✅ doc add-callout (info/warning/error/success)
 ✅ doc add-board

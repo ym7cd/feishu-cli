@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -46,8 +45,9 @@ var listFilesCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(files, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(files); err != nil {
+				return err
+			}
 		} else {
 			if len(files) == 0 {
 				fmt.Println("文件夹为空")

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -40,8 +39,9 @@ var getMessageCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		msg := result.Message
 		if output == "json" {
-			data, _ := json.MarshalIndent(msg, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(msg); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("消息详情:\n")
 			if msg.MessageId != nil {

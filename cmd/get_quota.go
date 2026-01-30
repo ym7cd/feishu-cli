@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -40,8 +39,9 @@ var getQuotaCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(quota, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(quota); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("云空间容量信息\n")
 			fmt.Printf("  总容量:   %s\n", formatBytes(quota.Total))

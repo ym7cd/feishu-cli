@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -27,7 +26,7 @@ var sheetProtectCmd = &cobra.Command{
 		startIndex, _ := cmd.Flags().GetInt("start")
 		endIndex, _ := cmd.Flags().GetInt("end")
 		lockInfo, _ := cmd.Flags().GetString("lock-info")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		ranges := []*client.ProtectedRange{
 			{
@@ -47,11 +46,12 @@ var sheetProtectCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(map[string]interface{}{
+		if output == "json" {
+			if err := printJSON(map[string]any{
 				"protect_ids": protectIDs,
-			}, "", "  ")
-			fmt.Println(string(output))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("保护范围创建成功！\n")
 			fmt.Printf("  保护 ID: %v\n", protectIDs)

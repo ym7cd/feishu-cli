@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -53,7 +52,7 @@ var getBlocksCmd = &cobra.Command{
 		}
 
 		// Get blocks
-		var blocks interface{}
+		var blocks any
 		var nextPageToken string
 
 		if all {
@@ -65,8 +64,9 @@ var getBlocksCmd = &cobra.Command{
 			blocks = allBlocks
 
 			if output == "json" {
-				data, _ := json.MarshalIndent(blocks, "", "  ")
-				fmt.Println(string(data))
+				if err := printJSON(blocks); err != nil {
+					return err
+				}
 			} else {
 				fmt.Printf("共找到 %d 个块:\n\n", len(allBlocks))
 				for i, block := range allBlocks {
@@ -91,13 +91,14 @@ var getBlocksCmd = &cobra.Command{
 			nextPageToken = nextToken
 
 			if output == "json" {
-				result := map[string]interface{}{
+				result := map[string]any{
 					"items":      blockList,
 					"page_token": nextPageToken,
 					"has_more":   nextPageToken != "",
 				}
-				data, _ := json.MarshalIndent(result, "", "  ")
-				fmt.Println(string(data))
+				if err := printJSON(result); err != nil {
+					return err
+				}
 			} else {
 				fmt.Printf("共找到 %d 个块:\n\n", len(blockList))
 				for i, block := range blockList {

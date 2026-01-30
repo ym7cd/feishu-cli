@@ -145,7 +145,7 @@ func ImportDiagram(whiteboardID string, source string, opts ImportDiagramOptions
 	}
 
 	// Build request body - use field names that match lark-cli
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"plant_uml_code": content,
 		"syntax_type":    syntaxType,
 		"style_type":     styleType,
@@ -212,7 +212,7 @@ func CreateBoardNodes(whiteboardID string, nodesJSON string, opts CreateBoardNot
 	}
 
 	// Build request body - nodes_str is a JSON string
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"nodes_str": nodesJSON,
 	}
 

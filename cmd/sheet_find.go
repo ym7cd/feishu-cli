@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -31,16 +30,17 @@ var sheetFindCmd = &cobra.Command{
 		matchCase, _ := cmd.Flags().GetBool("match-case")
 		matchEntireCell, _ := cmd.Flags().GetBool("match-entire-cell")
 		searchByRegex, _ := cmd.Flags().GetBool("regex")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		result, err := client.FindCells(client.Context(), spreadsheetToken, sheetID, keyword, matchCase, matchEntireCell, searchByRegex, rangeStr)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("查找结果:\n")
 			fmt.Printf("  匹配单元格: %d 个\n", len(result.MatchedCells))

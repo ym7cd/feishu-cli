@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -15,16 +14,17 @@ var sheetGetCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		spreadsheetToken := args[0]
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		info, err := client.GetSpreadsheet(client.Context(), spreadsheetToken)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(info, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(info); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("电子表格信息:\n")
 			fmt.Printf("  Token: %s\n", info.SpreadsheetToken)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -17,16 +16,17 @@ var sheetCopySheetCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		sourceSheetID := args[1]
 		newTitle, _ := cmd.Flags().GetString("title")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		info, err := client.CopySheet(client.Context(), spreadsheetToken, sourceSheetID, newTitle)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(info, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(info); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("复制成功！\n")
 			fmt.Printf("  新工作表 ID: %s\n", info.SheetID)

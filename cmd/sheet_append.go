@@ -28,7 +28,7 @@ var sheetAppendCmd = &cobra.Command{
 		dataStr, _ := cmd.Flags().GetString("data")
 		dataFile, _ := cmd.Flags().GetString("data-file")
 		insertOption, _ := cmd.Flags().GetString("insert-option")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		// 处理 shell 转义
 		rangeStr = unescapeSheetRange(rangeStr)
@@ -50,7 +50,7 @@ var sheetAppendCmd = &cobra.Command{
 			return fmt.Errorf("请通过 --data 或 --data-file 指定数据")
 		}
 
-		var values [][]interface{}
+		var values [][]any
 		if err := json.Unmarshal([]byte(jsonData), &values); err != nil {
 			return fmt.Errorf("解析数据失败: %w", err)
 		}
@@ -60,9 +60,10 @@ var sheetAppendCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("追加成功！\n")
 			fmt.Printf("  更新范围: %s\n", result.Range)

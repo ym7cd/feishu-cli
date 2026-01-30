@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -119,8 +118,9 @@ var searchMessagesCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			if len(result.MessageIDs) == 0 {
 				fmt.Println("未找到匹配的消息")

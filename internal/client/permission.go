@@ -35,11 +35,11 @@ func AddPermission(docToken string, docType string, member PermissionMember, not
 
 	resp, err := client.Drive.PermissionMember.Create(Context(), req)
 	if err != nil {
-		return fmt.Errorf("failed to add permission: %w", err)
+		return fmt.Errorf("添加权限失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("failed to add permission: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("添加权限失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return nil
@@ -59,11 +59,11 @@ func ListPermission(docToken string, docType string) ([]*larkdrive.Member, error
 
 	resp, err := client.Drive.PermissionMember.List(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list permissions: %w", err)
+		return nil, fmt.Errorf("获取权限列表失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, fmt.Errorf("failed to list permissions: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("获取权限列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return resp.Data.Items, nil
@@ -85,11 +85,11 @@ func DeletePermission(docToken string, docType string, memberType string, member
 
 	resp, err := client.Drive.PermissionMember.Delete(Context(), req)
 	if err != nil {
-		return fmt.Errorf("failed to delete permission: %w", err)
+		return fmt.Errorf("删除权限失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("failed to delete permission: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("删除权限失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return nil
@@ -115,11 +115,11 @@ func UpdatePublicPermission(docToken string, docType string, externalAccess bool
 
 	resp, err := client.Drive.PermissionPublic.Patch(Context(), req)
 	if err != nil {
-		return fmt.Errorf("failed to update public permission: %w", err)
+		return fmt.Errorf("更新公开权限失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("failed to update public permission: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("更新公开权限失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return nil

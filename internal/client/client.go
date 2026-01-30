@@ -66,21 +66,24 @@ func GetClient() (*lark.Client, error) {
 	return instance, nil
 }
 
-// Context returns a context with timeout for API calls
-// 默认超时时间为 30 秒，防止 API 调用无限阻塞
-// 注意：cancel 函数被忽略，因为 CLI 进程生命周期短，context 超时后会自动释放
+// Context returns a context with timeout for API calls.
+// 默认超时时间为 30 秒，防止 API 调用无限阻塞。
+// 通过 goroutine 等待 ctx.Done 后调用 cancel，释放关联的计时器资源。
 func Context() context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
-	// 在 CLI 场景下，进程结束时资源会自动释放
-	// 这里不调用 cancel 是有意的设计，避免在调用链中传递 cancel
-	_ = cancel
+	go func() {
+		<-ctx.Done()
+		cancel()
+	}()
 	return ctx
 }
 
-// ContextWithTimeout returns a context with custom timeout
-// 注意：cancel 函数被忽略，因为 CLI 进程生命周期短
+// ContextWithTimeout returns a context with custom timeout.
 func ContextWithTimeout(timeout time.Duration) context.Context {
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	_ = cancel // 有意忽略，见上方注释
+	go func() {
+		<-ctx.Done()
+		cancel()
+	}()
 	return ctx
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -39,12 +38,13 @@ var deleteTaskCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]interface{}{
+			if err := printJSON(map[string]any{
 				"success": true,
 				"task_id": taskGuid,
 				"message": "任务删除成功",
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("任务删除成功！\n")
 			fmt.Printf("  任务 ID: %s\n", taskGuid)

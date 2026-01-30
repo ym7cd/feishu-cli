@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -53,8 +52,9 @@ var listWikiNodesCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(nodes, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(nodes); err != nil {
+				return err
+			}
 		} else {
 			if len(nodes) == 0 {
 				fmt.Println("未找到节点")

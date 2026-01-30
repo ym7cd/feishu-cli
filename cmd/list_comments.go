@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -42,8 +41,9 @@ var listCommentsCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(comments, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(comments); err != nil {
+				return err
+			}
 		} else {
 			if len(comments) == 0 {
 				fmt.Println("该文档暂无评论")

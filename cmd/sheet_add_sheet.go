@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -17,16 +16,17 @@ var sheetAddSheetCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		title, _ := cmd.Flags().GetString("title")
 		index, _ := cmd.Flags().GetInt("index")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		info, err := client.AddSheet(client.Context(), spreadsheetToken, title, index)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(info, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(info); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("添加成功！\n")
 			fmt.Printf("  工作表 ID: %s\n", info.SheetID)

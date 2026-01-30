@@ -9,27 +9,27 @@ import (
 func TestConvertSimpleToV3Values(t *testing.T) {
 	tests := []struct {
 		name     string
-		input    [][]interface{}
+		input    [][]any
 		expected int // 期望的行数
 	}{
 		{
 			name:     "空数组",
-			input:    [][]interface{}{},
+			input:    [][]any{},
 			expected: 0,
 		},
 		{
 			name:     "单行单列",
-			input:    [][]interface{}{{"hello"}},
+			input:    [][]any{{"hello"}},
 			expected: 1,
 		},
 		{
 			name:     "多行多列",
-			input:    [][]interface{}{{"a", "b"}, {"c", "d"}},
+			input:    [][]any{{"a", "b"}, {"c", "d"}},
 			expected: 2,
 		},
 		{
 			name:     "混合类型",
-			input:    [][]interface{}{{"text", 123, 45.6, true}},
+			input:    [][]any{{"text", 123, 45.6, true}},
 			expected: 1,
 		},
 	}
@@ -55,7 +55,7 @@ func TestConvertSimpleToV3Values(t *testing.T) {
 func TestConvertToV3Element(t *testing.T) {
 	tests := []struct {
 		name         string
-		input        interface{}
+		input        any
 		expectedType string
 	}{
 		{

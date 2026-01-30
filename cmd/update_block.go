@@ -46,7 +46,7 @@ var updateBlockCmd = &cobra.Command{
 		}
 
 		// Parse content JSON
-		var updateContent map[string]interface{}
+		var updateContent map[string]any
 		if err := json.Unmarshal([]byte(contentJSON), &updateContent); err != nil {
 			return fmt.Errorf("解析内容 JSON 失败: %w", err)
 		}
@@ -55,7 +55,7 @@ var updateBlockCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("块 %s 更新成功!\n", blockID)
+		fmt.Printf("块 %s 更新成功！\n", blockID)
 		return nil
 	},
 }

@@ -3,6 +3,7 @@ package converter
 import (
 	"bytes"
 	"fmt"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -25,12 +26,12 @@ const maxTableRows = 9
 
 // 表格列宽配置（单位：像素）
 const (
-	minColumnWidth     = 80  // 最小列宽
-	maxColumnWidth     = 400 // 最大列宽
-	defaultDocWidth    = 700 // 飞书文档默认可用宽度
-	charWidthChinese   = 14  // 中文字符宽度
-	charWidthEnglish   = 8   // 英文/数字字符宽度
-	columnPadding      = 16  // 列内边距
+	minColumnWidth   = 80  // 最小列宽
+	maxColumnWidth   = 400 // 最大列宽
+	defaultDocWidth  = 700 // 飞书文档默认可用宽度
+	charWidthChinese = 14  // 中文字符宽度
+	charWidthEnglish = 8   // 英文/数字字符宽度
+	columnPadding    = 16  // 列内边距
 )
 
 // calculateColumnWidths 根据单元格内容计算每列的宽度
@@ -119,10 +120,32 @@ func NewMarkdownToBlock(source []byte, options ConvertOptions, basePath string) 
 	}
 }
 
+// BlockNode represents a block that may contain nested child blocks.
+// Used to support hierarchical structures like nested lists in Feishu.
+type BlockNode struct {
+	Block    *larkdocx.Block
+	Children []*BlockNode
+}
+
+// FlattenBlockNodes flattens a tree of BlockNodes into a flat list of blocks (depth-first)
+func FlattenBlockNodes(nodes []*BlockNode) []*larkdocx.Block {
+	var result []*larkdocx.Block
+	for _, n := range nodes {
+		if n == nil || n.Block == nil {
+			continue
+		}
+		result = append(result, n.Block)
+		if len(n.Children) > 0 {
+			result = append(result, FlattenBlockNodes(n.Children)...)
+		}
+	}
+	return result
+}
+
 // ConvertResult contains converted blocks and table data
 type ConvertResult struct {
-	Blocks     []*larkdocx.Block
-	TableDatas []*TableData // Table data in order of appearance, used for filling content
+	BlockNodes []*BlockNode  // 支持嵌套层级的块树
+	TableDatas []*TableData  // Table data in order of appearance, used for filling content
 }
 
 // ConvertWithTableData converts Markdown to Feishu blocks and returns table data for content filling
@@ -150,7 +173,7 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 				return ast.WalkStop, err
 			}
 			if block != nil {
-				result.Blocks = append(result.Blocks, block)
+				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -160,7 +183,7 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 				return ast.WalkStop, err
 			}
 			if block != nil {
-				result.Blocks = append(result.Blocks, block)
+				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -170,25 +193,25 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 				return ast.WalkStop, err
 			}
 			if block != nil {
-				result.Blocks = append(result.Blocks, block)
+				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
 			}
 			return ast.WalkSkipChildren, nil
 
 		case *ast.List:
-			listBlocks, err := c.convertList(node)
+			listNodes, err := c.convertList(node)
 			if err != nil {
 				return ast.WalkStop, err
 			}
-			result.Blocks = append(result.Blocks, listBlocks...)
+			result.BlockNodes = append(result.BlockNodes, listNodes...)
 			return ast.WalkSkipChildren, nil
 
 		case *ast.Blockquote:
-			block, err := c.convertBlockquote(node)
+			quoteBlocks, err := c.convertBlockquote(node)
 			if err != nil {
 				return ast.WalkStop, err
 			}
-			if block != nil {
-				result.Blocks = append(result.Blocks, block)
+			for _, block := range quoteBlocks {
+				result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: block})
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -197,14 +220,14 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 			tableResults := c.convertTableWithDataMultiple(node)
 			for _, tableResult := range tableResults {
 				if tableResult != nil {
-					result.Blocks = append(result.Blocks, tableResult.Block)
+					result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: tableResult.Block})
 					result.TableDatas = append(result.TableDatas, tableResult.TableData)
 				}
 			}
 			return ast.WalkSkipChildren, nil
 
 		case *ast.ThematicBreak:
-			result.Blocks = append(result.Blocks, c.createDividerBlock())
+			result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: c.createDividerBlock()})
 			return ast.WalkContinue, nil
 		}
 
@@ -218,96 +241,14 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 	return result, nil
 }
 
-// Convert converts Markdown to Feishu blocks
+// Convert converts Markdown to Feishu blocks (flat list, nesting info is lost).
+// For nested list support, use ConvertWithTableData() which preserves BlockNode hierarchy.
 func (c *MarkdownToBlock) Convert() ([]*larkdocx.Block, error) {
-	md := goldmark.New(
-		goldmark.WithExtensions(extension.GFM),
-		goldmark.WithParserOptions(
-			parser.WithAutoHeadingID(),
-		),
-	)
-
-	reader := text.NewReader(c.source)
-	doc := md.Parser().Parse(reader)
-
-	var blocks []*larkdocx.Block
-	err := ast.Walk(doc, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
-		}
-
-		switch node := n.(type) {
-		case *ast.Heading:
-			block, err := c.convertHeading(node)
-			if err != nil {
-				return ast.WalkStop, err
-			}
-			if block != nil {
-				blocks = append(blocks, block)
-			}
-			return ast.WalkSkipChildren, nil
-
-		case *ast.Paragraph:
-			block, err := c.convertParagraph(node)
-			if err != nil {
-				return ast.WalkStop, err
-			}
-			if block != nil {
-				blocks = append(blocks, block)
-			}
-			return ast.WalkSkipChildren, nil
-
-		case *ast.FencedCodeBlock:
-			block, err := c.convertCodeBlock(node)
-			if err != nil {
-				return ast.WalkStop, err
-			}
-			if block != nil {
-				blocks = append(blocks, block)
-			}
-			return ast.WalkSkipChildren, nil
-
-		case *ast.List:
-			listBlocks, err := c.convertList(node)
-			if err != nil {
-				return ast.WalkStop, err
-			}
-			blocks = append(blocks, listBlocks...)
-			return ast.WalkSkipChildren, nil
-
-		case *ast.Blockquote:
-			block, err := c.convertBlockquote(node)
-			if err != nil {
-				return ast.WalkStop, err
-			}
-			if block != nil {
-				blocks = append(blocks, block)
-			}
-			return ast.WalkSkipChildren, nil
-
-		case *east.Table:
-			block, err := c.convertTable(node)
-			if err != nil {
-				return ast.WalkStop, err
-			}
-			if block != nil {
-				blocks = append(blocks, block)
-			}
-			return ast.WalkSkipChildren, nil
-
-		case *ast.ThematicBreak:
-			blocks = append(blocks, c.createDividerBlock())
-			return ast.WalkContinue, nil
-		}
-
-		return ast.WalkContinue, nil
-	})
-
+	result, err := c.ConvertWithTableData()
 	if err != nil {
 		return nil, err
 	}
-
-	return blocks, nil
+	return FlattenBlockNodes(result.BlockNodes), nil
 }
 
 func (c *MarkdownToBlock) convertHeading(node *ast.Heading) (*larkdocx.Block, error) {
@@ -401,72 +342,121 @@ func (c *MarkdownToBlock) convertCodeBlock(node *ast.FencedCodeBlock) (*larkdocx
 	}, nil
 }
 
-func (c *MarkdownToBlock) convertList(node *ast.List) ([]*larkdocx.Block, error) {
-	var blocks []*larkdocx.Block
+func (c *MarkdownToBlock) convertList(node *ast.List) ([]*BlockNode, error) {
+	var nodes []*BlockNode
 	isOrdered := node.IsOrdered()
 
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		if listItem, ok := child.(*ast.ListItem); ok {
-			block, err := c.convertListItem(listItem, isOrdered)
+			bn, err := c.convertListItem(listItem, isOrdered)
 			if err != nil {
 				return nil, err
 			}
-			if block != nil {
-				blocks = append(blocks, block)
+			if bn != nil {
+				nodes = append(nodes, bn)
 			}
 		}
 	}
 
-	return blocks, nil
+	return nodes, nil
 }
 
-func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*larkdocx.Block, error) {
+func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*BlockNode, error) {
 	// Check for GFM task list checkbox
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		// Check if this is a paragraph or text block containing a TaskCheckBox
 		if para, ok := child.(*ast.Paragraph); ok {
 			if para.ChildCount() > 0 {
 				if cb, ok := para.FirstChild().(*east.TaskCheckBox); ok {
-					return c.convertGFMTaskListItem(node, cb.IsChecked)
+					block, err := c.convertGFMTaskListItem(node, cb.IsChecked)
+					if err != nil {
+						return nil, err
+					}
+					return &BlockNode{Block: block}, nil
 				}
 			}
 		}
 		if tb, ok := child.(*ast.TextBlock); ok {
 			if tb.ChildCount() > 0 {
 				if cb, ok := tb.FirstChild().(*east.TaskCheckBox); ok {
-					return c.convertGFMTaskListItem(node, cb.IsChecked)
+					block, err := c.convertGFMTaskListItem(node, cb.IsChecked)
+					if err != nil {
+						return nil, err
+					}
+					return &BlockNode{Block: block}, nil
 				}
 				// Also check for raw text pattern
 				if txt, ok := tb.FirstChild().(*ast.Text); ok {
 					text := string(txt.Segment.Value(c.source))
 					if strings.HasPrefix(text, "[ ] ") || strings.HasPrefix(text, "[x] ") || strings.HasPrefix(text, "[X] ") {
-						return c.convertTaskListItem(node, text)
+						block, err := c.convertTaskListItem(node, text)
+						if err != nil {
+							return nil, err
+						}
+						return &BlockNode{Block: block}, nil
 					}
 				}
 			}
 		}
 	}
 
-	elements := c.extractTextElements(node)
+	// 只提取直接子节点的文本（跳过嵌套的 ast.List）
+	elements := c.extractListItemDirectElements(node)
+
+	// 收集嵌套子列表
+	var children []*BlockNode
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if nestedList, ok := child.(*ast.List); ok {
+			childNodes, err := c.convertList(nestedList)
+			if err != nil {
+				return nil, err
+			}
+			children = append(children, childNodes...)
+		}
+	}
 
 	// 过滤空列表项（飞书 API 不接受空内容的列表块）
-	if len(elements) == 0 || !hasNonEmptyContent(elements) {
+	if (len(elements) == 0 || !hasNonEmptyContent(elements)) && len(children) == 0 {
 		return nil, nil
 	}
 
-	if isOrdered {
-		blockType := int(BlockTypeOrdered)
-		return &larkdocx.Block{
-			BlockType: &blockType,
-			Ordered:   &larkdocx.Text{Elements: elements},
-		}, nil
+	// 如果没有直接文本但有子列表，创建空文本的父块
+	if len(elements) == 0 || !hasNonEmptyContent(elements) {
+		empty := ""
+		elements = []*larkdocx.TextElement{{TextRun: &larkdocx.TextRun{Content: &empty}}}
 	}
 
-	blockType := int(BlockTypeBullet)
-	return &larkdocx.Block{
-		BlockType: &blockType,
-		Bullet:    &larkdocx.Text{Elements: elements},
-	}, nil
+	var block *larkdocx.Block
+	if isOrdered {
+		blockType := int(BlockTypeOrdered)
+		block = &larkdocx.Block{
+			BlockType: &blockType,
+			Ordered:   &larkdocx.Text{Elements: elements},
+		}
+	} else {
+		blockType := int(BlockTypeBullet)
+		block = &larkdocx.Block{
+			BlockType: &blockType,
+			Bullet:    &larkdocx.Text{Elements: elements},
+		}
+	}
+
+	return &BlockNode{Block: block, Children: children}, nil
+}
+
+// extractListItemDirectElements 提取 ListItem 直接子节点的文本元素，
+// 跳过嵌套的 ast.List 节点（嵌套列表作为 Children 单独处理）
+func (c *MarkdownToBlock) extractListItemDirectElements(node *ast.ListItem) []*larkdocx.TextElement {
+	var elements []*larkdocx.TextElement
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		// 跳过嵌套列表——它们会成为 BlockNode.Children
+		if _, ok := child.(*ast.List); ok {
+			continue
+		}
+		childElements := c.extractTextElements(child)
+		elements = append(elements, childElements...)
+	}
+	return elements
 }
 
 func (c *MarkdownToBlock) convertTaskListItem(node *ast.ListItem, text string) (*larkdocx.Block, error) {
@@ -585,6 +575,17 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 				elements = append(elements, createLinkElement(text, url))
 			}
 			return ast.WalkSkipChildren, nil
+
+		case *ast.AutoLink:
+			linkURL := string(child.URL(c.source))
+			label := string(child.Label(c.source))
+			if label == "" {
+				label = linkURL
+			}
+			if linkURL != "" {
+				elements = append(elements, createLinkElement(label, linkURL))
+			}
+			return ast.WalkSkipChildren, nil
 		}
 
 		return ast.WalkContinue, nil
@@ -593,7 +594,7 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 	return elements
 }
 
-func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) (*larkdocx.Block, error) {
+func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*larkdocx.Block, error) {
 	// Check for callout syntax [!TYPE]
 	var calloutType string
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
@@ -609,15 +610,133 @@ func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) (*larkdocx.Blo
 	}
 
 	if calloutType != "" {
-		return c.convertCallout(node, calloutType)
+		block, err := c.convertCallout(node, calloutType)
+		if err != nil {
+			return nil, err
+		}
+		return []*larkdocx.Block{block}, nil
 	}
 
-	elements := c.extractTextElements(node)
+	// 提取引用内容，按行拆分（处理 SoftLineBreak），每行创建一个 Quote 块
 	blockType := int(BlockTypeQuote)
-	return &larkdocx.Block{
-		BlockType: &blockType,
-		Quote:     &larkdocx.Text{Elements: elements},
-	}, nil
+	var blocks []*larkdocx.Block
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		lines := c.extractQuoteLines(child)
+		for _, line := range lines {
+			if len(line) > 0 {
+				blocks = append(blocks, &larkdocx.Block{
+					BlockType: &blockType,
+					Quote:     &larkdocx.Text{Elements: line},
+				})
+			}
+		}
+	}
+
+	// 如果没有提取到任何内容，创建一个空的 Quote 块
+	if len(blocks) == 0 {
+		blocks = append(blocks, &larkdocx.Block{
+			BlockType: &blockType,
+			Quote:     &larkdocx.Text{Elements: []*larkdocx.TextElement{}},
+		})
+	}
+
+	return blocks, nil
+}
+
+// extractQuoteLines 从 AST 节点提取文本元素，按 SoftLineBreak 拆分为多行
+// 用于引用块（blockquote），将连续 > 行正确拆分为独立的 Quote 块
+func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextElement {
+	var lines [][]*larkdocx.TextElement
+	var currentLine []*larkdocx.TextElement
+
+	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
+		if !entering {
+			return ast.WalkContinue, nil
+		}
+
+		switch child := n.(type) {
+		case *ast.Text:
+			text := string(child.Segment.Value(c.source))
+			if text != "" {
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &text},
+				})
+			}
+			if child.SoftLineBreak() {
+				if len(currentLine) > 0 {
+					lines = append(lines, currentLine)
+					currentLine = nil
+				}
+			}
+
+		case *ast.String:
+			text := string(child.Value)
+			if text != "" {
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &text},
+				})
+			}
+
+		case *ast.Emphasis:
+			childElems := c.extractChildElements(child)
+			bold := child.Level == 2
+			italic := child.Level == 1
+			for _, elem := range childElems {
+				applyTextStyle(elem, bold, italic, false)
+				currentLine = append(currentLine, elem)
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.CodeSpan:
+			text := c.getNodeText(child)
+			if text != "" {
+				inlineCode := true
+				currentLine = append(currentLine, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{
+						Content:          &text,
+						TextElementStyle: &larkdocx.TextElementStyle{InlineCode: &inlineCode},
+					},
+				})
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *east.Strikethrough:
+			childElems := c.extractChildElements(child)
+			for _, elem := range childElems {
+				applyTextStyle(elem, false, false, true)
+				currentLine = append(currentLine, elem)
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.Link:
+			text := c.getNodeText(child)
+			url := string(child.Destination)
+			if text != "" {
+				currentLine = append(currentLine, createLinkElement(text, url))
+			}
+			return ast.WalkSkipChildren, nil
+
+		case *ast.AutoLink:
+			linkURL := string(child.URL(c.source))
+			label := string(child.Label(c.source))
+			if label == "" {
+				label = linkURL
+			}
+			if linkURL != "" {
+				currentLine = append(currentLine, createLinkElement(label, linkURL))
+			}
+			return ast.WalkSkipChildren, nil
+		}
+
+		return ast.WalkContinue, nil
+	})
+
+	// 添加最后一行
+	if len(currentLine) > 0 {
+		lines = append(lines, currentLine)
+	}
+
+	return lines
 }
 
 func (c *MarkdownToBlock) convertCallout(node *ast.Blockquote, calloutType string) (*larkdocx.Block, error) {
@@ -648,16 +767,10 @@ func (c *MarkdownToBlock) convertCallout(node *ast.Blockquote, calloutType strin
 func (c *MarkdownToBlock) convertImage(node *ast.Image) (*larkdocx.Block, error) {
 	dest := string(node.Destination)
 
-	// Check if it's a feishu media reference
+	// feishu://media/ 是飞书内部媒体引用，token 绑定源文档不可跨文档复用。
+	// 导出时应使用 --download-images 下载实际文件，导入时自动上传。
 	if strings.HasPrefix(dest, "feishu://media/") {
-		token := strings.TrimPrefix(dest, "feishu://media/")
-		blockType := int(BlockTypeImage)
-		return &larkdocx.Block{
-			BlockType: &blockType,
-			Image: &larkdocx.Image{
-				Token: &token,
-			},
-		}, nil
+		return c.createImagePlaceholder(dest), nil
 	}
 
 	// Handle local file
@@ -750,7 +863,7 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 	var cols int
 	var headerContents []string
 	var headerElements [][]*larkdocx.TextElement
-	var dataRows [][]string                    // 纯文本，用于列宽计算
+	var dataRows [][]string                         // 纯文本，用于列宽计算
 	var dataRowElements [][][]*larkdocx.TextElement // 富文本元素，保留链接等样式
 	hasHeader := false
 
@@ -953,6 +1066,17 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 				elements = append(elements, createLinkElement(text, url))
 			}
 			return ast.WalkSkipChildren, nil
+
+		case *ast.AutoLink:
+			linkURL := string(child.URL(c.source))
+			label := string(child.Label(c.source))
+			if label == "" {
+				label = linkURL
+			}
+			if linkURL != "" {
+				elements = append(elements, createLinkElement(label, linkURL))
+			}
+			return ast.WalkSkipChildren, nil
 		}
 
 		return ast.WalkContinue, nil
@@ -978,6 +1102,17 @@ func (c *MarkdownToBlock) getNodeTextWithDepth(node ast.Node, depth int) string 
 			buf.Write(n.Segment.Value(c.source))
 		case *ast.String:
 			buf.Write(n.Value)
+		case *ast.RawHTML:
+			// 处理 <br> 标签为换行符
+			var htmlBuf bytes.Buffer
+			for i := 0; i < n.Segments.Len(); i++ {
+				seg := n.Segments.At(i)
+				htmlBuf.Write(c.source[seg.Start:seg.Stop])
+			}
+			raw := strings.TrimSpace(strings.ToLower(htmlBuf.String()))
+			if raw == "<br>" || raw == "<br/>" || raw == "<br />" {
+				buf.WriteString("\n")
+			}
 		default:
 			buf.WriteString(c.getNodeTextWithDepth(child, depth+1))
 		}
@@ -1036,6 +1171,29 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 				applyTextStyle(elem, false, false, true)
 				elements = append(elements, elem)
 			}
+		case *ast.AutoLink:
+			linkURL := string(n.URL(c.source))
+			label := string(n.Label(c.source))
+			if label == "" {
+				label = linkURL
+			}
+			if linkURL != "" {
+				elements = append(elements, createLinkElement(label, linkURL))
+			}
+		case *ast.RawHTML:
+			// 处理 <br> 标签，转换为换行符（用于表格单元格多行内容）
+			var htmlBuf bytes.Buffer
+			for i := 0; i < n.Segments.Len(); i++ {
+				seg := n.Segments.At(i)
+				htmlBuf.Write(c.source[seg.Start:seg.Stop])
+			}
+			raw := strings.TrimSpace(strings.ToLower(htmlBuf.String()))
+			if raw == "<br>" || raw == "<br/>" || raw == "<br />" {
+				newline := "\n"
+				elements = append(elements, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &newline},
+				})
+			}
 		default:
 			// 未知内联节点，递归提取子元素
 			childElems := c.extractChildElements(child)
@@ -1065,15 +1223,38 @@ func applyTextStyle(elem *larkdocx.TextElement, bold, italic, strikethrough bool
 	}
 }
 
-// isValidLinkURL 检查 URL 是否为飞书 API 支持的链接格式
-// 飞书 API 不接受相对路径、锚点链接等非 HTTP(S) URL
-func isValidLinkURL(url string) bool {
-	return strings.HasPrefix(url, "http://") || strings.HasPrefix(url, "https://")
+// normalizeURL 尝试标准化 URL
+// 1. 将 feishu:// 内部协议转换为 https:// 链接（API 不接受 feishu:// 协议）
+// 2. 解码 URL 编码的链接，例如 "https%3A%2F%2Fexample.com" → "https://example.com"
+func normalizeURL(rawURL string) string {
+	// feishu:// 内部协议转换为 HTTPS 链接
+	if strings.HasPrefix(rawURL, "feishu://doc/") {
+		return "https://feishu.cn/docx/" + strings.TrimPrefix(rawURL, "feishu://doc/")
+	}
+	if strings.HasPrefix(rawURL, "feishu://wiki/") {
+		return "https://feishu.cn/wiki/" + strings.TrimPrefix(rawURL, "feishu://wiki/")
+	}
+	if strings.HasPrefix(rawURL, "feishu://") {
+		// 其他 feishu:// 链接，尝试通用转换
+		return "https://feishu.cn/" + strings.TrimPrefix(rawURL, "feishu://")
+	}
+
+	// URL 解码
+	if decoded, err := url.QueryUnescape(rawURL); err == nil && decoded != rawURL {
+		return decoded
+	}
+	return rawURL
 }
 
-// createLinkElement 创建链接 TextElement，自动过滤无效 URL
-func createLinkElement(text, url string) *larkdocx.TextElement {
-	if !isValidLinkURL(url) {
+// hasValidURLPrefix 检查 URL 是否以支持的协议开头
+func hasValidURLPrefix(u string) bool {
+	return strings.HasPrefix(u, "http://") || strings.HasPrefix(u, "https://")
+}
+
+// createLinkElement 创建链接 TextElement，自动过滤无效 URL 并解码 URL 编码的链接
+func createLinkElement(text, rawURL string) *larkdocx.TextElement {
+	u := normalizeURL(rawURL)
+	if !hasValidURLPrefix(u) {
 		return &larkdocx.TextElement{
 			TextRun: &larkdocx.TextRun{Content: &text},
 		}
@@ -1082,7 +1263,7 @@ func createLinkElement(text, url string) *larkdocx.TextElement {
 		TextRun: &larkdocx.TextRun{
 			Content: &text,
 			TextElementStyle: &larkdocx.TextElementStyle{
-				Link: &larkdocx.Link{Url: &url},
+				Link: &larkdocx.Link{Url: &u},
 			},
 		},
 	}

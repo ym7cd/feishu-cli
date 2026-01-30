@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -78,13 +77,14 @@ var addBoardCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			result := map[string]interface{}{
+			result := map[string]any{
 				"block_id":      boardBlockID,
 				"whiteboard_id": whiteboardID,
 				"document_id":   documentID,
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("画板添加成功！\n")
 			fmt.Printf("  块 ID: %s\n", boardBlockID)

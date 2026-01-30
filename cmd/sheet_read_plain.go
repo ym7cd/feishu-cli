@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -33,7 +32,7 @@ var sheetReadPlainCmd = &cobra.Command{
 		spreadsheetToken := args[0]
 		sheetID := args[1]
 		ranges := args[2:]
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		// 处理 shell 转义
 		for i := range ranges {
@@ -45,9 +44,10 @@ var sheetReadPlainCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			for _, cellRange := range result {
 				fmt.Printf("范围: %s\n", cellRange.Range)

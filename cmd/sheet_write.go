@@ -31,7 +31,7 @@ var sheetWriteCmd = &cobra.Command{
 		sheetID, _ := cmd.Flags().GetString("sheet-id")
 		dataStr, _ := cmd.Flags().GetString("data")
 		dataFile, _ := cmd.Flags().GetString("data-file")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		// 处理 shell 转义
 		rangeStr = unescapeSheetRange(rangeStr)
@@ -56,7 +56,7 @@ var sheetWriteCmd = &cobra.Command{
 		}
 
 		// 解析 JSON 数据
-		var values [][]interface{}
+		var values [][]any
 		if err := json.Unmarshal([]byte(jsonData), &values); err != nil {
 			return fmt.Errorf("解析数据失败（需要 JSON 二维数组）: %w", err)
 		}
@@ -66,9 +66,10 @@ var sheetWriteCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("写入成功！\n")
 			fmt.Printf("  更新范围: %s\n", result.Range)

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -45,8 +44,9 @@ var listWikiSpacesCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(spaces, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(spaces); err != nil {
+				return err
+			}
 		} else {
 			if len(spaces) == 0 {
 				fmt.Println("未找到知识空间（可能没有访问权限）")

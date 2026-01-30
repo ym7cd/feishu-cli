@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"regexp"
 
@@ -59,8 +58,9 @@ URL 格式示例:
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(node, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(node); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("知识库节点信息:\n")
 			fmt.Printf("  空间 ID:     %s\n", node.SpaceID)

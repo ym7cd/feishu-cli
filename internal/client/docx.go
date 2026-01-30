@@ -9,6 +9,13 @@ import (
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
 
+// 块类型常量（避免魔术数字）
+const (
+	blockTypeText   = 2
+	blockTypeBullet = 12
+	blockTypeBoard  = 43
+)
+
 // CreateDocument creates a new document
 func CreateDocument(title string, folderToken string) (*larkdocx.Document, error) {
 	client, err := GetClient()
@@ -25,11 +32,11 @@ func CreateDocument(title string, folderToken string) (*larkdocx.Document, error
 
 	resp, err := client.Docx.Document.Create(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create document: %w", err)
+		return nil, fmt.Errorf("创建文档失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, fmt.Errorf("failed to create document: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("创建文档失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return resp.Data.Document, nil
@@ -48,11 +55,11 @@ func GetDocument(documentID string) (*larkdocx.Document, error) {
 
 	resp, err := client.Docx.Document.Get(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get document: %w", err)
+		return nil, fmt.Errorf("获取文档失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, fmt.Errorf("failed to get document: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("获取文档失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return resp.Data.Document, nil
@@ -71,11 +78,11 @@ func GetRawContent(documentID string) (string, error) {
 
 	resp, err := client.Docx.Document.RawContent(Context(), req)
 	if err != nil {
-		return "", fmt.Errorf("failed to get raw content: %w", err)
+		return "", fmt.Errorf("获取原始内容失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return "", fmt.Errorf("failed to get raw content: code=%d, msg=%s", resp.Code, resp.Msg)
+		return "", fmt.Errorf("获取原始内容失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	if resp.Data.Content == nil {
@@ -102,17 +109,14 @@ func ListBlocks(documentID string, pageToken string, pageSize int) ([]*larkdocx.
 
 	resp, err := client.Docx.DocumentBlock.List(Context(), reqBuilder.Build())
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to list blocks: %w", err)
+		return nil, "", fmt.Errorf("获取块列表失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, "", fmt.Errorf("failed to list blocks: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, "", fmt.Errorf("获取块列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
-	nextPageToken := ""
-	if resp.Data.PageToken != nil {
-		nextPageToken = *resp.Data.PageToken
-	}
+	nextPageToken := StringVal(resp.Data.PageToken)
 
 	return resp.Data.Items, nextPageToken, nil
 }
@@ -160,11 +164,11 @@ func GetBlock(documentID string, blockID string) (*larkdocx.Block, error) {
 
 	resp, err := client.Docx.DocumentBlock.Get(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get block: %w", err)
+		return nil, fmt.Errorf("获取块失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, fmt.Errorf("failed to get block: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("获取块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return resp.Data.Block, nil
@@ -189,18 +193,18 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 
 	resp, err := client.Docx.DocumentBlockChildren.Create(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create block: %w", err)
+		return nil, fmt.Errorf("创建块失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, fmt.Errorf("failed to create block: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("创建块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return resp.Data.Children, nil
 }
 
 // UpdateBlock updates an existing block
-func UpdateBlock(documentID string, blockID string, updateContent interface{}) error {
+func UpdateBlock(documentID string, blockID string, updateContent any) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -209,12 +213,12 @@ func UpdateBlock(documentID string, blockID string, updateContent interface{}) e
 	// The updateContent should be marshaled to the appropriate update request body
 	contentBytes, err := json.Marshal(updateContent)
 	if err != nil {
-		return fmt.Errorf("failed to marshal update content: %w", err)
+		return fmt.Errorf("序列化更新内容失败: %w", err)
 	}
 
 	var updateBody larkdocx.UpdateBlockRequest
 	if err := json.Unmarshal(contentBytes, &updateBody); err != nil {
-		return fmt.Errorf("failed to unmarshal update content: %w", err)
+		return fmt.Errorf("反序列化更新内容失败: %w", err)
 	}
 
 	req := larkdocx.NewPatchDocumentBlockReqBuilder().
@@ -226,11 +230,11 @@ func UpdateBlock(documentID string, blockID string, updateContent interface{}) e
 
 	resp, err := client.Docx.DocumentBlock.Patch(Context(), req)
 	if err != nil {
-		return fmt.Errorf("failed to update block: %w", err)
+		return fmt.Errorf("更新块失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("failed to update block: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("更新块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return nil
@@ -256,11 +260,11 @@ func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex in
 
 	resp, err := client.Docx.DocumentBlockChildren.BatchDelete(Context(), req)
 	if err != nil {
-		return fmt.Errorf("failed to delete blocks: %w", err)
+		return fmt.Errorf("删除块失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return fmt.Errorf("failed to delete blocks: code=%d, msg=%s", resp.Code, resp.Msg)
+		return fmt.Errorf("删除块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return nil
@@ -323,13 +327,11 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 
 	result := &BatchUpdateBlocksResult{}
 	for _, block := range resp.Data.Blocks {
-		if block.BlockId != nil {
-			result.BlockIDs = append(result.BlockIDs, *block.BlockId)
+		if id := StringVal(block.BlockId); id != "" {
+			result.BlockIDs = append(result.BlockIDs, id)
 		}
 	}
-	if resp.Data.DocumentRevisionId != nil {
-		result.DocumentRevision = *resp.Data.DocumentRevisionId
-	}
+	result.DocumentRevision = IntVal(resp.Data.DocumentRevisionId)
 
 	return result, nil
 }
@@ -348,11 +350,11 @@ func GetBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, err
 
 	resp, err := client.Docx.DocumentBlockChildren.Get(Context(), req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get block children: %w", err)
+		return nil, fmt.Errorf("获取子块失败: %w", err)
 	}
 
 	if !resp.Success() {
-		return nil, fmt.Errorf("failed to get block children: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, fmt.Errorf("获取子块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	return resp.Data.Items, nil
@@ -392,13 +394,14 @@ func GetAllBlockChildren(documentID string, blockID string) ([]*larkdocx.Block, 
 
 		allChildren = append(allChildren, resp.Data.Items...)
 
-		if resp.Data.HasMore == nil || !*resp.Data.HasMore {
+		if !BoolVal(resp.Data.HasMore) {
 			break
 		}
-		if resp.Data.PageToken == nil || *resp.Data.PageToken == "" {
+		if next := StringVal(resp.Data.PageToken); next == "" {
 			break
+		} else {
+			pageToken = next
 		}
-		pageToken = *resp.Data.PageToken
 	}
 
 	return allChildren, nil
@@ -416,8 +419,8 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 		parentID = documentID
 	}
 
-	// 构建画板块 (block_type = 43)
-	blockType := 43 // Board
+	// 构建画板块
+	blockType := blockTypeBoard
 	boardBlock := &larkdocx.Block{
 		BlockType: &blockType,
 		Board:     &larkdocx.Board{},
@@ -433,18 +436,17 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, e
 		return nil, fmt.Errorf("创建画板块失败：未返回块信息")
 	}
 
-	result := &AddBoardResult{}
-	if createdBlocks[0].BlockId != nil {
-		result.BlockID = *createdBlocks[0].BlockId
+	result := &AddBoardResult{
+		BlockID: StringVal(createdBlocks[0].BlockId),
 	}
-	if createdBlocks[0].Board != nil && createdBlocks[0].Board.Token != nil {
-		result.WhiteboardID = *createdBlocks[0].Board.Token
+	if createdBlocks[0].Board != nil {
+		result.WhiteboardID = StringVal(createdBlocks[0].Board.Token)
 	}
 
 	return result, nil
 }
 
-// FillTableCells fills table cells with content by updating existing text blocks or creating new ones
+// FillTableCells fills table cells with plain text content.
 // cellIDs: cell block IDs from the created table
 // contents: cell content strings (in row-major order)
 // Note: Feishu API automatically creates an empty text block in each cell when creating a table,
@@ -454,98 +456,20 @@ func FillTableCells(documentID string, cellIDs []string, contents []string) erro
 		return nil
 	}
 
-	for i, cellID := range cellIDs {
-		if i >= len(contents) {
-			break
-		}
-		content := contents[i]
-		if content == "" {
-			continue
-		}
+	cellCount := min(len(cellIDs), len(contents))
 
-		var err error
-		maxRetries := 3
-
-		// Get existing children of the cell (Feishu auto-creates an empty text block)
-		children, childErr := GetBlockChildren(documentID, cellID)
-		if childErr == nil && len(children) > 0 {
-			// Update the first existing text block instead of creating a new one
-			existingBlockID := ""
-			if children[0].BlockId != nil {
-				existingBlockID = *children[0].BlockId
+	// 构建每个单元格的元素
+	cellElements := make([][]*larkdocx.TextElement, cellCount)
+	for i := 0; i < cellCount; i++ {
+		if contents[i] != "" {
+			content := contents[i]
+			cellElements[i] = []*larkdocx.TextElement{
+				{TextRun: &larkdocx.TextRun{Content: &content}},
 			}
-
-			if existingBlockID != "" {
-				// Update the existing text block
-				updateContent := map[string]interface{}{
-					"update_text_elements": map[string]interface{}{
-						"elements": []map[string]interface{}{
-							{
-								"text_run": map[string]interface{}{
-									"content": content,
-								},
-							},
-						},
-					},
-				}
-
-				for attempt := 0; attempt < maxRetries; attempt++ {
-					err = UpdateBlock(documentID, existingBlockID, updateContent)
-					if err == nil {
-						break
-					}
-					if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
-						sleepTime := time.Duration(1<<attempt) * time.Second
-						time.Sleep(sleepTime)
-						continue
-					}
-					break
-				}
-				if err == nil {
-					continue
-				}
-				// If update failed, fall through to create new block
-			}
-		}
-
-		// Create a new text block if no existing block to update
-		blockType := 2 // Text block
-		textBlock := &larkdocx.Block{
-			BlockType: &blockType,
-			Text: &larkdocx.Text{
-				Elements: []*larkdocx.TextElement{
-					{
-						TextRun: &larkdocx.TextRun{
-							Content: &content,
-						},
-					},
-				},
-			},
-		}
-
-		for attempt := 0; attempt < maxRetries; attempt++ {
-			_, err = CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
-			if err == nil {
-				break
-			}
-			if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
-				sleepTime := time.Duration(1<<attempt) * time.Second
-				time.Sleep(sleepTime)
-				continue
-			}
-			break
-		}
-		if err != nil {
-			return fmt.Errorf("填充单元格 %d 失败: %w", i, err)
-		}
-
-		// 每 5 个单元格短暂暂停，避免触发频率限制
-		if i%5 == 4 {
-			time.Sleep(200 * time.Millisecond)
 		}
 	}
 
-	return nil
+	return fillTableCellsInternal(documentID, cellIDs[:cellCount], cellElements)
 }
 
 // FillTableCellsRich fills table cells with rich text elements (preserving links, styles, etc.)
@@ -557,112 +481,309 @@ func FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*l
 		return nil
 	}
 
+	// 合并 elements 和 fallback
+	merged := make([][]*larkdocx.TextElement, len(cellIDs))
+	for i := range cellIDs {
+		if i < len(cellElements) && len(cellElements[i]) > 0 {
+			merged[i] = cellElements[i]
+		} else if i < len(fallbackContents) && fallbackContents[i] != "" {
+			content := fallbackContents[i]
+			merged[i] = []*larkdocx.TextElement{
+				{TextRun: &larkdocx.TextRun{Content: &content}},
+			}
+		}
+	}
+
+	return fillTableCellsInternal(documentID, cellIDs, merged)
+}
+
+// fillTableCellsInternal 是 FillTableCells 和 FillTableCellsRich 的统一实现
+func fillTableCellsInternal(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement) error {
+	const maxRetries = 5
+
 	for i, cellID := range cellIDs {
-		// 确定本单元格的 elements
 		var elements []*larkdocx.TextElement
 		if i < len(cellElements) {
 			elements = cellElements[i]
 		}
-
-		// 如果没有富文本元素，使用纯文本回退
 		if len(elements) == 0 {
-			if i < len(fallbackContents) && fallbackContents[i] != "" {
-				content := fallbackContents[i]
-				elements = []*larkdocx.TextElement{
-					{TextRun: &larkdocx.TextRun{Content: &content}},
-				}
-			} else {
-				continue // 空单元格跳过
-			}
+			continue
 		}
+
+		groups := splitCellElements(elements)
 
 		var err error
-		maxRetries := 3
-
-		// Get existing children of the cell (Feishu auto-creates an empty text block)
-		children, childErr := GetBlockChildren(documentID, cellID)
-		if childErr == nil && len(children) > 0 {
-			existingBlockID := ""
-			if children[0].BlockId != nil {
-				existingBlockID = *children[0].BlockId
-			}
-
-			if existingBlockID != "" {
-				// 构建 elements JSON
-				elementsJSON := buildElementsJSON(elements)
-				updateContent := map[string]interface{}{
-					"update_text_elements": map[string]interface{}{
-						"elements": elementsJSON,
-					},
-				}
-
-				for attempt := 0; attempt < maxRetries; attempt++ {
-					err = UpdateBlock(documentID, existingBlockID, updateContent)
-					if err == nil {
-						break
-					}
-					if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
-						sleepTime := time.Duration(1<<attempt) * time.Second
-						time.Sleep(sleepTime)
-						continue
-					}
-					break
-				}
-				if err == nil {
-					if i%5 == 4 {
-						time.Sleep(200 * time.Millisecond)
-					}
-					continue
-				}
-				// If update failed, fall through to create new block
-			}
-		}
-
-		// Create a new text block if no existing block to update
-		blockType := 2 // Text block
-		textBlock := &larkdocx.Block{
-			BlockType: &blockType,
-			Text:      &larkdocx.Text{Elements: elements},
-		}
-
-		for attempt := 0; attempt < maxRetries; attempt++ {
-			_, err = CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
-			if err == nil {
-				break
-			}
-			if strings.Contains(err.Error(), "429") || strings.Contains(err.Error(), "rate") {
-				sleepTime := time.Duration(1<<attempt) * time.Second
-				time.Sleep(sleepTime)
-				continue
-			}
-			break
+		if len(groups) > 1 {
+			// 多块：删除已有空块后创建多个正确类型的块（支持标题、列表等）
+			err = fillCellMultiBlocks(documentID, cellID, groups, maxRetries)
+		} else {
+			// 单块：更新已有空块（飞书创建表格时自动生成）
+			err = fillCellSingleBlock(documentID, cellID, elements, maxRetries)
 		}
 		if err != nil {
 			return fmt.Errorf("填充单元格 %d 失败: %w", i, err)
 		}
 
-		if i%5 == 4 {
-			time.Sleep(200 * time.Millisecond)
-		}
+		throttlePer5(i)
 	}
 
 	return nil
 }
 
+// fillCellSingleBlock 用单个文本块填充单元格（优先更新已有空块）
+func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextElement, maxRetries int) error {
+	// 尝试更新已有子块（飞书创建表格时自动生成空文本块）
+	children, childErr := GetBlockChildren(documentID, cellID)
+	if childErr == nil && len(children) > 0 {
+		existingBlockID := StringVal(children[0].BlockId)
+		if existingBlockID != "" {
+			updateContent := buildCellUpdateContent(elements)
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				err := UpdateBlock(documentID, existingBlockID, updateContent)
+				if err == nil {
+					return nil
+				}
+				if IsRateLimitError(err) {
+					time.Sleep(time.Duration(2+attempt*2) * time.Second)
+					continue
+				}
+				break
+			}
+		}
+	}
+
+	// 降级：创建新文本块
+	blockType := blockTypeText
+	textBlock := &larkdocx.Block{
+		BlockType: &blockType,
+		Text:      &larkdocx.Text{Elements: elements},
+	}
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, 0)
+		if err == nil {
+			return nil
+		}
+		if IsRateLimitError(err) {
+			time.Sleep(time.Duration(2+attempt*2) * time.Second)
+			continue
+		}
+		return err
+	}
+	return fmt.Errorf("rate limit: 填充单元格重试 %d 次后仍失败", maxRetries)
+}
+
+// fillCellMultiBlocks 用多个块填充单元格（支持 bullet/heading/text 混合）
+func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, maxRetries int) error {
+	// 获取飞书自动创建的空文本块，更新其内容以避免留下空块
+	startIdx := 0
+	children, childErr := GetBlockChildren(documentID, cellID)
+	if childErr == nil && len(children) > 0 && len(groups) > 0 && len(groups[0].elements) > 0 {
+		existingBlockID := StringVal(children[0].BlockId)
+		if existingBlockID != "" {
+			updateContent := buildCellUpdateContent(groups[0].elements)
+			for attempt := 0; attempt < maxRetries; attempt++ {
+				err := UpdateBlock(documentID, existingBlockID, updateContent)
+				if err == nil {
+					startIdx = 1 // 第一组已通过更新处理
+					break
+				}
+				if IsRateLimitError(err) {
+					time.Sleep(time.Duration(2+attempt*2) * time.Second)
+					continue
+				}
+				break
+			}
+		}
+	}
+
+	// 创建剩余的块（使用正确的块类型）
+	for j := startIdx; j < len(groups); j++ {
+		group := groups[j]
+		if len(group.elements) == 0 {
+			continue
+		}
+		block := buildCellBlock(group)
+		created := false
+		for attempt := 0; attempt < maxRetries; attempt++ {
+			_, err := CreateBlock(documentID, cellID, []*larkdocx.Block{block}, -1)
+			if err == nil {
+				created = true
+				break
+			}
+			if IsRateLimitError(err) {
+				time.Sleep(time.Duration(2+attempt*2) * time.Second)
+				continue
+			}
+			return err
+		}
+		if !created {
+			return fmt.Errorf("rate limit: 创建单元格块重试 %d 次后仍失败", maxRetries)
+		}
+	}
+	return nil
+}
+
+// cellBlockGroup 表示表格单元格内的一个逻辑块
+type cellBlockGroup struct {
+	blockType int
+	elements  []*larkdocx.TextElement
+}
+
+// splitCellElements 将 TextElement 按 \n 分隔符拆分为多个块组，
+// 并根据内容前缀分类块类型（text/bullet/heading）
+func splitCellElements(elements []*larkdocx.TextElement) []cellBlockGroup {
+	// 快速检查是否包含 \n 分隔符
+	hasNewline := false
+	for _, elem := range elements {
+		if elem != nil && elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content == "\n" {
+			hasNewline = true
+			break
+		}
+	}
+	if !hasNewline {
+		return []cellBlockGroup{{blockType: blockTypeText, elements: elements}}
+	}
+
+	var groups []cellBlockGroup
+	var current []*larkdocx.TextElement
+
+	for _, elem := range elements {
+		if elem != nil && elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content == "\n" {
+			if len(current) > 0 {
+				groups = append(groups, classifyCellGroup(current))
+				current = nil
+			}
+			continue
+		}
+		current = append(current, elem)
+	}
+	if len(current) > 0 {
+		groups = append(groups, classifyCellGroup(current))
+	}
+
+	if len(groups) == 0 {
+		return []cellBlockGroup{{blockType: blockTypeText, elements: elements}}
+	}
+	return groups
+}
+
+// classifyCellGroup 根据第一个元素的内容前缀判断块类型
+func classifyCellGroup(elements []*larkdocx.TextElement) cellBlockGroup {
+	if len(elements) == 0 {
+		return cellBlockGroup{blockType: blockTypeText, elements: elements}
+	}
+	first := elements[0]
+	if first == nil || first.TextRun == nil || first.TextRun.Content == nil {
+		return cellBlockGroup{blockType: blockTypeText, elements: elements}
+	}
+
+	content := *first.TextRun.Content
+
+	// 无序列表 "- "
+	if strings.HasPrefix(content, "- ") {
+		trimmed := strings.TrimPrefix(content, "- ")
+		newFirst := cloneTextElement(first)
+		*newFirst.TextRun.Content = trimmed
+		return cellBlockGroup{blockType: blockTypeBullet, elements: append([]*larkdocx.TextElement{newFirst}, elements[1:]...)}
+	}
+
+	// 标题 "### " 等（heading1=3, heading2=4, ..., heading6=8）
+	for level := 6; level >= 1; level-- {
+		prefix := strings.Repeat("#", level) + " "
+		if strings.HasPrefix(content, prefix) {
+			trimmed := strings.TrimPrefix(content, prefix)
+			newFirst := cloneTextElement(first)
+			*newFirst.TextRun.Content = trimmed
+			return cellBlockGroup{blockType: 2 + level, elements: append([]*larkdocx.TextElement{newFirst}, elements[1:]...)}
+		}
+	}
+
+	return cellBlockGroup{blockType: blockTypeText, elements: elements}
+}
+
+// cloneTextElement 浅拷贝 TextElement，避免修改原始数据
+func cloneTextElement(elem *larkdocx.TextElement) *larkdocx.TextElement {
+	if elem == nil {
+		return nil
+	}
+	clone := *elem
+	if elem.TextRun != nil {
+		tr := *elem.TextRun
+		if elem.TextRun.Content != nil {
+			content := *elem.TextRun.Content
+			tr.Content = &content
+		}
+		clone.TextRun = &tr
+	}
+	return &clone
+}
+
+// buildCellBlock 根据块类型和元素构建飞书块
+func buildCellBlock(group cellBlockGroup) *larkdocx.Block {
+	bt := group.blockType
+	text := &larkdocx.Text{Elements: group.elements}
+	block := &larkdocx.Block{BlockType: &bt}
+
+	switch bt {
+	case 3:
+		block.Heading1 = text
+	case 4:
+		block.Heading2 = text
+	case 5:
+		block.Heading3 = text
+	case 6:
+		block.Heading4 = text
+	case 7:
+		block.Heading5 = text
+	case 8:
+		block.Heading6 = text
+	case 9:
+		block.Heading7 = text
+	case 10:
+		block.Heading8 = text
+	case 11:
+		block.Heading9 = text
+	case 12:
+		block.Bullet = text
+	case 13:
+		block.Ordered = text
+	default:
+		block.Text = text
+	}
+
+	return block
+}
+
+// buildCellUpdateContent 构建单元格更新请求
+func buildCellUpdateContent(elements []*larkdocx.TextElement) map[string]any {
+	return map[string]any{
+		"update_text_elements": map[string]any{
+			"elements": buildElementsJSON(elements),
+		},
+	}
+}
+
+// throttlePer3 每 3 个单元格暂停 500ms，避免触发频率限制
+func throttlePer5(index int) {
+	if index%3 == 2 {
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
 // buildElementsJSON 将 TextElement 转换为 UpdateBlock API 所需的 JSON 格式
-func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]interface{} {
-	var result []map[string]interface{}
+func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]any {
+	var result []map[string]any
 	for _, elem := range elements {
 		if elem == nil || elem.TextRun == nil || elem.TextRun.Content == nil {
 			continue
 		}
 
-		textRunMap := map[string]interface{}{
+		textRunMap := map[string]any{
 			"content": *elem.TextRun.Content,
 		}
 
 		if style := elem.TextRun.TextElementStyle; style != nil {
-			styleMap := map[string]interface{}{}
+			styleMap := map[string]any{}
 			if style.Bold != nil && *style.Bold {
 				styleMap["bold"] = true
 			}
@@ -679,7 +800,7 @@ func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]interface{
 				styleMap["inline_code"] = true
 			}
 			if style.Link != nil && style.Link.Url != nil {
-				styleMap["link"] = map[string]interface{}{
+				styleMap["link"] = map[string]any{
 					"url": *style.Link.Url,
 				}
 			}
@@ -688,7 +809,7 @@ func buildElementsJSON(elements []*larkdocx.TextElement) []map[string]interface{
 			}
 		}
 
-		result = append(result, map[string]interface{}{
+		result = append(result, map[string]any{
 			"text_run": textRunMap,
 		})
 	}

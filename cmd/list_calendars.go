@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -53,15 +52,16 @@ var listCalendarsCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			result := map[string]interface{}{
+			result := map[string]any{
 				"calendars": calendars,
 				"has_more":  hasMore,
 			}
 			if nextToken != "" {
 				result["page_token"] = nextToken
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			if len(calendars) == 0 {
 				fmt.Println("未找到日历（可能没有访问权限）")

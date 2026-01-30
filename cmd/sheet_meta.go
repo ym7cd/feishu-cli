@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -20,19 +19,20 @@ var sheetMetaCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		spreadsheetToken := args[0]
 		extFields, _ := cmd.Flags().GetString("ext-fields")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		meta, err := client.GetSpreadsheetMeta(client.Context(), spreadsheetToken, extFields)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(meta, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(meta); err != nil {
+				return err
+			}
 		} else {
 			// 解析并显示主要信息
-			if properties, ok := meta["properties"].(map[string]interface{}); ok {
+			if properties, ok := meta["properties"].(map[string]any); ok {
 				fmt.Printf("电子表格属性:\n")
 				if title, ok := properties["title"].(string); ok {
 					fmt.Printf("  标题: %s\n", title)
@@ -48,10 +48,10 @@ var sheetMetaCmd = &cobra.Command{
 				}
 			}
 
-			if sheets, ok := meta["sheets"].([]interface{}); ok {
+			if sheets, ok := meta["sheets"].([]any); ok {
 				fmt.Printf("\n工作表列表:\n")
 				for i, s := range sheets {
-					if sheet, ok := s.(map[string]interface{}); ok {
+					if sheet, ok := s.(map[string]any); ok {
 						title := sheet["title"]
 						sheetID := sheet["sheetId"]
 						fmt.Printf("  %d. %v (ID: %v)\n", i+1, title, sheetID)

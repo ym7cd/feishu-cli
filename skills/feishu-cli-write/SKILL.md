@@ -71,8 +71,8 @@ allowed-tools: Bash, Write, Read
 |------|-----------|------|
 | `# 标题` | Heading1-6 | |
 | `普通文本` | Text | |
-| `- 列表项` | Bullet | |
-| `1. 有序项` | Ordered | |
+| `- 列表项` | Bullet | 支持缩进嵌套 |
+| `1. 有序项` | Ordered | 支持缩进嵌套 |
 | `- [ ] 任务` | Todo | |
 | `` ```code``` `` | Code | |
 | `` ```mermaid``` `` | **Board（画板）** | **推荐使用** |
@@ -116,6 +116,7 @@ Bob --> Alice: Hi
 - ✅ erDiagram（ER 图）
 - ✅ gantt（甘特图）
 - ✅ pie（饼图）
+- ✅ mindmap（思维导图）
 
 **Mermaid 注意事项**：
 - 避免在节点标签中使用 `{}` 花括号（如 `{version}`），会触发解析错误

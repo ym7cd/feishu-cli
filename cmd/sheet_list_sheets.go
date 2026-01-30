@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -15,16 +14,17 @@ var sheetListSheetsCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		spreadsheetToken := args[0]
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		sheets, err := client.QuerySheets(client.Context(), spreadsheetToken)
 		if err != nil {
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(sheets, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(sheets); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("共 %d 个工作表:\n", len(sheets))
 			for i, s := range sheets {

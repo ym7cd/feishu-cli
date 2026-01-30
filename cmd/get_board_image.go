@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -52,8 +51,9 @@ var getBoardImageCmd = &cobra.Command{
 				"output_path":   outputPath,
 				"status":        "success",
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("画板图片下载成功！\n")
 			fmt.Printf("  画板 ID: %s\n", whiteboardID)

@@ -133,10 +133,11 @@ var addContentCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(createdBlocks, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(createdBlocks); err != nil {
+				return err
+			}
 		} else {
-			fmt.Printf("成功添加 %d 个块!\n", len(createdBlocks))
+			fmt.Printf("成功添加 %d 个块！\n", len(createdBlocks))
 			for i, block := range createdBlocks {
 				if block.BlockId != nil {
 					fmt.Printf("  [%d] 块ID: %s\n", i+1, *block.BlockId)

@@ -25,16 +25,16 @@ type SpreadsheetInfo struct {
 
 // SheetInfo 工作表信息
 type SheetInfo struct {
-	SheetID    string           `json:"sheet_id"`
-	Title      string           `json:"title"`
-	Index      int              `json:"index"`
-	RowCount   int              `json:"row_count"`
-	ColCount   int              `json:"column_count"`
-	FrozenRows int              `json:"frozen_row_count"`
-	FrozenCols int              `json:"frozen_col_count"`
-	Hidden     bool             `json:"hidden"`
-	Merges     []*MergeRange    `json:"merges,omitempty"`
-	Properties *GridProperties  `json:"grid_properties,omitempty"`
+	SheetID    string          `json:"sheet_id"`
+	Title      string          `json:"title"`
+	Index      int             `json:"index"`
+	RowCount   int             `json:"row_count"`
+	ColCount   int             `json:"column_count"`
+	FrozenRows int             `json:"frozen_row_count"`
+	FrozenCols int             `json:"frozen_col_count"`
+	Hidden     bool            `json:"hidden"`
+	Merges     []*MergeRange   `json:"merges,omitempty"`
+	Properties *GridProperties `json:"grid_properties,omitempty"`
 }
 
 // MergeRange 合并单元格范围
@@ -55,29 +55,29 @@ type GridProperties struct {
 
 // CellRange 单元格范围数据
 type CellRange struct {
-	Range  string          `json:"range"`
-	Values [][]interface{} `json:"values"`
+	Range  string  `json:"range"`
+	Values [][]any `json:"values"`
 }
 
 // CellStyle 单元格样式
 type CellStyle struct {
-	Font       *FontStyle      `json:"font,omitempty"`
-	TextFormat *TextFormat     `json:"text_format,omitempty"`
-	HAlign     string          `json:"hAlign,omitempty"`     // LEFT, CENTER, RIGHT
-	VAlign     string          `json:"vAlign,omitempty"`     // TOP, MIDDLE, BOTTOM
-	Formatter  string          `json:"formatter,omitempty"`  // 数字格式
-	BgColor    string          `json:"bgColor,omitempty"`    // 背景色
-	ForeColor  string          `json:"foreColor,omitempty"`  // 前景色
-	BorderType string          `json:"borderType,omitempty"` // 边框类型
-	Clean      bool            `json:"clean,omitempty"`      // 是否清除样式
+	Font       *FontStyle  `json:"font,omitempty"`
+	TextFormat *TextFormat `json:"text_format,omitempty"`
+	HAlign     string      `json:"hAlign,omitempty"`     // LEFT, CENTER, RIGHT
+	VAlign     string      `json:"vAlign,omitempty"`     // TOP, MIDDLE, BOTTOM
+	Formatter  string      `json:"formatter,omitempty"`  // 数字格式
+	BgColor    string      `json:"bgColor,omitempty"`    // 背景色
+	ForeColor  string      `json:"foreColor,omitempty"`  // 前景色
+	BorderType string      `json:"borderType,omitempty"` // 边框类型
+	Clean      bool        `json:"clean,omitempty"`      // 是否清除样式
 }
 
 // FontStyle 字体样式
 type FontStyle struct {
-	Bold      bool   `json:"bold,omitempty"`
-	Italic    bool   `json:"italic,omitempty"`
-	FontSize  string `json:"fontSize,omitempty"`
-	Clean     bool   `json:"clean,omitempty"`
+	Bold     bool   `json:"bold,omitempty"`
+	Italic   bool   `json:"italic,omitempty"`
+	FontSize string `json:"fontSize,omitempty"`
+	Clean    bool   `json:"clean,omitempty"`
 }
 
 // TextFormat 文本格式
@@ -113,10 +113,10 @@ type SheetBatchUpdateRequest struct {
 
 // SheetRequest 单个工作表请求
 type SheetRequest struct {
-	AddSheet       *AddSheetRequest       `json:"addSheet,omitempty"`
-	CopySheet      *CopySheetRequest      `json:"copySheet,omitempty"`
-	DeleteSheet    *DeleteSheetRequest    `json:"deleteSheet,omitempty"`
-	UpdateSheet    *UpdateSheetRequest    `json:"updateSheet,omitempty"`
+	AddSheet    *AddSheetRequest    `json:"addSheet,omitempty"`
+	CopySheet   *CopySheetRequest   `json:"copySheet,omitempty"`
+	DeleteSheet *DeleteSheetRequest `json:"deleteSheet,omitempty"`
+	UpdateSheet *UpdateSheetRequest `json:"updateSheet,omitempty"`
 }
 
 // AddSheetRequest 添加工作表请求
@@ -160,16 +160,16 @@ type SheetDest struct {
 
 // ProtectedRange 保护范围
 type ProtectedRange struct {
-	Dimension   *Dimension   `json:"dimension"`
-	ProtectID   string       `json:"protectId,omitempty"`
-	LockInfo    string       `json:"lockInfo,omitempty"`
-	SheetID     string       `json:"sheetId"`
-	Editors     *Editors     `json:"editors,omitempty"`
+	Dimension *Dimension `json:"dimension"`
+	ProtectID string     `json:"protectId,omitempty"`
+	LockInfo  string     `json:"lockInfo,omitempty"`
+	SheetID   string     `json:"sheetId"`
+	Editors   *Editors   `json:"editors,omitempty"`
 }
 
 // Editors 编辑者
 type Editors struct {
-	Users       []string `json:"users,omitempty"`
+	Users         []string `json:"users,omitempty"`
 	DepartmentIDs []string `json:"departmentIds,omitempty"`
 }
 
@@ -486,11 +486,11 @@ func ReplaceCells(ctx context.Context, spreadsheetToken, sheetID string, findStr
 // ==================== V2 API (通过 HTTP 请求) ====================
 
 // v2APICall 封装 V2 API 调用
-func v2APICall(client *lark.Client, ctx context.Context, method, path string, body interface{}) ([]byte, error) {
+func v2APICall(client *lark.Client, ctx context.Context, method, path string, body any) ([]byte, error) {
 	var resp *larkcore.ApiResp
 	var err error
 
-	// 注意: SDK 的 Post/Put/Delete 方法接收 interface{} 并在内部进行 JSON 序列化
+	// 注意: SDK 的 Post/Put/Delete 方法接收 any 并在内部进行 JSON 序列化
 	// 不要在这里预先序列化，否则会导致双重序列化
 	switch method {
 	case "GET":
@@ -547,9 +547,9 @@ func ReadCells(ctx context.Context, spreadsheetToken, rangeStr string, valueRend
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Data struct {
-			Revision         int             `json:"revision"`
-			SpreadsheetToken string          `json:"spreadsheetToken"`
-			ValueRange       *CellRange      `json:"valueRange"`
+			Revision         int        `json:"revision"`
+			SpreadsheetToken string     `json:"spreadsheetToken"`
+			ValueRange       *CellRange `json:"valueRange"`
 		} `json:"data"`
 	}
 
@@ -611,16 +611,16 @@ func ReadCellsBatch(ctx context.Context, spreadsheetToken string, ranges []strin
 }
 
 // WriteCells 写入单元格数据 (V2 API)
-func WriteCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]interface{}) (*CellRange, error) {
+func WriteCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any) (*CellRange, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
 	// 转换不支持的类型（布尔值转为字符串）
-	convertedValues := make([][]interface{}, len(values))
+	convertedValues := make([][]any, len(values))
 	for i, row := range values {
-		convertedValues[i] = make([]interface{}, len(row))
+		convertedValues[i] = make([]any, len(row))
 		for j, cell := range row {
 			switch v := cell.(type) {
 			case bool:
@@ -638,8 +638,8 @@ func WriteCells(ctx context.Context, spreadsheetToken, rangeStr string, values [
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
-		"valueRange": map[string]interface{}{
+	reqBody := map[string]any{
+		"valueRange": map[string]any{
 			"range":  rangeStr,
 			"values": convertedValues,
 		},
@@ -654,12 +654,12 @@ func WriteCells(ctx context.Context, spreadsheetToken, rangeStr string, values [
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Data struct {
-			SpreadsheetToken  string `json:"spreadsheetToken"`
-			UpdatedRange      string `json:"updatedRange"`
-			UpdatedRows       int    `json:"updatedRows"`
-			UpdatedColumns    int    `json:"updatedColumns"`
-			UpdatedCells      int    `json:"updatedCells"`
-			Revision          int    `json:"revision"`
+			SpreadsheetToken string `json:"spreadsheetToken"`
+			UpdatedRange     string `json:"updatedRange"`
+			UpdatedRows      int    `json:"updatedRows"`
+			UpdatedColumns   int    `json:"updatedColumns"`
+			UpdatedCells     int    `json:"updatedCells"`
+			Revision         int    `json:"revision"`
 		} `json:"data"`
 	}
 
@@ -686,7 +686,7 @@ func WriteCellsBatch(ctx context.Context, spreadsheetToken string, valueRanges [
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values_batch_update", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"valueRanges": valueRanges,
 	}
 
@@ -712,16 +712,16 @@ func WriteCellsBatch(ctx context.Context, spreadsheetToken string, valueRanges [
 }
 
 // AppendCells 追加数据 (V2 API)
-func AppendCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]interface{}, insertDataOption string) (*CellRange, error) {
+func AppendCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any, insertDataOption string) (*CellRange, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
 	// 转换不支持的类型（布尔值转为字符串）
-	convertedValues := make([][]interface{}, len(values))
+	convertedValues := make([][]any, len(values))
 	for i, row := range values {
-		convertedValues[i] = make([]interface{}, len(row))
+		convertedValues[i] = make([]any, len(row))
 		for j, cell := range row {
 			switch v := cell.(type) {
 			case bool:
@@ -742,8 +742,8 @@ func AppendCells(ctx context.Context, spreadsheetToken, rangeStr string, values 
 		path += "?insertDataOption=" + insertDataOption
 	}
 
-	reqBody := map[string]interface{}{
-		"valueRange": map[string]interface{}{
+	reqBody := map[string]any{
+		"valueRange": map[string]any{
 			"range":  rangeStr,
 			"values": convertedValues,
 		},
@@ -784,7 +784,7 @@ func AppendCells(ctx context.Context, spreadsheetToken, rangeStr string, values 
 }
 
 // PrependCells 前置插入数据 (V2 API)
-func PrependCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]interface{}) (*CellRange, error) {
+func PrependCells(ctx context.Context, spreadsheetToken, rangeStr string, values [][]any) (*CellRange, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -792,8 +792,8 @@ func PrependCells(ctx context.Context, spreadsheetToken, rangeStr string, values
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/values_prepend", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
-		"valueRange": map[string]interface{}{
+	reqBody := map[string]any{
+		"valueRange": map[string]any{
 			"range":  rangeStr,
 			"values": values,
 		},
@@ -829,7 +829,7 @@ func PrependCells(ctx context.Context, spreadsheetToken, rangeStr string, values
 }
 
 // BatchUpdateSheets 批量更新工作表（添加/删除/复制）(V2 API)
-func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []SheetRequest) ([]map[string]interface{}, error) {
+func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []SheetRequest) ([]map[string]any, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -837,7 +837,7 @@ func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/sheets_batch_update", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"requests": requests,
 	}
 
@@ -850,7 +850,7 @@ func BatchUpdateSheets(ctx context.Context, spreadsheetToken string, requests []
 		Code int    `json:"code"`
 		Msg  string `json:"msg"`
 		Data struct {
-			Replies []map[string]interface{} `json:"replies"`
+			Replies []map[string]any `json:"replies"`
 		} `json:"data"`
 	}
 
@@ -884,8 +884,8 @@ func AddSheet(ctx context.Context, spreadsheetToken, title string, index int) (*
 	}
 
 	if len(replies) > 0 {
-		if addSheet, ok := replies[0]["addSheet"].(map[string]interface{}); ok {
-			if props, ok := addSheet["properties"].(map[string]interface{}); ok {
+		if addSheet, ok := replies[0]["addSheet"].(map[string]any); ok {
+			if props, ok := addSheet["properties"].(map[string]any); ok {
 				info := &SheetInfo{}
 				if sheetID, ok := props["sheetId"].(string); ok {
 					info.SheetID = sheetID
@@ -939,8 +939,8 @@ func CopySheet(ctx context.Context, spreadsheetToken, sourceSheetID, newTitle st
 	}
 
 	if len(replies) > 0 {
-		if copySheet, ok := replies[0]["copySheet"].(map[string]interface{}); ok {
-			if props, ok := copySheet["properties"].(map[string]interface{}); ok {
+		if copySheet, ok := replies[0]["copySheet"].(map[string]any); ok {
+			if props, ok := copySheet["properties"].(map[string]any); ok {
 				info := &SheetInfo{}
 				if sheetID, ok := props["sheetId"].(string); ok {
 					info.SheetID = sheetID
@@ -965,8 +965,8 @@ func AddDimension(ctx context.Context, spreadsheetToken, sheetID string, majorDi
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
-		"dimension": map[string]interface{}{
+	reqBody := map[string]any{
+		"dimension": map[string]any{
 			"sheetId":        sheetID,
 			"majorDimension": majorDimension,
 			"length":         length,
@@ -1003,8 +1003,8 @@ func InsertDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/insert_dimension_range", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
-		"dimension": map[string]interface{}{
+	reqBody := map[string]any{
+		"dimension": map[string]any{
 			"sheetId":        sheetID,
 			"majorDimension": majorDimension,
 			"startIndex":     startIndex,
@@ -1046,8 +1046,8 @@ func DeleteDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
-		"dimension": map[string]interface{}{
+	reqBody := map[string]any{
+		"dimension": map[string]any{
 			"sheetId":        sheetID,
 			"majorDimension": majorDimension,
 			"startIndex":     startIndex,
@@ -1085,14 +1085,14 @@ func UpdateDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/dimension_range", spreadsheetToken)
 
-	dimension := map[string]interface{}{
+	dimension := map[string]any{
 		"sheetId":        sheetID,
 		"majorDimension": majorDimension,
 		"startIndex":     startIndex,
 		"endIndex":       endIndex,
 	}
 
-	dimensionProperties := map[string]interface{}{}
+	dimensionProperties := map[string]any{}
 	if visible != nil {
 		dimensionProperties["visible"] = *visible
 	}
@@ -1100,7 +1100,7 @@ func UpdateDimension(ctx context.Context, spreadsheetToken, sheetID string, majo
 		dimensionProperties["fixedSize"] = *fixedSize
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"dimension":           dimension,
 		"dimensionProperties": dimensionProperties,
 	}
@@ -1135,7 +1135,7 @@ func MergeCells(ctx context.Context, spreadsheetToken, rangeStr, mergeType strin
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/merge_cells", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"range":     rangeStr,
 		"mergeType": mergeType, // MERGE_ALL, MERGE_ROWS, MERGE_COLUMNS
 	}
@@ -1170,7 +1170,7 @@ func UnmergeCells(ctx context.Context, spreadsheetToken, rangeStr string) error 
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/unmerge_cells", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"range": rangeStr,
 	}
 
@@ -1204,7 +1204,7 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/style", spreadsheetToken)
 
-	appendStyle := map[string]interface{}{}
+	appendStyle := map[string]any{}
 	if style.Font != nil {
 		appendStyle["font"] = style.Font
 	}
@@ -1241,8 +1241,8 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 		appendStyle["clean"] = true
 	}
 
-	reqBody := map[string]interface{}{
-		"appendStyle": map[string]interface{}{
+	reqBody := map[string]any{
+		"appendStyle": map[string]any{
 			"range": rangeStr,
 			"style": appendStyle,
 		},
@@ -1270,7 +1270,7 @@ func SetCellStyle(ctx context.Context, spreadsheetToken, rangeStr string, style 
 }
 
 // SetCellStyleBatch 批量设置单元格样式 (V2 API)
-func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []map[string]interface{}) error {
+func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []map[string]any) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -1278,7 +1278,7 @@ func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []ma
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/styles_batch_update", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"data": styles,
 	}
 
@@ -1304,7 +1304,7 @@ func SetCellStyleBatch(ctx context.Context, spreadsheetToken string, styles []ma
 }
 
 // GetSpreadsheetMeta 获取表格元信息 (V2 API)
-func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields string) (map[string]interface{}, error) {
+func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields string) (map[string]any, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
@@ -1321,9 +1321,9 @@ func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields 
 	}
 
 	var apiResp struct {
-		Code int                    `json:"code"`
-		Msg  string                 `json:"msg"`
-		Data map[string]interface{} `json:"data"`
+		Code int            `json:"code"`
+		Msg  string         `json:"msg"`
+		Data map[string]any `json:"data"`
 	}
 
 	if err := json.Unmarshal(respBody, &apiResp); err != nil {
@@ -1340,7 +1340,7 @@ func GetSpreadsheetMeta(ctx context.Context, spreadsheetToken string, extFields 
 // ==================== 筛选相关 (V3 API) ====================
 
 // CreateFilter 创建筛选 (V3 API)
-func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, conditions map[string]interface{}) error {
+func CreateFilter(ctx context.Context, spreadsheetToken, sheetID, rangeStr string, conditions map[string]any) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
@@ -1565,10 +1565,10 @@ func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges [
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/protected_dimension", spreadsheetToken)
 
-	var addProtected []map[string]interface{}
+	var addProtected []map[string]any
 	for _, r := range ranges {
-		item := map[string]interface{}{
-			"dimension": map[string]interface{}{
+		item := map[string]any{
+			"dimension": map[string]any{
 				"sheetId":        r.SheetID,
 				"majorDimension": r.Dimension.MajorDimension,
 				"startIndex":     r.Dimension.StartIndex,
@@ -1584,7 +1584,7 @@ func CreateProtectedRange(ctx context.Context, spreadsheetToken string, ranges [
 		addProtected = append(addProtected, item)
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"addProtectedDimension": addProtected,
 	}
 
@@ -1631,7 +1631,7 @@ func DeleteProtectedRange(ctx context.Context, spreadsheetToken string, protectI
 
 	path := fmt.Sprintf("/open-apis/sheets/v2/spreadsheets/%s/protected_range_batch_del", spreadsheetToken)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"protectIds": protectIDs,
 	}
 
@@ -1758,13 +1758,13 @@ type FormulaElement struct {
 
 // CellRangeV3 V3 API 单元格范围数据
 type CellRangeV3 struct {
-	Range  string            `json:"range"`
+	Range  string             `json:"range"`
 	Values [][][]*CellElement `json:"values"` // 三维数组：行 -> 列 -> 元素
 }
 
 // ValueRangeV3 V3 API 值范围
 type ValueRangeV3 struct {
-	Range  string            `json:"range"`
+	Range  string             `json:"range"`
 	Values [][][]*CellElement `json:"values"`
 }
 
@@ -1781,7 +1781,7 @@ func WriteCellsV3(ctx context.Context, spreadsheetToken, sheetID string, valueRa
 		path += "?user_id_type=" + userIDType
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"value_ranges": valueRanges,
 	}
 
@@ -1820,7 +1820,7 @@ func InsertCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr stri
 		path += "?user_id_type=" + userIDType
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"values": values,
 	}
 
@@ -1859,7 +1859,7 @@ func AppendCellsV3(ctx context.Context, spreadsheetToken, sheetID, rangeStr stri
 		path += "?user_id_type=" + userIDType
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"values": values,
 	}
 
@@ -1895,7 +1895,7 @@ func ReadCellsPlainV3(ctx context.Context, spreadsheetToken, sheetID string, ran
 	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_get_plain",
 		spreadsheetToken, sheetID)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"ranges": ranges,
 	}
 
@@ -1925,10 +1925,10 @@ func ReadCellsPlainV3(ctx context.Context, spreadsheetToken, sheetID string, ran
 
 	var result []*CellRange
 	for _, vr := range apiResp.Data.ValueRanges {
-		// 转换 [][]string 为 [][]interface{}
-		values := make([][]interface{}, len(vr.Values))
+		// 转换 [][]string 为 [][]any
+		values := make([][]any, len(vr.Values))
 		for i, row := range vr.Values {
-			values[i] = make([]interface{}, len(row))
+			values[i] = make([]any, len(row))
 			for j, cell := range row {
 				values[i][j] = cell
 			}
@@ -1968,7 +1968,7 @@ func ReadCellsRichV3(ctx context.Context, spreadsheetToken, sheetID string, rang
 		path += "?" + params.Encode()
 	}
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"ranges": ranges,
 	}
 
@@ -2007,7 +2007,7 @@ func ClearCellsV3(ctx context.Context, spreadsheetToken, sheetID string, ranges 
 	path := fmt.Sprintf("/open-apis/sheets/v3/spreadsheets/%s/sheets/%s/values/batch_clear",
 		spreadsheetToken, sheetID)
 
-	reqBody := map[string]interface{}{
+	reqBody := map[string]any{
 		"ranges": ranges,
 	}
 
@@ -2033,7 +2033,7 @@ func ClearCellsV3(ctx context.Context, spreadsheetToken, sheetID string, ranges 
 }
 
 // ConvertSimpleToV3Values 将简单二维数组转换为 V3 格式的三维数组
-func ConvertSimpleToV3Values(values [][]interface{}) [][][]*CellElement {
+func ConvertSimpleToV3Values(values [][]any) [][][]*CellElement {
 	result := make([][][]*CellElement, len(values))
 	for i, row := range values {
 		result[i] = make([][]*CellElement, len(row))
@@ -2048,7 +2048,7 @@ func ConvertSimpleToV3Values(values [][]interface{}) [][][]*CellElement {
 }
 
 // ConvertToV3Element 将单个值转换为 V3 元素
-func ConvertToV3Element(value interface{}) *CellElement {
+func ConvertToV3Element(value any) *CellElement {
 	switch v := value.(type) {
 	case string:
 		return &CellElement{

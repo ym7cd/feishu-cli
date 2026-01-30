@@ -640,15 +640,19 @@ func TestConvert_ImageWithFeishuProtocol(t *testing.T) {
 		t.Fatal("blocks 为空")
 	}
 
-	// 应该创建图片块
-	if blocks[0].BlockType == nil || *blocks[0].BlockType != int(BlockTypeImage) {
-		t.Errorf("BlockType = %v, 期望 %d", blocks[0].BlockType, int(BlockTypeImage))
+	// feishu://media/ token 不可跨文档复用，应创建文本占位符
+	if blocks[0].BlockType == nil || *blocks[0].BlockType != int(BlockTypeText) {
+		t.Errorf("BlockType = %v, 期望 %d (Text placeholder)", blocks[0].BlockType, int(BlockTypeText))
 	}
 
-	// 验证 token
-	if blocks[0].Image != nil && blocks[0].Image.Token != nil {
-		if *blocks[0].Image.Token != "token123" {
-			t.Errorf("Image.Token = %q, 期望 %q", *blocks[0].Image.Token, "token123")
+	// 验证占位符包含原始 URL
+	if blocks[0].Text != nil && len(blocks[0].Text.Elements) > 0 {
+		content := ""
+		if blocks[0].Text.Elements[0].TextRun != nil && blocks[0].Text.Elements[0].TextRun.Content != nil {
+			content = *blocks[0].Text.Elements[0].TextRun.Content
+		}
+		if !strings.Contains(content, "feishu://media/token123") {
+			t.Errorf("占位符文本 = %q, 应包含原始 URL", content)
 		}
 	}
 }

@@ -70,7 +70,7 @@ var deleteBlocksCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("成功删除索引 %d 到 %d 的块!\n", startIndex, endIndex)
+		fmt.Printf("成功删除索引 %d 到 %d 的块！\n", startIndex, endIndex)
 		return nil
 	},
 }

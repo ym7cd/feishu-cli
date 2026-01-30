@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 
@@ -79,13 +78,14 @@ var createBoardNotesCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			result := map[string]interface{}{
+			result := map[string]any{
 				"whiteboard_id": whiteboardID,
 				"node_ids":      nodeIDs,
 				"count":         len(nodeIDs),
 			}
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("画板节点创建成功！\n")
 			fmt.Printf("  画板 ID: %s\n", whiteboardID)

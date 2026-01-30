@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -53,11 +52,12 @@ var forwardMessageCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]string{
+			if err := printJSON(map[string]string{
 				"original_message_id": messageID,
 				"new_message_id":      newMessageID,
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("消息转发成功！\n")
 			fmt.Printf("  原消息 ID: %s\n", messageID)

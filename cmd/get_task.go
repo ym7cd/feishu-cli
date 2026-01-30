@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -39,8 +38,9 @@ var getTaskCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(task, "", "  ")
-			fmt.Println(string(data))
+			if err := printJSON(task); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("任务详情:\n")
 			fmt.Printf("  任务 ID: %s\n", task.Guid)

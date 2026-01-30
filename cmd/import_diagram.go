@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -70,13 +69,14 @@ var importDiagramCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]interface{}{
+			if err := printJSON(map[string]any{
 				"whiteboard_id": whiteboardID,
 				"ticket_id":     result.TicketID,
 				"syntax":        syntax,
 				"style":         style,
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("图表导入成功！\n")
 			fmt.Printf("  画板 ID: %s\n", whiteboardID)

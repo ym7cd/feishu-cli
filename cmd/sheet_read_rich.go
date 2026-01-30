@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -39,7 +38,7 @@ var sheetReadRichCmd = &cobra.Command{
 		dateTimeRender, _ := cmd.Flags().GetString("datetime-render")
 		valueRender, _ := cmd.Flags().GetString("value-render")
 		userIDType, _ := cmd.Flags().GetString("user-id-type")
-		outputFormat, _ := cmd.Flags().GetString("output")
+		output, _ := cmd.Flags().GetString("output")
 
 		// 处理 shell 转义
 		for i := range ranges {
@@ -51,9 +50,10 @@ var sheetReadRichCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFormat == "json" {
-			output, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(output))
+		if output == "json" {
+			if err := printJSON(result); err != nil {
+				return err
+			}
 		} else {
 			for _, cellRange := range result {
 				fmt.Printf("范围: %s\n", cellRange.Range)

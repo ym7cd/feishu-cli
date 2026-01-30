@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -64,10 +63,11 @@ var uploadMediaCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			data, _ := json.MarshalIndent(map[string]string{
+			if err := printJSON(map[string]string{
 				"file_token": token,
-			}, "", "  ")
-			fmt.Println(string(data))
+			}); err != nil {
+				return err
+			}
 		} else {
 			fmt.Printf("上传成功！\n")
 			fmt.Printf("  文件 Token: %s\n", token)

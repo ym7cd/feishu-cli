@@ -163,12 +163,9 @@ func ListTasks(pageSize int, pageToken string, completed *bool) (*ListTasksResul
 	}
 
 	result := &ListTasksResult{
-		Tasks:   make([]*TaskInfo, 0, len(resp.Data.Items)),
-		HasMore: resp.Data.HasMore != nil && *resp.Data.HasMore,
-	}
-
-	if resp.Data.PageToken != nil {
-		result.PageToken = *resp.Data.PageToken
+		Tasks:     make([]*TaskInfo, 0, len(resp.Data.Items)),
+		HasMore:   BoolVal(resp.Data.HasMore),
+		PageToken: StringVal(resp.Data.PageToken),
 	}
 
 	for _, task := range resp.Data.Items {
@@ -280,40 +277,30 @@ func taskToInfo(task *larktask.Task) *TaskInfo {
 		return nil
 	}
 
-	info := &TaskInfo{}
-
-	if task.Guid != nil {
-		info.Guid = *task.Guid
+	info := &TaskInfo{
+		Guid:        StringVal(task.Guid),
+		Summary:     StringVal(task.Summary),
+		Description: StringVal(task.Description),
 	}
 
-	if task.Summary != nil {
-		info.Summary = *task.Summary
-	}
-
-	if task.Description != nil {
-		info.Description = *task.Description
-	}
-
-	if task.Due != nil && task.Due.Timestamp != nil {
-		ts, err := strconv.ParseInt(*task.Due.Timestamp, 10, 64)
-		if err == nil {
+	if task.Due != nil {
+		if ts, err := strconv.ParseInt(StringVal(task.Due.Timestamp), 10, 64); err == nil && ts > 0 {
 			info.DueTime = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
 		}
 	}
 
-	if task.CompletedAt != nil && *task.CompletedAt != "" {
-		ts, err := strconv.ParseInt(*task.CompletedAt, 10, 64)
-		if err == nil {
+	if completedAt := StringVal(task.CompletedAt); completedAt != "" {
+		if ts, err := strconv.ParseInt(completedAt, 10, 64); err == nil {
 			info.CompletedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
 		}
 	}
 
-	if task.Creator != nil && task.Creator.Id != nil {
-		info.Creator = *task.Creator.Id
+	if task.Creator != nil {
+		info.Creator = StringVal(task.Creator.Id)
 	}
 
-	if task.Origin != nil && task.Origin.Href != nil && task.Origin.Href.Url != nil {
-		info.OriginHref = *task.Origin.Href.Url
+	if task.Origin != nil && task.Origin.Href != nil {
+		info.OriginHref = StringVal(task.Origin.Href.Url)
 	}
 
 	return info
