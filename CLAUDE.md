@@ -39,7 +39,8 @@ feishu-cli/
 │   ├── converter/                # Markdown 转换器
 │   │   ├── block_to_markdown.go  # Block → Markdown（导出）
 │   │   ├── markdown_to_block.go  # Markdown → Block（导入）
-│   │   └── types.go              # 块类型定义
+│   │   ├── types.go              # 块类型定义、颜色映射、ConvertOptions
+│   │   ├── *_test.go             # 单元测试 + roundtrip 测试
 │   └── config/
 │       └── config.go             # 配置管理
 ├── skills/                       # Claude Code 技能（每个技能一个目录）
@@ -91,7 +92,7 @@ app_secret: "xxx"
 **导入**：`feishu-cli doc import doc.md --title "文档" --verbose`
 **导出**：`feishu-cli doc export <doc_id> -o output.md`
 
-支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用、表格、分割线、图片、链接、粗体/斜体/删除线/行内代码
+支持的语法：标题、段落、列表（无限深度嵌套）、任务列表、代码块、引用（QuoteContainer）、Callout（6 种类型）、表格、分割线、图片、链接、公式（块级/行内）、粗体/斜体/删除线/下划线/行内代码/高亮
 
 ### Mermaid / PlantUML 图表转画板
 
@@ -194,14 +195,20 @@ feishu-cli search messages "关键词" --user-access-token <token>
 | 12 | Bullet | `- item` | 无序列表（支持嵌套） |
 | 13 | Ordered | `1. item` | 有序列表（支持嵌套） |
 | 14 | Code | ` ```lang ``` ` | 代码块 |
-| 15 | Quote | `> text` | 引用 |
-| 16 | Equation | `$$formula$$` | 公式 |
+| 15 | Quote | `> text` | 引用（旧版，导入使用 QuoteContainer） |
+| 16 | Equation | `$$formula$$` | 公式（API 不支持创建，降级为内联 Equation） |
 | 17 | Todo | `- [x]` / `- [ ]` | 待办事项 |
-| 19 | Callout | `> [!NOTE]` | 高亮块 |
+| 19 | Callout | `> [!NOTE]` | 高亮块（bgColor 2-7 对应 6 种类型） |
 | 21 | Diagram | Mermaid/PlantUML | 图表（自动转画板） |
 | 22 | Divider | `---` | 分隔线 |
+| 23 | File | 附件 | 文件块 |
+| 26 | Iframe | `<iframe>` | 内嵌网页 |
 | 27 | Image | `![](url)` | 图片 |
+| 28 | ISV | TextDrawing/Timeline | 第三方块（导出为 Mermaid 注释/占位符） |
 | 31 | Table | Markdown 表格 | 表格 |
+| 32 | TableCell | — | 表格单元格（内部类型） |
+| 34 | QuoteContainer | `> text` | 引用容器（v1.4.0，替代 Quote 用于导入） |
+| 40 | AddOns | — | 扩展块（导出时递归展开子块） |
 | 42 | WikiCatalog | `[Wiki 目录]` | 知识库目录块 |
 | 43 | Board | 画板 | 画板 |
 
@@ -214,7 +221,7 @@ feishu-cli search messages "关键词" --user-access-token <token>
 - Table.Cells 是 `[]string` 类型，非指针切片
 - DeleteBlocks API 使用 StartIndex/EndIndex，非单独 block ID
 - Wiki 知识库使用 `node_token`，普通文档使用 `document_id`，注意区分
-- Callout 块只需设置 BackgroundColor（1-7 对应不同颜色），不能同时设置 EmojiId
+- Callout 块只需设置 BackgroundColor（2-7 对应 6 种颜色：2=红/WARNING、3=橙/CAUTION、4=黄/TIP、5=绿/SUCCESS、6=蓝/NOTE、7=紫/IMPORTANT），不能同时设置 EmojiId
 
 ### 文档导入
 
