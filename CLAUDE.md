@@ -171,17 +171,88 @@ feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"],["张
 feishu-cli sheet read-rich <token> <sheet_id> "sheet!A1:C10"   # V3 富文本
 feishu-cli sheet write-rich <token> <sheet_id> --data-file data.json
 
-# === 其他 ===
-feishu-cli user info <user_id>
-feishu-cli board image <whiteboard_id> output.png
-feishu-cli file list [folder_token]
-feishu-cli media upload image.png --parent-type docx_image --parent-node <doc_id>
-feishu-cli comment list <file_token> --type docx
+# === 权限管理 ===
 feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access
+feishu-cli perm list <doc_token> --doc-type docx
+feishu-cli perm delete <doc_token> --doc-type docx --member-type email --member-id user@example.com
+feishu-cli perm public-get <doc_token>
+feishu-cli perm public-update <doc_token> --external-access --link-share-entity anyone_readable
+feishu-cli perm password create <doc_token>
+feishu-cli perm password delete <doc_token>
+feishu-cli perm batch-add <doc_token> --members-file members.json --notification
+feishu-cli perm auth <doc_token> --action view
+feishu-cli perm transfer-owner <doc_token> --member-type email --member-id user@example.com
+
+# === 文件管理增强 ===
+feishu-cli file list [folder_token]
+feishu-cli file download <file_token> -o output.pdf
+feishu-cli file upload local_file.pdf --parent FOLDER_TOKEN
+feishu-cli file version list <doc_token> --doc-type docx
+feishu-cli file meta TOKEN1 TOKEN2 --doc-type docx
+feishu-cli file stats <file_token> --doc-type docx
+
+# === 文档导出/导入（异步任务） ===
+feishu-cli doc export-file <doc_token> --type pdf -o output.pdf
+feishu-cli doc import-file local_file.docx --type docx --name "文档名"
+
+# === 群聊管理 ===
+feishu-cli chat create --name "群聊名" --user-ids id1,id2
+feishu-cli chat get <chat_id>
+feishu-cli chat update <chat_id> --name "新群名"
+feishu-cli chat delete <chat_id>
+feishu-cli chat link <chat_id>
+feishu-cli chat member list <chat_id>
+feishu-cli chat member add <chat_id> --id-list id1,id2
+feishu-cli chat member remove <chat_id> --id-list id1,id2
+
+# === 消息增强 ===
+feishu-cli msg reply <message_id> --text "回复内容"
+feishu-cli msg merge-forward --receive-id user@example.com --receive-id-type email --message-ids id1,id2
+feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP
+feishu-cli msg reaction remove <message_id> --reaction-id REACTION_ID
+feishu-cli msg pin <message_id>
+feishu-cli msg unpin <message_id>
+feishu-cli msg pins --chat-id CHAT_ID
+
+# === 日历增强 ===
 feishu-cli calendar list
+feishu-cli calendar get <calendar_id>
+feishu-cli calendar primary
 feishu-cli calendar create-event --calendar-id <id> --summary "会议" --start "2024-01-01T10:00:00+08:00" --end "2024-01-01T11:00:00+08:00"
+feishu-cli calendar event-search --calendar-id <id> --query "关键词"
+feishu-cli calendar event-reply <calendar_id> <event_id> --status accept
+feishu-cli calendar attendee add <calendar_id> <event_id> --user-ids id1,id2
+feishu-cli calendar attendee list <calendar_id> <event_id>
+feishu-cli calendar freebusy --start "2024-01-01T00:00:00+08:00" --end "2024-01-02T00:00:00+08:00" --user-ids id1,id2
+
+# === 任务增强 ===
 feishu-cli task create --summary "待办事项"
 feishu-cli task complete <task_id>
+feishu-cli task subtask create <task_guid> --summary "子任务"
+feishu-cli task subtask list <task_guid>
+feishu-cli task member add <task_guid> --members id1,id2 --role assignee
+feishu-cli task reminder add <task_guid> --minutes 30
+feishu-cli tasklist create --name "任务列表"
+feishu-cli tasklist list
+feishu-cli tasklist delete <tasklist_guid>
+
+# === 知识库增强 ===
+feishu-cli wiki space-get <space_id>
+feishu-cli wiki member add <space_id> --member-type userid --member-id USER_ID --role admin
+feishu-cli wiki member list <space_id>
+feishu-cli wiki member remove <space_id> --member-type userid --member-id USER_ID --role admin
+
+# === 其他 ===
+feishu-cli user info <user_id>
+feishu-cli user search --email user@example.com
+feishu-cli user list --department-id DEPT_ID
+feishu-cli dept get <department_id>
+feishu-cli dept children <department_id>
+feishu-cli board image <whiteboard_id> output.png
+feishu-cli media upload image.png --parent-type docx_image --parent-node <doc_id>
+feishu-cli comment list <file_token> --type docx
+feishu-cli comment resolve <file_token> <comment_id> --type docx
+feishu-cli comment reply list <file_token> <comment_id> --type docx
 feishu-cli search messages "关键词" --user-access-token <token>
 ```
 
@@ -300,18 +371,24 @@ feishu-cli search messages "关键词" --user-access-token <token>
 |---------|---------|------|
 | 文档操作 | `docx:document` | 文档读写 |
 | 知识库 | `wiki:wiki:readonly` | 知识库读取 |
+| 知识库成员 | `wiki:wiki` | 空间成员管理 |
 | 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
 | 素材管理 | `drive:drive` | 上传下载 |
 | 评论 | `drive:drive.comment:write` | 评论读写 |
 | 权限管理 | `drive:permission:member:create` | 添加协作者 |
 | 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
+| 消息增强 | `im:message`, `im:message:send_as_bot` | Pin/Reaction/转发 |
 | 群聊搜索 | `im:chat:readonly` | 搜索群聊 |
+| 群聊管理 | `im:chat`, `im:chat:readonly` | 群聊 CRUD |
+| 群成员管理 | `im:chat:member` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |
 | 用户信息 | `contact:user.base:readonly` | 获取用户信息 |
+| 通讯录 | `contact:user.base:readonly`, `contact:department.base:readonly` | 用户搜索/部门查询 |
 | 画板操作 | `board:board` | 画板读写 |
 | 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
 | 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
+| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
 | 搜索 | 需要 User Access Token | 用户授权 |
 
 ## 发布 Release 规范
@@ -450,15 +527,24 @@ feishu-cli perm add <DOC_ID> --doc-type docx --member-type email --member-id use
 ```
 ✅ doc create/get/blocks/export/import（含嵌套列表、混合嵌套）
 ✅ doc add (JSON/Markdown) / add-callout / add-board / batch-update
+✅ doc export-file/import-file
 ✅ wiki get/export / user info / board image
+✅ wiki space-get + member add/list/remove
 ✅ file list/mkdir/move/copy / media upload/download
-✅ comment list/add / perm add
+✅ file download/upload/version/meta/stats
+✅ comment list/add/resolve/unresolve + reply list/delete
+✅ perm list/delete/public-get/public-update/password/batch-add/auth/transfer-owner
 ✅ msg send/get/search-chats/history/forward
+✅ msg reply/merge-forward/reaction/pin
+✅ chat create/get/update/delete/link + member list/add/remove
 ✅ task create/complete/delete
+✅ task subtask/member/reminder + tasklist create/get/list/delete
 ✅ sheet create/get/list-sheets/read/write/append
 ✅ sheet add-sheet/delete-sheet/copy-sheet/add-rows/add-cols/delete-rows/delete-cols
 ✅ sheet merge/unmerge/style/meta/find/replace/image
 ✅ sheet read-plain/read-rich/write-rich/insert/append-rich/clear（V3 API）
+✅ calendar get/primary/event-search/event-reply/attendee/freebusy
+✅ user search/list + dept get/children
 ✅ Mermaid 图表导入（8 种类型全部验证，88 个图表 93.2% 成功率）
 ✅ PlantUML 图表导入（时序图、活动图已验证）
 ✅ 大规模导入：10,000+ 行 / 127 个图表 / 170+ 个表格

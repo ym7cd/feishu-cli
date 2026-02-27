@@ -172,3 +172,125 @@ func GetComment(fileToken string, commentID string, fileType string) (*Comment, 
 func DeleteComment(fileToken string, commentID string, fileType string) error {
 	return fmt.Errorf("删除评论功能暂不支持：当前 SDK 版本未提供删除评论 API")
 }
+
+// PatchComment 更新评论解决状态
+func PatchComment(fileToken, commentID, fileType string, isSolved bool) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkdrive.NewPatchFileCommentReqBuilder().
+		FileToken(fileToken).
+		CommentId(commentID).
+		FileType(fileType).
+		Body(larkdrive.NewPatchFileCommentReqBodyBuilder().
+			IsSolved(isSolved).
+			Build()).
+		Build()
+
+	resp, err := client.Drive.FileComment.Patch(Context(), req)
+	if err != nil {
+		return fmt.Errorf("更新评论状态失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("更新评论状态失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// CommentReply 评论回复信息
+type CommentReply struct {
+	ReplyID    string `json:"reply_id"`
+	UserID     string `json:"user_id,omitempty"`
+	Content    string `json:"content,omitempty"`
+	CreateTime int    `json:"create_time,omitempty"`
+	UpdateTime int    `json:"update_time,omitempty"`
+}
+
+// ListCommentReplies 获取评论回复列表
+func ListCommentReplies(fileToken, commentID, fileType string, pageSize int, pageToken string) ([]*CommentReply, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larkdrive.NewListFileCommentReplyReqBuilder().
+		FileToken(fileToken).
+		CommentId(commentID).
+		FileType(fileType)
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Drive.FileCommentReply.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取评论回复列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取评论回复列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var replies []*CommentReply
+	if resp.Data != nil && resp.Data.Items != nil {
+		for _, item := range resp.Data.Items {
+			var content string
+			if item.Content != nil && item.Content.Elements != nil {
+				for _, el := range item.Content.Elements {
+					if el != nil && el.TextRun != nil && el.TextRun.Text != nil {
+						content += *el.TextRun.Text
+					}
+				}
+			}
+			replies = append(replies, &CommentReply{
+				ReplyID:    StringVal(item.ReplyId),
+				UserID:     StringVal(item.UserId),
+				Content:    content,
+				CreateTime: IntVal(item.CreateTime),
+				UpdateTime: IntVal(item.UpdateTime),
+			})
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return replies, nextPageToken, hasMore, nil
+}
+
+// DeleteCommentReply 删除评论回复
+func DeleteCommentReply(fileToken, commentID, replyID, fileType string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkdrive.NewDeleteFileCommentReplyReqBuilder().
+		FileToken(fileToken).
+		CommentId(commentID).
+		ReplyId(replyID).
+		FileType(fileType).
+		Build()
+
+	resp, err := client.Drive.FileCommentReply.Delete(Context(), req)
+	if err != nil {
+		return fmt.Errorf("删除评论回复失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("删除评论回复失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}

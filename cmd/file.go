@@ -7,15 +7,20 @@ import (
 var fileCmd = &cobra.Command{
 	Use:   "file",
 	Short: "云空间文件管理命令",
-	Long: `云空间文件管理命令，包括列出文件、创建文件夹、移动、复制、删除等操作。
+	Long: `云空间文件管理命令，包括列出文件、上传下载、创建文件夹、移动、复制、删除等操作。
 
 子命令:
   list      列出文件夹中的文件
+  download  下载文件
+  upload    上传文件
   mkdir     创建文件夹
   move      移动文件或文件夹
   copy      复制文件
   delete    删除文件或文件夹
   shortcut  创建文件快捷方式
+  version   文件版本管理（list/create/get/delete）
+  meta      批量获取文件元数据
+  stats     获取文件统计信息
   quota     查询云空间容量
 
 文件类型（type）:
@@ -32,8 +37,11 @@ var fileCmd = &cobra.Command{
   # 列出根目录文件
   feishu-cli file list
 
-  # 列出指定文件夹
-  feishu-cli file list <folder_token>
+  # 下载文件
+  feishu-cli file download <file_token> -o output.pdf
+
+  # 上传文件
+  feishu-cli file upload /tmp/report.pdf --parent <folder_token>
 
   # 创建文件夹
   feishu-cli file mkdir "新文件夹" --parent <folder_token>
@@ -47,11 +55,14 @@ var fileCmd = &cobra.Command{
   # 删除文件
   feishu-cli file delete <file_token> --type docx
 
-  # 创建快捷方式
-  feishu-cli file shortcut <file_token> --target <folder_token> --type docx
+  # 文件版本管理
+  feishu-cli file version list <file_token> --obj-type docx
 
-  # 查询云空间容量
-  feishu-cli file quota`,
+  # 获取文件元数据
+  feishu-cli file meta <token> --doc-type docx
+
+  # 获取文件统计信息
+  feishu-cli file stats <file_token> --doc-type docx`,
 }
 
 func init() {

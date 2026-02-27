@@ -68,9 +68,13 @@ var rootCmd = &cobra.Command{
 
 更多信息请访问: https://github.com/riba2534/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		// Skip config initialization for commands that don't need it
+		// Skip config initialization for group commands (those with subcommands but no own RunE)
+		// and utility commands that don't need config
+		if cmd.HasSubCommands() && cmd.RunE == nil && cmd.Run == nil {
+			return nil
+		}
 		switch cmd.Name() {
-		case "init", "help", "completion", "version", "doc", "wiki", "file", "media", "comment", "perm", "msg", "config", "calendar", "task", "search", "user", "board":
+		case "init", "help", "completion", "version":
 			return nil
 		}
 

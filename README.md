@@ -102,19 +102,21 @@ feishu-cli doc import large-doc.md --title "大文档" \
 
 | 模块 | 能力 |
 |------|------|
-| **文档** | 创建、导入、导出、编辑、批量更新、Callout、画板 |
-| **知识库** | 空间列表、节点增删改查、导出 |
+| **文档** | 创建、导入、导出、编辑、批量更新、Callout、画板、异步导出/导入文件 |
+| **知识库** | 空间列表、节点增删改查、导出、空间详情、成员管理 |
 | **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、合并、查找替换 |
-| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、搜索群聊、历史记录 |
-| **日历** | 日历列表、日程增删改查 |
-| **任务** | 创建、查看、完成、删除 |
-| **权限** | 添加 / 更新协作者（用户 / 群 / 部门） |
-| **文件** | 云空间文件列表、创建、移动、复制、删除 |
+| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、搜索群聊、历史记录 |
+| **群聊** | 创建、获取、更新、删除、分享链接、成员管理 |
+| **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询 |
+| **任务** | 创建、查看、完成、删除、子任务、成员管理、提醒管理、任务列表 |
+| **权限** | 添加 / 更新 / 删除协作者、批量添加、公开权限管理、分享密码、权限检查、转移所有权 |
+| **文件** | 云空间文件列表、创建、移动、复制、删除、上传、下载、版本管理、元数据、统计 |
 | **素材** | 上传 / 下载（图片、文件、音视频） |
 | **画板** | 下载图片、导入 Mermaid / PlantUML |
-| **评论** | 列出、添加文档评论 |
+| **评论** | 列出、添加、解决/恢复评论、回复管理 |
 | **搜索** | 消息搜索、应用搜索（需 User Access Token） |
-| **用户** | 获取用户信息 |
+| **用户** | 获取用户信息、用户搜索、部门用户列表 |
+| **通讯录** | 部门详情、子部门列表 |
 
 ## 快速开始
 
@@ -195,18 +197,21 @@ feishu-cli doc create --title "Hello Feishu"
 feishu-cli <command> [subcommand] [flags]
 
 Commands:
-  doc       文档操作（创建、导入、导出、编辑）
-  wiki      知识库操作（节点增删改查）
+  doc       文档操作（创建、导入、导出、编辑、异步导出/导入文件）
+  wiki      知识库操作（节点增删改查、空间详情、成员管理）
   sheet     电子表格（读写、样式、V3 富文本 API）
-  msg       消息操作（发送、转发、搜索群聊）
-  file      文件管理（列出、移动、复制、删除）
+  msg       消息操作（发送、转发、合并转发、回复、Pin、表情回复）
+  chat      群聊管理（创建、更新、删除、成员管理）
+  file      文件管理（列出、移动、复制、删除、上传、下载、版本管理）
   media     素材操作（上传、下载）
-  perm      权限管理（添加、更新协作者）
-  calendar  日历操作（日程增删改查）
-  task      任务操作（增删改查、完成）
-  user      用户操作（获取用户信息）
+  perm      权限管理（添加、删除、批量添加、公开权限、密码、转移所有权）
+  calendar  日历操作（日程增删改查、搜索、参与者、忙闲查询）
+  task      任务操作（增删改查、子任务、成员、提醒）
+  tasklist  任务列表管理（创建、查看、删除）
+  user      用户操作（获取信息、搜索、部门用户列表）
+  dept      部门操作（详情、子部门列表）
   board     画板操作（导入图表、下载图片）
-  comment   评论操作（列出、添加）
+  comment   评论操作（列出、添加、解决/恢复、回复管理）
   search    搜索操作（消息、应用）
   config    配置管理
 ```
@@ -241,6 +246,12 @@ feishu-cli doc add-callout <doc_id> "提示内容" --callout-type info
 
 # 批量更新
 feishu-cli doc batch-update <doc_id> '[...]' --source-type content
+
+# 异步导出为文件（PDF/DOCX/XLSX）
+feishu-cli doc export-file <doc_token> --type pdf -o output.pdf
+
+# 异步导入本地文件为飞书文档
+feishu-cli doc import-file local_file.docx --type docx --name "文档名"
 ```
 
 </details>
@@ -254,6 +265,12 @@ feishu-cli wiki get <node_token>                    # 获取节点
 feishu-cli wiki nodes <space_id>                    # 列出节点
 feishu-cli wiki export <node_token> -o doc.md       # 导出为 Markdown
 feishu-cli wiki create --space-id <id> --title "新节点"
+feishu-cli wiki space-get <space_id>                # 获取知识空间详情
+
+# 知识空间成员管理
+feishu-cli wiki member add <space_id> --member-type userid --member-id USER_ID --role admin
+feishu-cli wiki member list <space_id>
+feishu-cli wiki member remove <space_id> --member-type userid --member-id USER_ID --role admin
 ```
 
 </details>
@@ -300,6 +317,100 @@ feishu-cli msg history --container-id <chat_id> --container-id-type chat
 
 # 转发消息
 feishu-cli msg forward <message_id> --receive-id <id> --receive-id-type email
+
+# 回复消息
+feishu-cli msg reply <message_id> --text "回复内容"
+
+# 合并转发
+feishu-cli msg merge-forward --receive-id user@example.com --receive-id-type email --message-ids id1,id2
+
+# 表情回复
+feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP
+feishu-cli msg reaction remove <message_id> --reaction-id REACTION_ID
+feishu-cli msg reaction list <message_id>
+
+# Pin 消息
+feishu-cli msg pin <message_id>
+feishu-cli msg unpin <message_id>
+feishu-cli msg pins --chat-id CHAT_ID
+```
+
+</details>
+
+<details>
+<summary>权限管理</summary>
+
+```bash
+# 添加 / 更新协作者
+feishu-cli perm add <doc_id> --doc-type docx --member-type email \
+  --member-id user@example.com --perm full_access --notification
+feishu-cli perm update <doc_id> --doc-type docx --member-type email \
+  --member-id user@example.com --perm edit
+
+# 查看 / 删除协作者
+feishu-cli perm list <doc_token> --doc-type docx
+feishu-cli perm delete <doc_token> --doc-type docx --member-type email --member-id user@example.com
+
+# 公开权限管理
+feishu-cli perm public-get <doc_token>
+feishu-cli perm public-update <doc_token> --external-access --link-share-entity anyone_readable
+
+# 分享密码
+feishu-cli perm password create <doc_token>
+feishu-cli perm password delete <doc_token>
+
+# 批量添加协作者
+feishu-cli perm batch-add <doc_token> --members-file members.json --notification
+
+# 权限检查
+feishu-cli perm auth <doc_token> --action view
+
+# 转移所有权
+feishu-cli perm transfer-owner <doc_token> --member-type email --member-id user@example.com
+```
+
+</details>
+
+<details>
+<summary>群聊管理</summary>
+
+```bash
+# 群聊 CRUD
+feishu-cli chat create --name "群聊名" --user-ids id1,id2
+feishu-cli chat get <chat_id>
+feishu-cli chat update <chat_id> --name "新群名"
+feishu-cli chat delete <chat_id>
+feishu-cli chat link <chat_id>
+
+# 群成员管理
+feishu-cli chat member list <chat_id>
+feishu-cli chat member add <chat_id> --id-list id1,id2
+feishu-cli chat member remove <chat_id> --id-list id1,id2
+```
+
+</details>
+
+<details>
+<summary>文件管理</summary>
+
+```bash
+# 基础操作
+feishu-cli file list [folder_token]
+feishu-cli file mkdir --name "新文件夹" --folder-token <token>
+
+# 上传 / 下载
+feishu-cli file upload local_file.pdf --parent FOLDER_TOKEN
+feishu-cli file download <file_token> -o output.pdf
+
+# 版本管理
+feishu-cli file version list <doc_token> --doc-type docx
+feishu-cli file version create <doc_token> --doc-type docx --name "v1.0"
+feishu-cli file version get <doc_token> <version_id> --doc-type docx
+feishu-cli file version delete <doc_token> <version_id> --doc-type docx
+
+# 元数据与统计
+feishu-cli file meta TOKEN1 TOKEN2 --doc-type docx
+feishu-cli file stats <file_token> --doc-type docx
 ```
 
 </details>
@@ -308,25 +419,39 @@ feishu-cli msg forward <message_id> --receive-id <id> --receive-id-type email
 <summary>更多命令</summary>
 
 ```bash
-# 权限管理
-feishu-cli perm add <doc_id> --doc-type docx --member-type email \
-  --member-id user@example.com --perm full_access
-
-# 文件管理
-feishu-cli file list [folder_token]
-feishu-cli file mkdir --name "新文件夹" --folder-token <token>
+# 文档异步导出/导入
+feishu-cli doc export-file <doc_token> --type pdf -o output.pdf
+feishu-cli doc import-file local_file.docx --type docx --name "文档名"
 
 # 素材上传
 feishu-cli media upload image.png --parent-type docx_image --parent-node <doc_id>
 
 # 日历
 feishu-cli calendar list
+feishu-cli calendar get <calendar_id>
+feishu-cli calendar primary
 feishu-cli calendar create-event --calendar-id <id> --summary "会议" \
   --start "2024-01-01T10:00:00+08:00" --end "2024-01-01T11:00:00+08:00"
+feishu-cli calendar event-search --calendar-id <id> --query "关键词"
+feishu-cli calendar event-reply <calendar_id> <event_id> --status accept
+feishu-cli calendar attendee add <calendar_id> <event_id> --user-ids id1,id2
+feishu-cli calendar attendee list <calendar_id> <event_id>
+feishu-cli calendar freebusy --start "2024-01-01T00:00:00+08:00" \
+  --end "2024-01-02T00:00:00+08:00" --user-ids id1,id2
 
 # 任务
 feishu-cli task create --summary "待办事项"
 feishu-cli task complete <task_id>
+feishu-cli task subtask create <task_guid> --summary "子任务"
+feishu-cli task subtask list <task_guid>
+feishu-cli task member add <task_guid> --members id1,id2 --role assignee
+feishu-cli task reminder add <task_guid> --minutes 30
+
+# 任务列表
+feishu-cli tasklist create --name "任务列表"
+feishu-cli tasklist list
+feishu-cli tasklist get <tasklist_guid>
+feishu-cli tasklist delete <tasklist_guid>
 
 # 画板
 feishu-cli board image <whiteboard_id> output.png
@@ -334,9 +459,20 @@ feishu-cli board image <whiteboard_id> output.png
 # 评论
 feishu-cli comment list <file_token> --type docx
 feishu-cli comment add <file_token> --type docx --content "评论内容"
+feishu-cli comment resolve <file_token> <comment_id> --type docx
+feishu-cli comment unresolve <file_token> <comment_id> --type docx
+feishu-cli comment reply list <file_token> <comment_id> --type docx
+feishu-cli comment reply delete <file_token> <comment_id> <reply_id> --type docx
 
 # 用户
 feishu-cli user info <user_id>
+feishu-cli user search --email user@example.com
+feishu-cli user search --mobile 13800138000
+feishu-cli user list --department-id DEPT_ID
+
+# 部门
+feishu-cli dept get <department_id>
+feishu-cli dept children <department_id>
 ```
 
 </details>
@@ -402,18 +538,24 @@ feishu-cli user info <user_id>
 |------|---------|------|
 | 文档操作 | `docx:document` | 文档读写 |
 | 知识库 | `wiki:wiki:readonly` | 知识库读取 |
+| 知识库成员 | `wiki:wiki` | 空间成员管理 |
 | 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
 | 素材管理 | `drive:drive` | 上传下载 |
 | 评论 | `drive:drive.comment:write` | 评论读写 |
 | 权限管理 | `drive:permission:member:create` | 添加协作者 |
 | 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
+| 消息增强 | `im:message`, `im:message:send_as_bot` | Pin/Reaction/转发 |
 | 群聊搜索 | `im:chat:readonly` | 搜索群聊 |
+| 群聊管理 | `im:chat`, `im:chat:readonly` | 群聊 CRUD |
+| 群成员管理 | `im:chat:member` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |
 | 用户信息 | `contact:user.base:readonly` | 获取用户信息 |
+| 通讯录 | `contact:user.base:readonly`, `contact:department.base:readonly` | 用户搜索/部门查询 |
 | 画板 | `board:board` | 画板读写 |
 | 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
 | 日历 | `calendar:calendar:readonly`, `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
+| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
 | 搜索 | 需要 User Access Token | 用户授权 |
 
 ## 技术栈

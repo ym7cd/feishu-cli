@@ -10,12 +10,18 @@ var msgCmd = &cobra.Command{
 	Long: `消息操作命令，用于向用户或群组发送、管理消息。
 
 子命令:
-  send        发送消息
-  delete      删除消息
-  list        获取消息列表
-  get         获取消息详情
-  forward     转发消息
-  read-users  查询消息已读用户
+  send            发送消息
+  reply           回复消息
+  delete          删除消息
+  list            获取消息列表
+  get             获取消息详情
+  forward         转发消息
+  merge-forward   合并转发消息
+  read-users      查询消息已读用户
+  reaction        表情回复管理（add/remove/list）
+  pin             置顶消息
+  unpin           取消置顶消息
+  pins            获取群内置顶消息列表
 
 接收者类型:
   email     邮箱
@@ -38,6 +44,9 @@ var msgCmd = &cobra.Command{
     --receive-id user@example.com \
     --text "你好，这是一条测试消息"
 
+  # 回复消息
+  feishu-cli msg reply om_xxx --text "收到！"
+
   # 获取消息详情
   feishu-cli msg get om_xxx
 
@@ -47,11 +56,23 @@ var msgCmd = &cobra.Command{
   # 转发消息
   feishu-cli msg forward om_xxx --receive-id user@example.com --receive-id-type email
 
+  # 合并转发消息
+  feishu-cli msg merge-forward --receive-id user@example.com --message-ids om_xxx,om_yyy
+
   # 删除消息
   feishu-cli msg delete om_xxx
 
   # 查询消息已读用户
-  feishu-cli msg read-users om_xxx`,
+  feishu-cli msg read-users om_xxx
+
+  # 表情回复
+  feishu-cli msg reaction add om_xxx --emoji-type THUMBSUP
+  feishu-cli msg reaction list om_xxx
+
+  # 置顶消息
+  feishu-cli msg pin om_xxx
+  feishu-cli msg unpin om_xxx
+  feishu-cli msg pins --chat-id oc_xxx`,
 }
 
 func init() {

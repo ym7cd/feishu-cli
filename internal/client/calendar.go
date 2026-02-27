@@ -393,6 +393,353 @@ func timestampToRFC3339(ts string, tz string) string {
 	return time.Unix(timestamp, 0).In(loc).Format(time.RFC3339)
 }
 
+// EventAttendee 日程参与人
+type EventAttendee struct {
+	Type            string `json:"type"`                        // user/chat/resource/third_party
+	AttendeeID      string `json:"attendee_id,omitempty"`       // 参与人 ID
+	UserID          string `json:"user_id,omitempty"`           // 用户 ID
+	ChatID          string `json:"chat_id,omitempty"`           // 群 ID
+	RoomID          string `json:"room_id,omitempty"`           // 会议室 ID
+	ThirdPartyEmail string `json:"third_party_email,omitempty"` // 第三方邮箱
+	DisplayName     string `json:"display_name,omitempty"`      // 显示名称
+	RsvpStatus      string `json:"rsvp_status,omitempty"`       // 响应状态
+	IsOptional      bool   `json:"is_optional,omitempty"`       // 是否可选参加
+	IsOrganizer     bool   `json:"is_organizer,omitempty"`      // 是否组织者
+	IsExternal      bool   `json:"is_external,omitempty"`       // 是否外部参与人
+}
+
+// FreebusyInfo 忙闲信息
+type FreebusyInfo struct {
+	StartTime string `json:"start_time"` // RFC3339
+	EndTime   string `json:"end_time"`   // RFC3339
+}
+
+// GetCalendar 获取日历详情
+func GetCalendar(calendarID string) (*Calendar, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkcalendar.NewGetCalendarReqBuilder().
+		CalendarId(calendarID).
+		Build()
+
+	resp, err := client.Calendar.Calendar.Get(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("获取日历详情失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取日历详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("日历不存在")
+	}
+
+	return &Calendar{
+		CalendarID:   StringVal(resp.Data.CalendarId),
+		Summary:      StringVal(resp.Data.Summary),
+		Description:  StringVal(resp.Data.Description),
+		Permissions:  StringVal(resp.Data.Permissions),
+		Type:         StringVal(resp.Data.Type),
+		Color:        IntVal(resp.Data.Color),
+		Role:         StringVal(resp.Data.Role),
+		SummaryAlias: StringVal(resp.Data.SummaryAlias),
+		IsDeleted:    BoolVal(resp.Data.IsDeleted),
+		IsThirdParty: BoolVal(resp.Data.IsThirdParty),
+	}, nil
+}
+
+// GetPrimaryCalendar 获取主日历
+func GetPrimaryCalendar() (*Calendar, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkcalendar.NewPrimaryCalendarReqBuilder().Build()
+
+	resp, err := client.Calendar.Calendar.Primary(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("获取主日历失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取主日历失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil || len(resp.Data.Calendars) == 0 {
+		return nil, fmt.Errorf("未找到主日历")
+	}
+
+	cal := resp.Data.Calendars[0].Calendar
+	if cal == nil {
+		return nil, fmt.Errorf("主日历数据为空")
+	}
+
+	return &Calendar{
+		CalendarID:   StringVal(cal.CalendarId),
+		Summary:      StringVal(cal.Summary),
+		Description:  StringVal(cal.Description),
+		Permissions:  StringVal(cal.Permissions),
+		Type:         StringVal(cal.Type),
+		Color:        IntVal(cal.Color),
+		Role:         StringVal(cal.Role),
+		SummaryAlias: StringVal(cal.SummaryAlias),
+		IsDeleted:    BoolVal(cal.IsDeleted),
+		IsThirdParty: BoolVal(cal.IsThirdParty),
+	}, nil
+}
+
+// SearchEvents 搜索日程
+func SearchEvents(calendarID, query string, startTime, endTime string, pageToken string, pageSize int) ([]*CalendarEvent, string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", err
+	}
+
+	bodyBuilder := larkcalendar.NewSearchCalendarEventReqBodyBuilder().
+		Query(query)
+
+	filterBuilder := larkcalendar.NewEventSearchFilterBuilder()
+	hasFilter := false
+
+	if startTime != "" {
+		startTs, err := parseTimeToTimestamp(startTime)
+		if err != nil {
+			return nil, "", fmt.Errorf("解析开始时间失败: %w", err)
+		}
+		startTimeInfo := larkcalendar.NewTimeInfoBuilder().Timestamp(startTs).Build()
+		filterBuilder.StartTime(startTimeInfo)
+		hasFilter = true
+	}
+
+	if endTime != "" {
+		endTs, err := parseTimeToTimestamp(endTime)
+		if err != nil {
+			return nil, "", fmt.Errorf("解析结束时间失败: %w", err)
+		}
+		endTimeInfo := larkcalendar.NewTimeInfoBuilder().Timestamp(endTs).Build()
+		filterBuilder.EndTime(endTimeInfo)
+		hasFilter = true
+	}
+
+	if hasFilter {
+		bodyBuilder.Filter(filterBuilder.Build())
+	}
+
+	reqBuilder := larkcalendar.NewSearchCalendarEventReqBuilder().
+		CalendarId(calendarID).
+		Body(bodyBuilder.Build())
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Calendar.CalendarEvent.Search(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", fmt.Errorf("搜索日程失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", fmt.Errorf("搜索日程失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var events []*CalendarEvent
+	if resp.Data != nil && resp.Data.Items != nil {
+		for _, item := range resp.Data.Items {
+			events = append(events, convertEvent(item))
+		}
+	}
+
+	var nextPageToken string
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+	}
+
+	return events, nextPageToken, nil
+}
+
+// AddEventAttendees 添加日程参与人
+func AddEventAttendees(calendarID, eventID string, attendees []*EventAttendee) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	var sdkAttendees []*larkcalendar.CalendarEventAttendee
+	for _, a := range attendees {
+		builder := larkcalendar.NewCalendarEventAttendeeBuilder().
+			Type(a.Type)
+		if a.UserID != "" {
+			builder.UserId(a.UserID)
+		}
+		if a.ChatID != "" {
+			builder.ChatId(a.ChatID)
+		}
+		if a.RoomID != "" {
+			builder.RoomId(a.RoomID)
+		}
+		if a.ThirdPartyEmail != "" {
+			builder.ThirdPartyEmail(a.ThirdPartyEmail)
+		}
+		sdkAttendees = append(sdkAttendees, builder.Build())
+	}
+
+	body := larkcalendar.NewCreateCalendarEventAttendeeReqBodyBuilder().
+		Attendees(sdkAttendees).
+		NeedNotification(true).
+		Build()
+
+	req := larkcalendar.NewCreateCalendarEventAttendeeReqBuilder().
+		CalendarId(calendarID).
+		EventId(eventID).
+		Body(body).
+		Build()
+
+	resp, err := client.Calendar.CalendarEventAttendee.Create(Context(), req)
+	if err != nil {
+		return fmt.Errorf("添加日程参与人失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("添加日程参与人失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// ListEventAttendees 列出日程参与人
+func ListEventAttendees(calendarID, eventID string, pageSize int, pageToken string) ([]*EventAttendee, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larkcalendar.NewListCalendarEventAttendeeReqBuilder().
+		CalendarId(calendarID).
+		EventId(eventID)
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Calendar.CalendarEventAttendee.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取日程参与人列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取日程参与人列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var attendees []*EventAttendee
+	if resp.Data != nil && resp.Data.Items != nil {
+		for _, item := range resp.Data.Items {
+			attendees = append(attendees, &EventAttendee{
+				Type:            StringVal(item.Type),
+				AttendeeID:      StringVal(item.AttendeeId),
+				UserID:          StringVal(item.UserId),
+				ChatID:          StringVal(item.ChatId),
+				RoomID:          StringVal(item.RoomId),
+				ThirdPartyEmail: StringVal(item.ThirdPartyEmail),
+				DisplayName:     StringVal(item.DisplayName),
+				RsvpStatus:      StringVal(item.RsvpStatus),
+				IsOptional:      BoolVal(item.IsOptional),
+				IsOrganizer:     BoolVal(item.IsOrganizer),
+				IsExternal:      BoolVal(item.IsExternal),
+			})
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return attendees, nextPageToken, hasMore, nil
+}
+
+// ListFreebusy 查询忙闲信息
+func ListFreebusy(startTime, endTime string, userID string) ([]*FreebusyInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	bodyBuilder := larkcalendar.NewListFreebusyReqBodyBuilder().
+		TimeMin(startTime).
+		TimeMax(endTime)
+
+	if userID != "" {
+		bodyBuilder.UserId(userID)
+	}
+
+	req := larkcalendar.NewListFreebusyReqBuilder().
+		Body(bodyBuilder.Build()).
+		Build()
+
+	resp, err := client.Calendar.Freebusy.List(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("查询忙闲信息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("查询忙闲信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var result []*FreebusyInfo
+	if resp.Data != nil && resp.Data.FreebusyList != nil {
+		for _, item := range resp.Data.FreebusyList {
+			result = append(result, &FreebusyInfo{
+				StartTime: StringVal(item.StartTime),
+				EndTime:   StringVal(item.EndTime),
+			})
+		}
+	}
+
+	return result, nil
+}
+
+// ReplyEvent 回复日程（接受/拒绝/待定）
+func ReplyEvent(calendarID, eventID, rsvpStatus string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	body := larkcalendar.NewReplyCalendarEventReqBodyBuilder().
+		RsvpStatus(rsvpStatus).
+		Build()
+
+	req := larkcalendar.NewReplyCalendarEventReqBuilder().
+		CalendarId(calendarID).
+		EventId(eventID).
+		Body(body).
+		Build()
+
+	resp, err := client.Calendar.CalendarEvent.Reply(Context(), req)
+	if err != nil {
+		return fmt.Errorf("回复日程失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("回复日程失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
 // 辅助函数：转换日程对象
 func convertEvent(event *larkcalendar.CalendarEvent) *CalendarEvent {
 	if event == nil {

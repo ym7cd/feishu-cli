@@ -95,6 +95,10 @@ func CreateTask(opts CreateTaskOptions) (*TaskInfo, error) {
 		return nil, fmt.Errorf("创建任务失败: %s (code: %d)", resp.Msg, resp.Code)
 	}
 
+	if resp.Data == nil {
+		return nil, fmt.Errorf("创建任务成功但未返回数据")
+	}
+
 	return taskToInfo(resp.Data.Task), nil
 }
 
@@ -117,6 +121,10 @@ func GetTask(taskGuid string) (*TaskInfo, error) {
 
 	if !resp.Success() {
 		return nil, fmt.Errorf("获取任务失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("获取任务返回数据为空")
 	}
 
 	return taskToInfo(resp.Data.Task), nil
@@ -160,6 +168,10 @@ func ListTasks(pageSize int, pageToken string, completed *bool) (*ListTasksResul
 
 	if !resp.Success() {
 		return nil, fmt.Errorf("获取任务列表失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return &ListTasksResult{Tasks: make([]*TaskInfo, 0)}, nil
 	}
 
 	result := &ListTasksResult{
@@ -238,6 +250,10 @@ func UpdateTask(taskGuid string, opts UpdateTaskOptions) (*TaskInfo, error) {
 		return nil, fmt.Errorf("更新任务失败: %s (code: %d)", resp.Msg, resp.Code)
 	}
 
+	if resp.Data == nil {
+		return nil, fmt.Errorf("更新任务成功但未返回数据")
+	}
+
 	return taskToInfo(resp.Data.Task), nil
 }
 
@@ -269,6 +285,389 @@ func CompleteTask(taskGuid string) (*TaskInfo, error) {
 	return UpdateTask(taskGuid, UpdateTaskOptions{
 		Completed: true,
 	})
+}
+
+// TasklistInfo 任务清单信息
+type TasklistInfo struct {
+	Guid      string `json:"guid"`
+	Name      string `json:"name"`
+	Creator   string `json:"creator,omitempty"`
+	Owner     string `json:"owner,omitempty"`
+	Url       string `json:"url,omitempty"`
+	CreatedAt string `json:"created_at,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+}
+
+// CreateSubtask 创建子任务
+func CreateSubtask(taskGuid, summary string) (*TaskInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	inputTask := larktask.NewInputTaskBuilder().
+		Summary(summary).
+		Build()
+
+	req := larktask.NewCreateTaskSubtaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		InputTask(inputTask).
+		Build()
+
+	resp, err := client.Task.V2.TaskSubtask.Create(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("创建子任务失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("创建子任务失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("创建子任务成功但未返回数据")
+	}
+
+	return taskToInfo(resp.Data.Subtask), nil
+}
+
+// ListSubtasks 列出子任务
+func ListSubtasks(taskGuid string, pageSize int, pageToken string) ([]*TaskInfo, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larktask.NewListTaskSubtaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id")
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Task.V2.TaskSubtask.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取子任务列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取子任务列表失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	var tasks []*TaskInfo
+	if resp.Data != nil {
+		for _, task := range resp.Data.Items {
+			tasks = append(tasks, taskToInfo(task))
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return tasks, nextPageToken, hasMore, nil
+}
+
+// AddTaskMembers 添加任务成员
+func AddTaskMembers(taskGuid string, memberIDs []string, memberRole string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	var members []*larktask.Member
+	for _, id := range memberIDs {
+		member := larktask.NewMemberBuilder().
+			Id(id).
+			Type("user").
+			Role(memberRole).
+			Build()
+		members = append(members, member)
+	}
+
+	body := larktask.NewAddMembersTaskReqBodyBuilder().
+		Members(members).
+		Build()
+
+	req := larktask.NewAddMembersTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.AddMembers(Context(), req)
+	if err != nil {
+		return fmt.Errorf("添加任务成员失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("添加任务成员失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	return nil
+}
+
+// RemoveTaskMembers 移除任务成员
+func RemoveTaskMembers(taskGuid string, memberIDs []string, memberRole string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	var members []*larktask.Member
+	for _, id := range memberIDs {
+		member := larktask.NewMemberBuilder().
+			Id(id).
+			Type("user").
+			Role(memberRole).
+			Build()
+		members = append(members, member)
+	}
+
+	body := larktask.NewRemoveMembersTaskReqBodyBuilder().
+		Members(members).
+		Build()
+
+	req := larktask.NewRemoveMembersTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.RemoveMembers(Context(), req)
+	if err != nil {
+		return fmt.Errorf("移除任务成员失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("移除任务成员失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	return nil
+}
+
+// AddTaskReminders 添加任务提醒
+func AddTaskReminders(taskGuid string, relativeFireMinute int) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	reminder := larktask.NewReminderBuilder().
+		RelativeFireMinute(relativeFireMinute).
+		Build()
+
+	body := larktask.NewAddRemindersTaskReqBodyBuilder().
+		Reminders([]*larktask.Reminder{reminder}).
+		Build()
+
+	req := larktask.NewAddRemindersTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.AddReminders(Context(), req)
+	if err != nil {
+		return fmt.Errorf("添加任务提醒失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("添加任务提醒失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	return nil
+}
+
+// RemoveTaskReminders 移除任务提醒
+func RemoveTaskReminders(taskGuid string, reminderIDs []string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	body := larktask.NewRemoveRemindersTaskReqBodyBuilder().
+		ReminderIds(reminderIDs).
+		Build()
+
+	req := larktask.NewRemoveRemindersTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.RemoveReminders(Context(), req)
+	if err != nil {
+		return fmt.Errorf("移除任务提醒失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("移除任务提醒失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	return nil
+}
+
+// CreateTasklist 创建任务清单
+func CreateTasklist(name string) (*TasklistInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	inputTasklist := larktask.NewInputTasklistBuilder().
+		Name(name).
+		Build()
+
+	req := larktask.NewCreateTasklistReqBuilder().
+		UserIdType("open_id").
+		InputTasklist(inputTasklist).
+		Build()
+
+	resp, err := client.Task.V2.Tasklist.Create(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("创建任务清单失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("创建任务清单失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("创建任务清单成功但未返回数据")
+	}
+
+	return tasklistToInfo(resp.Data.Tasklist), nil
+}
+
+// GetTasklist 获取任务清单详情
+func GetTasklist(tasklistGuid string) (*TasklistInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larktask.NewGetTasklistReqBuilder().
+		TasklistGuid(tasklistGuid).
+		UserIdType("open_id").
+		Build()
+
+	resp, err := client.Task.V2.Tasklist.Get(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("获取任务清单失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取任务清单失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("获取任务清单返回数据为空")
+	}
+
+	return tasklistToInfo(resp.Data.Tasklist), nil
+}
+
+// ListTasklists 列出任务清单
+func ListTasklists(pageSize int, pageToken string) ([]*TasklistInfo, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larktask.NewListTasklistReqBuilder().
+		UserIdType("open_id")
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Task.V2.Tasklist.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取任务清单列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取任务清单列表失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	var lists []*TasklistInfo
+	if resp.Data != nil {
+		for _, item := range resp.Data.Items {
+			lists = append(lists, tasklistToInfo(item))
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return lists, nextPageToken, hasMore, nil
+}
+
+// DeleteTasklist 删除任务清单
+func DeleteTasklist(tasklistGuid string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larktask.NewDeleteTasklistReqBuilder().
+		TasklistGuid(tasklistGuid).
+		Build()
+
+	resp, err := client.Task.V2.Tasklist.Delete(Context(), req)
+	if err != nil {
+		return fmt.Errorf("删除任务清单失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("删除任务清单失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	return nil
+}
+
+// tasklistToInfo 转换 SDK Tasklist 为 TasklistInfo
+func tasklistToInfo(tl *larktask.Tasklist) *TasklistInfo {
+	if tl == nil {
+		return nil
+	}
+	info := &TasklistInfo{
+		Guid: StringVal(tl.Guid),
+		Name: StringVal(tl.Name),
+		Url:  StringVal(tl.Url),
+	}
+	if tl.Creator != nil {
+		info.Creator = StringVal(tl.Creator.Id)
+	}
+	if tl.Owner != nil {
+		info.Owner = StringVal(tl.Owner.Id)
+	}
+	if createdAt := StringVal(tl.CreatedAt); createdAt != "" {
+		if ts, err := strconv.ParseInt(createdAt, 10, 64); err == nil {
+			info.CreatedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+		}
+	}
+	if updatedAt := StringVal(tl.UpdatedAt); updatedAt != "" {
+		if ts, err := strconv.ParseInt(updatedAt, 10, 64); err == nil {
+			info.UpdatedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+		}
+	}
+	return info
 }
 
 // taskToInfo converts SDK Task to TaskInfo

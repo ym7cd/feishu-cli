@@ -397,6 +397,228 @@ func equalIgnoreCase(a, b string) bool {
 	return true
 }
 
+// MergeForwardMessage 合并转发多条消息
+func MergeForwardMessage(receiveID, receiveIDType string, messageIDs []string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	req := larkim.NewMergeForwardMessageReqBuilder().
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewMergeForwardMessageReqBodyBuilder().
+			ReceiveId(receiveID).
+			MessageIdList(messageIDs).
+			Build()).
+		Build()
+
+	resp, err := client.Im.Message.MergeForward(Context(), req)
+	if err != nil {
+		return "", fmt.Errorf("合并转发消息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("合并转发消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data.Message == nil || resp.Data.Message.MessageId == nil {
+		return "", fmt.Errorf("合并转发成功但未返回消息 ID")
+	}
+
+	return *resp.Data.Message.MessageId, nil
+}
+
+// CreateReaction 给消息添加表情回复
+func CreateReaction(messageID, emojiType string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	req := larkim.NewCreateMessageReactionReqBuilder().
+		MessageId(messageID).
+		Body(larkim.NewCreateMessageReactionReqBodyBuilder().
+			ReactionType(larkim.NewEmojiBuilder().EmojiType(emojiType).Build()).
+			Build()).
+		Build()
+
+	resp, err := client.Im.MessageReaction.Create(Context(), req)
+	if err != nil {
+		return "", fmt.Errorf("添加表情回复失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("添加表情回复失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data.ReactionId == nil {
+		return "", fmt.Errorf("添加表情回复成功但未返回 reaction ID")
+	}
+
+	return *resp.Data.ReactionId, nil
+}
+
+// DeleteReaction 删除消息的表情回复
+func DeleteReaction(messageID, reactionID string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkim.NewDeleteMessageReactionReqBuilder().
+		MessageId(messageID).
+		ReactionId(reactionID).
+		Build()
+
+	resp, err := client.Im.MessageReaction.Delete(Context(), req)
+	if err != nil {
+		return fmt.Errorf("删除表情回复失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("删除表情回复失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// ListReactionsResult 表情回复列表结果
+type ListReactionsResult struct {
+	Items     []*larkim.MessageReaction `json:"items"`
+	PageToken string                    `json:"page_token,omitempty"`
+	HasMore   bool                      `json:"has_more"`
+}
+
+// ListReactions 获取消息的表情回复列表
+func ListReactions(messageID, emojiType string, pageSize int, pageToken string) (*ListReactionsResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuilder := larkim.NewListMessageReactionReqBuilder().
+		MessageId(messageID)
+
+	if emojiType != "" {
+		reqBuilder.ReactionType(emojiType)
+	}
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Im.MessageReaction.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, fmt.Errorf("获取表情回复列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取表情回复列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return &ListReactionsResult{
+		Items:     resp.Data.Items,
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}, nil
+}
+
+// PinMessage 置顶消息
+func PinMessage(messageID string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkim.NewCreatePinReqBuilder().
+		Body(larkim.NewCreatePinReqBodyBuilder().
+			MessageId(messageID).
+			Build()).
+		Build()
+
+	resp, err := client.Im.Pin.Create(Context(), req)
+	if err != nil {
+		return fmt.Errorf("置顶消息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("置顶消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// UnpinMessage 取消置顶消息
+func UnpinMessage(messageID string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkim.NewDeletePinReqBuilder().
+		MessageId(messageID).
+		Build()
+
+	resp, err := client.Im.Pin.Delete(Context(), req)
+	if err != nil {
+		return fmt.Errorf("取消置顶消息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("取消置顶消息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// ListPinsResult 置顶消息列表结果
+type ListPinsResult struct {
+	Items     []*larkim.Pin `json:"items"`
+	PageToken string        `json:"page_token,omitempty"`
+	HasMore   bool          `json:"has_more"`
+}
+
+// ListPins 获取群内置顶消息列表
+func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int) (*ListPinsResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	reqBuilder := larkim.NewListPinReqBuilder().
+		ChatId(chatID)
+
+	if startTime != "" {
+		reqBuilder.StartTime(startTime)
+	}
+	if endTime != "" {
+		reqBuilder.EndTime(endTime)
+	}
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Im.Pin.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, fmt.Errorf("获取置顶消息列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取置顶消息列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return &ListPinsResult{
+		Items:     resp.Data.Items,
+		PageToken: StringVal(resp.Data.PageToken),
+		HasMore:   BoolVal(resp.Data.HasMore),
+	}, nil
+}
+
 // GetReadUsers gets the list of users who have read a message
 func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken string) (*ReadUsersResult, error) {
 	client, err := GetClient()

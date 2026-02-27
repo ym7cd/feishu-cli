@@ -427,6 +427,382 @@ func CreateShortcut(parentToken string, targetFileToken string, targetType strin
 	return info, nil
 }
 
+// DownloadFile 下载云空间文件
+func DownloadFile(fileToken string, outputPath string) error {
+	if err := validatePath(outputPath); err != nil {
+		return err
+	}
+
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkdrive.NewDownloadFileReqBuilder().
+		FileToken(fileToken).
+		Build()
+
+	resp, err := client.Drive.File.Download(ContextWithTimeout(downloadTimeout), req)
+	if err != nil {
+		return fmt.Errorf("下载文件失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("下载文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return saveToFile(resp.File, outputPath)
+}
+
+// UploadFile 上传文件到云空间
+func UploadFile(filePath, parentToken, fileName string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	fileSize := int(stat.Size())
+
+	if fileName == "" {
+		fileName = filepath.Base(filePath)
+	}
+
+	req := larkdrive.NewUploadAllFileReqBuilder().
+		Body(larkdrive.NewUploadAllFileReqBodyBuilder().
+			FileName(fileName).
+			ParentType("explorer").
+			ParentNode(parentToken).
+			Size(fileSize).
+			File(file).
+			Build()).
+		Build()
+
+	resp, err := client.Drive.File.UploadAll(ContextWithTimeout(downloadTimeout), req)
+	if err != nil {
+		return "", fmt.Errorf("上传文件失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return "", fmt.Errorf("上传文件失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.FileToken == nil {
+		return "", fmt.Errorf("上传成功但未返回文件 Token")
+	}
+
+	return *resp.Data.FileToken, nil
+}
+
+// FileVersionInfo 文件版本信息
+type FileVersionInfo struct {
+	Name        string `json:"name"`
+	Version     string `json:"version"`
+	ParentToken string `json:"parent_token,omitempty"`
+	OwnerID     string `json:"owner_id,omitempty"`
+	CreatorID   string `json:"creator_id,omitempty"`
+	CreateTime  string `json:"create_time,omitempty"`
+	UpdateTime  string `json:"update_time,omitempty"`
+	Status      string `json:"status,omitempty"`
+	ObjType     string `json:"obj_type,omitempty"`
+	ParentType  string `json:"parent_type,omitempty"`
+}
+
+func versionToInfo(v *larkdrive.Version) *FileVersionInfo {
+	if v == nil {
+		return nil
+	}
+	return &FileVersionInfo{
+		Name:        StringVal(v.Name),
+		Version:     StringVal(v.Version),
+		ParentToken: StringVal(v.ParentToken),
+		OwnerID:     StringVal(v.OwnerId),
+		CreatorID:   StringVal(v.CreatorId),
+		CreateTime:  StringVal(v.CreateTime),
+		UpdateTime:  StringVal(v.UpdateTime),
+		Status:      StringVal(v.Status),
+		ObjType:     StringVal(v.ObjType),
+		ParentType:  StringVal(v.ParentType),
+	}
+}
+
+// CreateFileVersion 创建文件版本
+func CreateFileVersion(fileToken, objType, name string) (*FileVersionInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	version := larkdrive.NewVersionBuilder().
+		Name(name).
+		ObjType(objType).
+		Build()
+
+	req := larkdrive.NewCreateFileVersionReqBuilder().
+		FileToken(fileToken).
+		Version(version).
+		Build()
+
+	resp, err := client.Drive.FileVersion.Create(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("创建文件版本失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("创建文件版本失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("创建文件版本成功但未返回数据")
+	}
+
+	return &FileVersionInfo{
+		Name:        StringVal(resp.Data.Name),
+		Version:     StringVal(resp.Data.Version),
+		ParentToken: StringVal(resp.Data.ParentToken),
+		OwnerID:     StringVal(resp.Data.OwnerId),
+		CreatorID:   StringVal(resp.Data.CreatorId),
+		CreateTime:  StringVal(resp.Data.CreateTime),
+		UpdateTime:  StringVal(resp.Data.UpdateTime),
+		Status:      StringVal(resp.Data.Status),
+	}, nil
+}
+
+// GetFileVersion 获取文件版本详情
+func GetFileVersion(fileToken, versionID, objType string) (*FileVersionInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkdrive.NewGetFileVersionReqBuilder().
+		FileToken(fileToken).
+		VersionId(versionID).
+		ObjType(objType).
+		Build()
+
+	resp, err := client.Drive.FileVersion.Get(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("获取文件版本失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取文件版本失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("文件版本不存在")
+	}
+
+	return &FileVersionInfo{
+		Name:        StringVal(resp.Data.Name),
+		Version:     StringVal(resp.Data.Version),
+		ParentToken: StringVal(resp.Data.ParentToken),
+		OwnerID:     StringVal(resp.Data.OwnerId),
+		CreatorID:   StringVal(resp.Data.CreatorId),
+		CreateTime:  StringVal(resp.Data.CreateTime),
+		UpdateTime:  StringVal(resp.Data.UpdateTime),
+		Status:      StringVal(resp.Data.Status),
+	}, nil
+}
+
+// ListFileVersions 列出文件版本
+func ListFileVersions(fileToken, objType string, pageSize int, pageToken string) ([]*FileVersionInfo, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larkdrive.NewListFileVersionReqBuilder().
+		FileToken(fileToken).
+		ObjType(objType)
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Drive.FileVersion.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取文件版本列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取文件版本列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var versions []*FileVersionInfo
+	if resp.Data != nil && resp.Data.Items != nil {
+		for _, v := range resp.Data.Items {
+			versions = append(versions, versionToInfo(v))
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return versions, nextPageToken, hasMore, nil
+}
+
+// DeleteFileVersion 删除文件版本
+func DeleteFileVersion(fileToken, versionID, objType string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkdrive.NewDeleteFileVersionReqBuilder().
+		FileToken(fileToken).
+		VersionId(versionID).
+		ObjType(objType).
+		Build()
+
+	resp, err := client.Drive.FileVersion.Delete(Context(), req)
+	if err != nil {
+		return fmt.Errorf("删除文件版本失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("删除文件版本失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// FileMeta 文件元数据
+type FileMeta struct {
+	DocToken         string `json:"doc_token"`
+	DocType          string `json:"doc_type"`
+	Title            string `json:"title"`
+	OwnerID          string `json:"owner_id,omitempty"`
+	CreateTime       string `json:"create_time,omitempty"`
+	LatestModifyUser string `json:"latest_modify_user,omitempty"`
+	LatestModifyTime string `json:"latest_modify_time,omitempty"`
+	URL              string `json:"url,omitempty"`
+}
+
+// BatchGetMeta 批量获取文件元数据
+func BatchGetMeta(docTokens []string, docType string) ([]*FileMeta, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	var requestDocs []*larkdrive.RequestDoc
+	for _, token := range docTokens {
+		requestDocs = append(requestDocs, larkdrive.NewRequestDocBuilder().
+			DocToken(token).
+			DocType(docType).
+			Build())
+	}
+
+	withURL := true
+	metaRequest := larkdrive.NewMetaRequestBuilder().
+		RequestDocs(requestDocs).
+		WithUrl(withURL).
+		Build()
+
+	req := larkdrive.NewBatchQueryMetaReqBuilder().
+		MetaRequest(metaRequest).
+		Build()
+
+	resp, err := client.Drive.Meta.BatchQuery(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("批量获取文件元数据失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("批量获取文件元数据失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var metas []*FileMeta
+	if resp.Data != nil && resp.Data.Metas != nil {
+		for _, m := range resp.Data.Metas {
+			metas = append(metas, &FileMeta{
+				DocToken:         StringVal(m.DocToken),
+				DocType:          StringVal(m.DocType),
+				Title:            StringVal(m.Title),
+				OwnerID:          StringVal(m.OwnerId),
+				CreateTime:       StringVal(m.CreateTime),
+				LatestModifyUser: StringVal(m.LatestModifyUser),
+				LatestModifyTime: StringVal(m.LatestModifyTime),
+				URL:              StringVal(m.Url),
+			})
+		}
+	}
+
+	return metas, nil
+}
+
+// FileStats 文件统计信息
+type FileStats struct {
+	FileToken      string `json:"file_token"`
+	FileType       string `json:"file_type"`
+	UV             int    `json:"uv"`
+	PV             int    `json:"pv"`
+	LikeCount      int    `json:"like_count"`
+	UVToday        int    `json:"uv_today"`
+	PVToday        int    `json:"pv_today"`
+	LikeCountToday int    `json:"like_count_today"`
+}
+
+// GetFileStatistics 获取文件统计信息
+func GetFileStatistics(fileToken, fileType string) (*FileStats, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkdrive.NewGetFileStatisticsReqBuilder().
+		FileToken(fileToken).
+		FileType(fileType).
+		Build()
+
+	resp, err := client.Drive.FileStatistics.Get(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("获取文件统计信息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取文件统计信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("获取文件统计信息返回数据为空")
+	}
+
+	stats := &FileStats{
+		FileToken: StringVal(resp.Data.FileToken),
+		FileType:  StringVal(resp.Data.FileType),
+	}
+
+	if resp.Data.Statistics != nil {
+		stats.UV = IntVal(resp.Data.Statistics.Uv)
+		stats.PV = IntVal(resp.Data.Statistics.Pv)
+		stats.LikeCount = IntVal(resp.Data.Statistics.LikeCount)
+		stats.UVToday = IntVal(resp.Data.Statistics.UvToday)
+		stats.PVToday = IntVal(resp.Data.Statistics.PvToday)
+		stats.LikeCountToday = IntVal(resp.Data.Statistics.LikeCountToday)
+	}
+
+	return stats, nil
+}
+
 // DriveQuota 云空间容量信息
 type DriveQuota struct {
 	Total int64 `json:"total"` // 总容量（字节）

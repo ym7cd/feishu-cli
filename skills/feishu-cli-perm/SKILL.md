@@ -1,6 +1,6 @@
 ---
 name: feishu-cli-perm
-description: 为飞书云文档添加或更新协作者权限。支持用户/群/部门/群组/知识空间成员授予查看、编辑或管理权限。当用户需要添加文档权限、分享文档给他人时使用。
+description: 飞书云文档权限管理。支持添加/删除/查看协作者、公开权限管理、分享密码、批量添加、权限检查、转移所有权。
 argument-hint: <doc_token> --perm <view|edit|full_access>
 user-invocable: true
 allowed-tools: Bash, Read
@@ -8,13 +8,17 @@ allowed-tools: Bash, Read
 
 # 飞书权限管理技能
 
-为飞书云文档添加或更新协作者权限。
+飞书云文档权限管理：添加/删除/查看协作者、公开权限管理、分享密码、批量添加、权限检查、转移所有权。
 
 ## 适用场景
 
-- 给飞书文档添加协作者权限
-- 批量授权脚本化
-- 明确协作者类型、权限级别、是否通知
+- 给飞书文档添加/删除协作者权限
+- 查看文档协作者列表
+- 管理文档公开权限（外部访问、链接分享）
+- 设置/删除/更新分享密码
+- 批量添加协作者
+- 检查用户对文档的权限
+- 转移文档所有权
 
 ## 命令格式
 
@@ -37,6 +41,70 @@ feishu-cli perm update <TOKEN> \
   --member-type <MEMBER_TYPE> \
   --member-id <MEMBER_ID> \
   --perm <PERM>
+```
+
+### 查看协作者列表
+
+```bash
+feishu-cli perm list <TOKEN> --doc-type <DOC_TYPE>
+```
+
+### 删除协作者
+
+```bash
+feishu-cli perm delete <TOKEN> \
+  --doc-type <DOC_TYPE> \
+  --member-type <MEMBER_TYPE> \
+  --member-id <MEMBER_ID>
+```
+
+### 查看公开权限
+
+```bash
+feishu-cli perm public-get <TOKEN>
+```
+
+### 更新公开权限
+
+```bash
+feishu-cli perm public-update <TOKEN> \
+  [--external-access] \
+  [--link-share-entity <anyone_readable|anyone_editable|...>]
+```
+
+### 分享密码管理
+
+```bash
+# 创建分享密码
+feishu-cli perm password create <TOKEN>
+
+# 删除分享密码
+feishu-cli perm password delete <TOKEN>
+
+# 更新分享密码
+feishu-cli perm password update <TOKEN>
+```
+
+### 批量添加协作者
+
+```bash
+feishu-cli perm batch-add <TOKEN> \
+  --members-file <members.json> \
+  [--notification]
+```
+
+### 权限检查
+
+```bash
+feishu-cli perm auth <TOKEN> --action <view|edit|...>
+```
+
+### 转移所有权
+
+```bash
+feishu-cli perm transfer-owner <TOKEN> \
+  --member-type <MEMBER_TYPE> \
+  --member-id <MEMBER_ID>
 ```
 
 ## 参数说明
@@ -132,6 +200,77 @@ feishu-cli perm update docx_xxxxxx \
   --member-type email \
   --member-id user@example.com \
   --perm full_access
+```
+
+### 查看协作者列表
+
+```bash
+feishu-cli perm list docx_xxxxxx --doc-type docx
+```
+
+### 删除协作者
+
+```bash
+feishu-cli perm delete docx_xxxxxx \
+  --doc-type docx \
+  --member-type email \
+  --member-id user@example.com
+```
+
+### 查看公开权限设置
+
+```bash
+feishu-cli perm public-get docx_xxxxxx
+```
+
+### 更新公开权限
+
+```bash
+feishu-cli perm public-update docx_xxxxxx \
+  --external-access \
+  --link-share-entity anyone_readable
+```
+
+### 创建分享密码
+
+```bash
+feishu-cli perm password create docx_xxxxxx
+```
+
+### 删除分享密码
+
+```bash
+feishu-cli perm password delete docx_xxxxxx
+```
+
+### 批量添加协作者
+
+```bash
+feishu-cli perm batch-add docx_xxxxxx \
+  --members-file members.json \
+  --notification
+```
+
+members.json 格式示例：
+```json
+[
+  {"member_type": "email", "member_id": "user1@example.com", "perm": "edit"},
+  {"member_type": "email", "member_id": "user2@example.com", "perm": "view"}
+]
+```
+
+### 权限检查
+
+```bash
+feishu-cli perm auth docx_xxxxxx --action view
+```
+
+### 转移所有权
+
+```bash
+feishu-cli perm transfer-owner docx_xxxxxx \
+  --member-type email \
+  --member-id user@example.com
 ```
 
 ## 执行流程

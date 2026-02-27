@@ -259,6 +259,169 @@ func UpdateWikiNode(spaceID, nodeToken, title string) error {
 	return nil
 }
 
+// WikiSpaceDetail 知识空间详细信息
+type WikiSpaceDetail struct {
+	SpaceID     string `json:"space_id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	SpaceType   string `json:"space_type,omitempty"`
+	Visibility  string `json:"visibility,omitempty"`
+	OpenSharing string `json:"open_sharing,omitempty"`
+}
+
+// WikiSpaceMember 知识空间成员
+type WikiSpaceMember struct {
+	MemberType string `json:"member_type"`
+	MemberID   string `json:"member_id"`
+	MemberRole string `json:"member_role"`
+	Type       string `json:"type,omitempty"`
+}
+
+// GetWikiSpace 获取知识空间详情
+func GetWikiSpace(spaceID string) (*WikiSpaceDetail, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkwiki.NewGetSpaceReqBuilder().
+		SpaceId(spaceID).
+		Build()
+
+	resp, err := client.Wiki.Space.Get(Context(), req)
+	if err != nil {
+		return nil, fmt.Errorf("获取知识空间详情失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取知识空间详情失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil || resp.Data.Space == nil {
+		return nil, fmt.Errorf("知识空间不存在")
+	}
+
+	space := resp.Data.Space
+	return &WikiSpaceDetail{
+		SpaceID:     StringVal(space.SpaceId),
+		Name:        StringVal(space.Name),
+		Description: StringVal(space.Description),
+		SpaceType:   StringVal(space.SpaceType),
+		Visibility:  StringVal(space.Visibility),
+		OpenSharing: StringVal(space.OpenSharing),
+	}, nil
+}
+
+// AddWikiSpaceMember 添加知识空间成员
+func AddWikiSpaceMember(spaceID, memberType, memberID, memberRole string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	member := larkwiki.NewMemberBuilder().
+		MemberType(memberType).
+		MemberId(memberID).
+		MemberRole(memberRole).
+		Build()
+
+	req := larkwiki.NewCreateSpaceMemberReqBuilder().
+		SpaceId(spaceID).
+		Member(member).
+		NeedNotification(true).
+		Build()
+
+	resp, err := client.Wiki.SpaceMember.Create(Context(), req)
+	if err != nil {
+		return fmt.Errorf("添加知识空间成员失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("添加知识空间成员失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
+// ListWikiSpaceMembers 列出知识空间成员
+func ListWikiSpaceMembers(spaceID string, pageSize int, pageToken string) ([]*WikiSpaceMember, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larkwiki.NewListSpaceMemberReqBuilder().
+		SpaceId(spaceID)
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Wiki.SpaceMember.List(Context(), reqBuilder.Build())
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取知识空间成员列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取知识空间成员列表失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	var members []*WikiSpaceMember
+	if resp.Data != nil && resp.Data.Members != nil {
+		for _, item := range resp.Data.Members {
+			members = append(members, &WikiSpaceMember{
+				MemberType: StringVal(item.MemberType),
+				MemberID:   StringVal(item.MemberId),
+				MemberRole: StringVal(item.MemberRole),
+				Type:       StringVal(item.Type),
+			})
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return members, nextPageToken, hasMore, nil
+}
+
+// RemoveWikiSpaceMember 移除知识空间成员
+func RemoveWikiSpaceMember(spaceID, memberType, memberID, memberRole string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	member := larkwiki.NewMemberBuilder().
+		MemberType(memberType).
+		MemberId(memberID).
+		MemberRole(memberRole).
+		Build()
+
+	req := larkwiki.NewDeleteSpaceMemberReqBuilder().
+		SpaceId(spaceID).
+		MemberId(memberID).
+		Member(member).
+		Build()
+
+	resp, err := client.Wiki.SpaceMember.Delete(Context(), req)
+	if err != nil {
+		return fmt.Errorf("移除知识空间成员失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("移除知识空间成员失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	return nil
+}
+
 // MoveWikiNodeResult 移动节点的结果
 type MoveWikiNodeResult struct {
 	NodeToken string `json:"node_token"`
