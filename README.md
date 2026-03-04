@@ -525,12 +525,11 @@ feishu-cli dept children <department_id>
 在飞书开放平台为你的应用添加以下权限：
 
 | 功能 | 所需权限 | 说明 |
-|------|---------|------|
-| 文档操作 | `docx:document` | 文档读写 |
+|------|---------|----|
+| 文档操作 | `docx:document` | 文档读写, 文档写需申请 |
 | 知识库 | `wiki:wiki:readonly` | 知识库读取 |
 | 知识库成员 | `wiki:member` | 空间成员管理 |
 | 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
-| 素材管理 | `subscriptions:image` | 上传下载 |
 | 评论 | `docs:document.comment` | 评论读写 |
 | 权限管理 | `docs:permission.member:create` | 添加协作者 |
 | 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
@@ -538,16 +537,84 @@ feishu-cli dept children <department_id>
 | 群聊管理 | `im:chat` | 群聊 CRUD |
 | 群成员管理 | `im:chat.members` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |
-| 用户信息 | `contact:user.base:readonly` | 获取用户信息 |
-| 通讯录 | `contact:user.base:readonly`, `directory:department:search` | 获取通讯录/部门查询 |
 | 画板 | `board:whiteboard` | 画板读写 |
 | 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
+| 素材管理 | `subscriptions:image` | 上传下载, 需单独申请 |
+| 用户信息 | `contact:user.base:readonly` | 获取用户信息,需单独申请 |
+| 通讯录 | `contact:contact.base:readonly` | 需单独申请 |
+| 部分搜索 | `directory:department:search` | 需单独申请 |
 | 日历 | `calendar:calendarr` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
-| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
+| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理, 需单独申请 |
 | 搜索 | 需要 User Access Token | 用户授权 |
 
-### 权限快捷导入（不包括最后一项搜索）
+### 无需审批权限快捷导入
+```json
+{
+  "scopes": {
+    "tenant": [
+      "board:whiteboard:node:create",
+      "board:whiteboard:node:read",
+      "board:whiteboard:node:update",
+      "calendar:calendar.free_busy:read",
+      "docs:document.comment:read",
+      "docs:document.comment:write_only",
+      "docs:permission.member:create",
+      "docx:document:create",
+      "docx:document:readonly",
+      "drive:drive.metadata:readonly",
+      "drive:drive.search:readonly",
+      "drive:drive:version:readonly",
+      "im:chat.announcement:read",
+      "im:chat.announcement:write_only",
+      "im:chat.chat_pins:read",
+      "im:chat.chat_pins:write_only",
+      "im:chat.collab_plugins:read",
+      "im:chat.collab_plugins:write_only",
+      "im:chat.managers:write_only",
+      "im:chat.members:bot_access",
+      "im:chat.members:read",
+      "im:chat.members:write_only",
+      "im:chat.menu_tree:read",
+      "im:chat.menu_tree:write_only",
+      "im:chat.moderation:read",
+      "im:chat.tabs:read",
+      "im:chat.tabs:write_only",
+      "im:chat.top_notice:write_only",
+      "im:chat.widgets:read",
+      "im:chat.widgets:write_only",
+      "im:chat:create",
+      "im:chat:delete",
+      "im:chat:moderation:write_only",
+      "im:chat:operate_as_owner",
+      "im:chat:read",
+      "im:chat:update",
+      "im:message",
+      "im:message.pins:read",
+      "im:message.pins:write_only",
+      "im:message.reactions:read",
+      "im:message.reactions:write_only",
+      "im:message:readonly",
+      "im:message:send_as_bot",
+      "sheets:spreadsheet.meta:read",
+      "sheets:spreadsheet.meta:write_only",
+      "sheets:spreadsheet:create",
+      "sheets:spreadsheet:read",
+      "sheets:spreadsheet:write_only",
+      "task:tasklist:read",
+      "wiki:wiki:readonly"
+    ],
+    "user": [
+      "docs:document.comment:create",
+      "docs:document.comment:read",
+      "docs:document.comment:update",
+      "docs:document.comment:write_only"
+    ]
+  }
+}
+```
+
+### feishu-cli 所需权限全量导入
 ```json
 {
   "scopes": {
