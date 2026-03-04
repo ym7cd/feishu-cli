@@ -524,28 +524,28 @@ feishu-cli dept children <department_id>
 
 在飞书开放平台为你的应用添加以下权限：
 
-| 功能 | 所需权限 | 说明              |
-|------|---------|-----------------|
-| 文档操作 | `docx:document` | 文档读写            |
-| 知识库 | `wiki:wiki:readonly` | 知识库读取           |
-| 知识库成员 | `wiki:member` | 空间成员管理          |
-| 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理            |
-| 素材管理 | `subscriptions:image` | 上传下载            |
-| 评论 | `docs:document.comment` | 评论读写            |
-| 权限管理 | `docs:permission.member:create` | 添加协作者           |
-| 消息 | `im:message`, `im:message:send_as_bot` | 发送消息            |
+| 功能 | 所需权限 | 说明 |
+|------|---------|------|
+| 文档操作 | `docx:document` | 文档读写 |
+| 知识库 | `wiki:wiki:readonly` | 知识库读取 |
+| 知识库成员 | `wiki:member` | 空间成员管理 |
+| 云空间文件 | `drive:drive`, `drive:drive:readonly` | 文件管理 |
+| 素材管理 | `subscriptions:image` | 上传下载 |
+| 评论 | `docs:document.comment` | 评论读写 |
+| 权限管理 | `docs:permission.member:create` | 添加协作者 |
+| 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
 | 消息增强 | `im:message.pins`, `im:message.reactions` | Pin/Reaction/转发 |
-| 群聊管理 | `im:chat` | 群聊 CRUD         |
-| 群成员管理 | `im:chat.members` | 群成员操作           |
-| 会话历史 | `im:message:readonly` | 获取历史消息          |
-| 用户信息 | `contact:user.base:readonly` | 获取用户信息          |
-| 通讯录 | `contact:user.base:readonly`, `directory:department:search` | 获取通讯录/部门查询      |
-| 画板 | `board:whiteboard` | 画板读写            |
-| 电子表格 | `sheets:spreadsheet` | 电子表格读写          |
-| 日历 | `calendar:calendarr` | 需单独申请           |
-| 任务 | `task:task:read`, `task:task:write` | 需单独申请           |
-| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理          |
-| 搜索 | 需要 User Access Token | 用户授权            |
+| 群聊管理 | `im:chat` | 群聊 CRUD |
+| 群成员管理 | `im:chat.members` | 群成员操作 |
+| 会话历史 | `im:message:readonly` | 获取历史消息 |
+| 用户信息 | `contact:user.base:readonly` | 获取用户信息 |
+| 通讯录 | `contact:user.base:readonly`, `directory:department:search` | 获取通讯录/部门查询 |
+| 画板 | `board:whiteboard` | 画板读写 |
+| 电子表格 | `sheets:spreadsheet` | 电子表格读写 |
+| 日历 | `calendar:calendarr` | 需单独申请 |
+| 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
+| 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
+| 搜索 | 需要 User Access Token | 用户授权 |
 
 ### 权限快捷导入（不包括最后一项搜索）
 ```json
