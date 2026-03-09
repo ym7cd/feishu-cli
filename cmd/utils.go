@@ -18,8 +18,19 @@ import (
 func resolveOptionalUserToken(cmd *cobra.Command) string {
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
-	token, _ := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+	token, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+	if err != nil && cfg.Debug {
+		fmt.Fprintf(os.Stderr, "[提示] 未找到 User Access Token，将使用应用身份访问。可通过 feishu-cli auth login 获取用户授权\n")
+	}
 	return token
+}
+
+// resolveRequiredUserToken 解析 user_access_token（必需）
+// 用于搜索等必须使用 User Access Token 的 API，解析失败时返回错误
+func resolveRequiredUserToken(cmd *cobra.Command) (string, error) {
+	flagToken, _ := cmd.Flags().GetString("user-access-token")
+	cfg := config.Get()
+	return auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
 }
 
 // mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic

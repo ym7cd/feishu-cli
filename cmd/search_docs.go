@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -49,10 +48,8 @@ var searchDocsCmd = &cobra.Command{
 
 		query := args[0]
 
-		// 获取 user access token
-		flagToken, _ := cmd.Flags().GetString("user-access-token")
-		cfg := config.Get()
-		userAccessToken, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+		// 获取 user access token（搜索 API 必需）
+		userAccessToken, err := resolveRequiredUserToken(cmd)
 		if err != nil {
 			return err
 		}

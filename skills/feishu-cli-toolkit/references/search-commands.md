@@ -7,10 +7,11 @@
 按优先级从高到低：
 
 1. **`feishu-cli auth login`（推荐）**：一键 OAuth 登录，Token 自动保存并支持过期自动刷新，无需每次手动传 Token
-2. **命令行参数**：`--user-access-token <token>`
-3. **环境变量**：`FEISHU_USER_ACCESS_TOKEN=<token>`
+2. **非交互两步式（AI Agent 推荐）**：`auth login --print-url` 输出 JSON → 用户浏览器授权 → `auth callback "<回调URL>" --state "<state>"`，全程无 stdin 阻塞
+3. **命令行参数**：`--user-access-token <token>`
+4. **环境变量**：`FEISHU_USER_ACCESS_TOKEN=<token>`
 
-Token 有效期约 2 小时，Refresh Token 有效期 30 天。使用 `auth login` 方式时，Access Token 过期后会自动用 Refresh Token 刷新。
+Token 有效期约 2 小时，Refresh Token 有效期 30 天。**始终使用最大 scope 范围登录**，一次性覆盖搜索 + wiki + 日历 + 任务等全部功能。详见 `feishu-cli-auth` 技能。
 
 ## 搜索消息
 

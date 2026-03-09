@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larktask "github.com/larksuite/oapi-sdk-go/v3/service/task/v2"
 )
 
@@ -87,7 +86,7 @@ func CreateTask(opts CreateTaskOptions, userAccessToken string) (*TaskInfo, erro
 		InputTask(taskBuilder.Build()).
 		Build()
 
-	resp, err := client.Task.V2.Task.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("创建任务失败: %w", err)
 	}
@@ -115,7 +114,7 @@ func GetTask(taskGuid string, userAccessToken string) (*TaskInfo, error) {
 		UserIdType("open_id").
 		Build()
 
-	resp, err := client.Task.V2.Task.Get(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.Get(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取任务失败: %w", err)
 	}
@@ -162,7 +161,7 @@ func ListTasks(pageSize int, pageToken string, completed *bool, userAccessToken 
 
 	req := reqBuilder.Build()
 
-	resp, err := client.Task.V2.Task.List(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.List(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取任务列表失败: %w", err)
 	}
@@ -242,7 +241,7 @@ func UpdateTask(taskGuid string, opts UpdateTaskOptions, userAccessToken string)
 		Body(body).
 		Build()
 
-	resp, err := client.Task.V2.Task.Patch(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.Patch(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("更新任务失败: %w", err)
 	}
@@ -269,7 +268,7 @@ func DeleteTask(taskGuid string, userAccessToken string) error {
 		TaskGuid(taskGuid).
 		Build()
 
-	resp, err := client.Task.V2.Task.Delete(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.Delete(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("删除任务失败: %w", err)
 	}
@@ -316,7 +315,7 @@ func CreateSubtask(taskGuid, summary string, userAccessToken string) (*TaskInfo,
 		InputTask(inputTask).
 		Build()
 
-	resp, err := client.Task.V2.TaskSubtask.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.TaskSubtask.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("创建子任务失败: %w", err)
 	}
@@ -350,7 +349,7 @@ func ListSubtasks(taskGuid string, pageSize int, pageToken string, userAccessTok
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Task.V2.TaskSubtask.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.TaskSubtask.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取子任务列表失败: %w", err)
 	}
@@ -403,7 +402,7 @@ func AddTaskMembers(taskGuid string, memberIDs []string, memberRole string, user
 		Body(body).
 		Build()
 
-	resp, err := client.Task.V2.Task.AddMembers(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.AddMembers(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("添加任务成员失败: %w", err)
 	}
@@ -442,7 +441,7 @@ func RemoveTaskMembers(taskGuid string, memberIDs []string, memberRole string, u
 		Body(body).
 		Build()
 
-	resp, err := client.Task.V2.Task.RemoveMembers(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.RemoveMembers(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("移除任务成员失败: %w", err)
 	}
@@ -475,7 +474,7 @@ func AddTaskReminders(taskGuid string, relativeFireMinute int, userAccessToken s
 		Body(body).
 		Build()
 
-	resp, err := client.Task.V2.Task.AddReminders(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.AddReminders(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("添加任务提醒失败: %w", err)
 	}
@@ -504,7 +503,7 @@ func RemoveTaskReminders(taskGuid string, reminderIDs []string, userAccessToken 
 		Body(body).
 		Build()
 
-	resp, err := client.Task.V2.Task.RemoveReminders(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Task.RemoveReminders(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("移除任务提醒失败: %w", err)
 	}
@@ -532,7 +531,7 @@ func CreateTasklist(name string, userAccessToken string) (*TasklistInfo, error) 
 		InputTasklist(inputTasklist).
 		Build()
 
-	resp, err := client.Task.V2.Tasklist.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Tasklist.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("创建任务清单失败: %w", err)
 	}
@@ -560,7 +559,7 @@ func GetTasklist(tasklistGuid string, userAccessToken string) (*TasklistInfo, er
 		UserIdType("open_id").
 		Build()
 
-	resp, err := client.Task.V2.Tasklist.Get(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Tasklist.Get(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取任务清单失败: %w", err)
 	}
@@ -593,7 +592,7 @@ func ListTasklists(pageSize int, pageToken string, userAccessToken string) ([]*T
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Task.V2.Tasklist.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Tasklist.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取任务清单列表失败: %w", err)
 	}
@@ -630,7 +629,7 @@ func DeleteTasklist(tasklistGuid string, userAccessToken string) error {
 		TasklistGuid(tasklistGuid).
 		Build()
 
-	resp, err := client.Task.V2.Tasklist.Delete(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Task.V2.Tasklist.Delete(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("删除任务清单失败: %w", err)
 	}

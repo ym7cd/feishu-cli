@@ -6,6 +6,7 @@ import (
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
+	"github.com/riba2534/feishu-cli/internal/converter"
 	"github.com/spf13/cobra"
 )
 
@@ -129,7 +130,7 @@ var addCalloutCmd = &cobra.Command{
 			}
 		} else {
 			// 兜底：如果没有自动生成子块，手动创建
-			textBlockType := 2 // Text
+			textBlockType := int(converter.BlockTypeText)
 			textBlock := &larkdocx.Block{
 				BlockType: &textBlockType,
 				Text: &larkdocx.Text{

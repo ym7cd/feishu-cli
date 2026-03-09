@@ -1,0 +1,281 @@
+---
+name: feishu-cli-auth
+description: >-
+  飞书 OAuth 认证和 User Access Token 管理。两步式非交互登录（AI Agent 专用）、
+  Token 状态检查、scope 配置、自动刷新机制、搜索功能的 Token 依赖关系。
+  当用户请求"登录飞书"、"获取 Token"、"OAuth 授权"、"auth login"、"认证"、
+  "搜索需要什么权限"、"Token 过期了"、"刷新 Token"时使用。
+  也适用于：搜索命令报权限错误、Token 相关的排错、需要判断当前授权状态的场景。
+  当其他飞书技能（toolkit/msg/read 等）遇到 User Access Token 相关问题时，也应参考此技能。
+user-invocable: true
+allowed-tools: Bash, Read
+---
+
+# 飞书 OAuth 认证与 Token 管理
+
+feishu-cli 通过 OAuth 2.0 Authorization Code Flow 获取 User Access Token，用于搜索等需要用户身份的 API。
+
+## 核心概念
+
+**两种身份**：
+- **App Access Token**（应用身份）：通过 app_id/app_secret 自动获取，大多数文档操作使用此身份
+- **User Access Token**（用户身份）：需 OAuth 授权，搜索 API **必须**使用此身份
+
+**Token 生命周期**：
+- Access Token：**2 小时**有效
+- Refresh Token：**30 天**有效（需 `offline_access` scope）
+- 过期后自动用 Refresh Token 刷新，用户无感
+
+---
+
+## 两步式非交互登录（AI Agent 推荐）
+
+AI Agent 的 Bash tool 无法进行交互式 stdin 输入，因此 `--manual` 模式不可用。使用 `--print-url` + `auth callback` 两步式流程：
+
+### 步骤 1：生成授权 URL
+
+**始终使用最大 scope 范围授权**，一次性覆盖 feishu-cli 所有用户身份功能，避免后续因 scope 不足导致 99991679 错误：
+
+```bash
+feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly"
+```
+
+输出 JSON（stdout）：
+```json
+{
+  "auth_url": "https://accounts.feishu.cn/open-apis/authen/v1/authorize?...",
+  "state": "随机64字符十六进制字符串",
+  "redirect_uri": "http://127.0.0.1:9768/callback"
+}
+```
+
+**立即返回，不阻塞，不启动 HTTP 服务器。**
+
+将 `auth_url` 展示给用户，请用户在浏览器中打开并完成授权。授权后浏览器会跳转到一个无法访问的页面（`127.0.0.1:9768/callback?code=xxx&state=yyy`），这是正常的——让用户复制地址栏中的完整 URL。
+
+### 步骤 2：用回调 URL 换 Token
+
+```bash
+feishu-cli auth callback "<回调URL>" --state "<步骤1输出的state>"
+```
+
+输出 JSON（stdout）+ 人类可读信息（stderr）：
+```json
+{
+  "status": "success",
+  "expires_at": "2026-03-09T04:31:11+08:00",
+  "scope": "auth:user.id:read search:docs:read search:message offline_access"
+}
+```
+
+Token 自动保存到 `~/.feishu-cli/token.json`。
+
+### 完整示例
+
+```bash
+# 步骤 1（使用最大 scope 范围）
+feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly"
+# → 展示 auth_url 给用户，用户浏览器授权后复制回调 URL
+
+# 步骤 2（用步骤 1 的 state 和用户提供的回调 URL）
+feishu-cli auth callback "http://127.0.0.1:9768/callback?code=xxx&state=yyy" --state "yyy"
+```
+
+---
+
+## Scope 配置
+
+scope 决定了 Token 能访问哪些 API。登录时通过 `--scopes` 指定（空格分隔）。scope 名称 = 飞书开放平台开发者后台的权限名称，最多 50 个，多次授权**累加**生效。
+
+### 默认策略：始终使用最大 scope
+
+**每次登录都使用以下完整 scope 列表**，一次性覆盖 feishu-cli 全部用户身份功能。避免因 scope 不足导致部分命令报 99991679 错误：
+
+```
+offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly
+```
+
+### Scope 完整说明
+
+| scope | 作用 | 对应命令 |
+|-------|------|---------|
+| `offline_access` | 获取 Refresh Token（30 天有效） | **必须包含**，否则 2 小时后需重新登录 |
+| `search:docs:read` | 搜索云文档 | `search docs` |
+| `search:message` | 搜索消息 | `search messages` |
+| `search:app` | 搜索应用 | `search apps` |
+| `wiki:wiki:readonly` | 知识库读取（用户身份） | `wiki get/export/nodes` |
+| `calendar:calendar:read` | 日历读取 | `calendar list/get/primary` |
+| `calendar:calendar.event:read` | 日历事件读取 | `calendar event-search` |
+| `calendar:calendar.event:create` | 创建日历事件 | `calendar create-event` |
+| `calendar:calendar.event:update` | 更新日历事件 | `calendar event-reply` |
+| `calendar:calendar.event:reply` | 回复日历事件 | `calendar event-reply` |
+| `calendar:calendar.free_busy:read` | 忙闲查询 | `calendar freebusy` |
+| `task:task:read` | 任务读取 | `task list/get` |
+| `task:task:write` | 任务写入 | `task create/complete` |
+| `task:tasklist:read` | 任务列表读取 | `tasklist list/get` |
+| `task:tasklist:write` | 任务列表写入 | `tasklist create/delete` |
+| `im:message:readonly` | 消息历史读取 | `msg history/get` |
+| `contact:user.base:readonly` | 用户信息读取 | `user info/search` |
+| `drive:drive.metadata:readonly` | 文件元数据读取 | `file list/meta` |
+| `auth:user.id:read` | 用户身份信息 | 通常自动包含 |
+
+### 为什么用最大 scope
+
+feishu-cli 的 wiki、calendar、task、msg 等命令通过 `resolveOptionalUserToken` 支持可选的用户身份。当 token.json 存在时，这些命令会**自动使用 User Access Token**。如果 Token 的 scope 不包含对应权限，API 会返回 99991679 错误（不会回退到应用身份）。一次性授权所有 scope 可以彻底避免此问题。
+
+### 前提条件
+
+scope 中的权限必须先在飞书开放平台 → 应用详情 → 权限管理中启用。未启用的权限在授权时会被忽略或报错 20027。
+
+### 常见错误
+
+| 错误 | 原因 | 解决 |
+|------|------|------|
+| `error=99991679, Unauthorized` | Token 的 scope 不包含目标 API 权限 | 重新登录，使用最大 scope |
+| Refresh Token 为空 | 缺少 `offline_access` scope | 重新登录，使用最大 scope |
+| `error=20027` | 开发者后台未启用该权限 | 在飞书开放平台启用对应权限后重新授权 |
+
+---
+
+## Token 状态检查
+
+```bash
+# 人类可读格式
+feishu-cli auth status
+
+# JSON 格式（AI Agent 推荐）
+feishu-cli auth status -o json
+```
+
+JSON 输出示例：
+
+```json
+// 已登录，Token 有效
+{
+  "logged_in": true,
+  "access_token_valid": true,
+  "access_token_expires_at": "2026-03-09T04:32:19+08:00",
+  "refresh_token_valid": true,
+  "refresh_token_expires_at": "2026-03-16T02:32:19+08:00",
+  "scope": "auth:user.id:read search:docs:read search:message offline_access"
+}
+
+// 未登录
+{"logged_in": false}
+```
+
+### 状态判断逻辑
+
+```
+logged_in=false           → 从未登录，需要 auth login
+access_token_valid=true   → 正常可用
+access_token_valid=false + refresh_token_valid=true → 下次调用时自动刷新，无需操作
+access_token_valid=false + refresh_token_valid=false → 需要重新 auth login
+scope 中无目标权限         → 需要重新登录并补充 scope
+```
+
+---
+
+## Token 自动刷新机制
+
+每次执行需要 User Access Token 的命令时，`ResolveUserAccessToken()` 按以下优先级链查找：
+
+1. `--user-access-token` 命令行参数
+2. `FEISHU_USER_ACCESS_TOKEN` 环境变量
+3. `~/.feishu-cli/token.json`：
+   - access_token 有效 → 直接使用
+   - access_token 过期 + refresh_token 有效 → **自动刷新并保存新 Token**
+   - 都过期 → 报错"已过期，请重新登录"
+4. `config.yaml` 中的 `user_access_token` 静态配置
+5. 全部为空 → 报错"缺少 User Access Token"，列出 4 种获取方式
+
+**刷新过程对用户透明**：stderr 输出 `[自动刷新] 刷新成功...`，命令正常执行。
+
+---
+
+## User Access Token 的使用场景
+
+### 必需 User Access Token 的命令
+
+| 命令 | 需要的 scope |
+|------|-------------|
+| `search docs "关键词"` | `search:docs:read` |
+| `search messages "关键词"` | `search:message` |
+| `search apps "关键词"` | `search:app` |
+
+### 可选 User Access Token 的命令
+
+以下命令通过 `resolveOptionalUserToken` 支持可选的用户身份——有 Token 时用用户身份获取更多结果，无 Token 时回退到应用身份。**但如果 Token 存在而 scope 不足，API 会直接报错而不会回退**：
+
+| 命令类别 | 需要的 scope |
+|---------|-------------|
+| `wiki get/export/nodes` | `wiki:wiki:readonly` |
+| `calendar list/get/event-search/freebusy` | `calendar:calendar:read` 等 |
+| `task create/complete/list` | `task:task:read task:task:write` |
+| `tasklist create/list/delete` | `task:tasklist:read task:tasklist:write` |
+| `msg history/get` | `im:message:readonly` |
+| `user info/search` | `contact:user.base:readonly` |
+
+### 登录前的检查流程
+
+```bash
+# 1. 检查是否已登录且 Token 有效
+feishu-cli auth status -o json
+
+# 2. 如果未登录或已过期，执行两步式登录（使用最大 scope）
+feishu-cli auth login --print-url --scopes "offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly"
+# ... 用户授权 ...
+feishu-cli auth callback "<回调URL>" --state "<state>"
+
+# 3. 登录后所有命令自动从 token.json 读取 Token
+feishu-cli search docs "产品需求"
+feishu-cli wiki export <node_token> -o doc.md
+feishu-cli task create --summary "待办事项"
+```
+
+---
+
+## 其他登录模式
+
+除 AI Agent 的两步式外，还有两种人类用户直接使用的模式（同样使用最大 scope）：
+
+```bash
+# 本地桌面环境（默认）：自动打开浏览器 + 本地 HTTP 回调
+feishu-cli auth login --scopes "offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly"
+
+# 远程 SSH 环境：打印 URL，用户手动粘贴回调 URL（交互式 stdin）
+feishu-cli auth login --manual --scopes "offline_access search:docs:read search:message search:app wiki:wiki:readonly calendar:calendar:read calendar:calendar.event:read calendar:calendar.event:create calendar:calendar.event:update calendar:calendar.event:reply calendar:calendar.free_busy:read task:task:read task:task:write task:tasklist:read task:tasklist:write im:message:readonly contact:user.base:readonly drive:drive.metadata:readonly"
+```
+
+### 前置条件
+
+在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加：
+```
+http://127.0.0.1:9768/callback
+```
+
+如果使用自定义端口（`--port 8080`），需添加对应的重定向 URL。
+
+---
+
+## 退出登录
+
+```bash
+feishu-cli auth logout
+```
+
+删除 `~/.feishu-cli/token.json`，不影响 App Access Token（app_id/app_secret）。
+
+---
+
+## 排错指南
+
+| 问题 | 诊断 | 解决 |
+|------|------|------|
+| "缺少 User Access Token" | 从未登录 | 执行 `auth login` |
+| "User Access Token 已过期" | token.json 中 access + refresh 都过期 | 重新 `auth login` |
+| 搜索报 99991679 权限错误 | scope 不足 | 重新登录，加上缺失的 scope |
+| Refresh Token 为空 | 未包含 `offline_access` scope | 重新登录，加上 `offline_access` |
+| "state 不匹配" | `auth callback` 的 `--state` 与 URL 中的 state 不一致 | 确保使用同一次 `--print-url` 的 state |
+| "端口被占用" | 9768 端口已被其他进程使用 | 使用 `--port 其他端口`，并在飞书平台添加对应回调 URL |
+| `auth login --manual` 在 AI Agent 中卡住 | stdin 阻塞 | 改用 `--print-url` + `auth callback` 两步式 |

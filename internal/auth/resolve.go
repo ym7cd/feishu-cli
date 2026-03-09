@@ -30,6 +30,7 @@ func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL st
 	}
 
 	// 3. token.json
+	var tokenFileExpired bool
 	token, err := LoadToken()
 	if err == nil && token != nil {
 		if token.IsAccessTokenValid() {
@@ -55,6 +56,7 @@ func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL st
 				return newToken.AccessToken, nil
 			}
 		}
+		tokenFileExpired = true // token.json 存在但所有 token 都过期了
 	}
 
 	// 4. 配置文件
@@ -62,7 +64,11 @@ func ResolveUserAccessToken(flagValue, configValue, appID, appSecret, baseURL st
 		return configValue, nil
 	}
 
-	// 5. 全部为空
+	// 5. 区分"从未登录"和"登录过期"
+	if tokenFileExpired {
+		return "", fmt.Errorf("User Access Token 已过期（access_token 和 refresh_token 均已失效）。\n" +
+			"请重新登录: feishu-cli auth login")
+	}
 	return "", fmt.Errorf("缺少 User Access Token，请通过以下方式之一提供:\n" +
 		"  1. OAuth 登录: feishu-cli auth login\n" +
 		"  2. 命令行参数: --user-access-token <token>\n" +

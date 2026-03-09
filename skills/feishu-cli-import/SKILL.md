@@ -77,7 +77,8 @@ allowed-tools: Bash, Read
 | markdown_file | Markdown 文件路径 | 必需 |
 | --title | 新文档标题 | 文件名 |
 | --document-id | 更新已有文档 | 创建新文档 |
-| --upload-images | 上传本地图片 | 是（默认开启） |
+| --upload-images | 上传本地和网络图片到飞书 | 是（默认开启） |
+| --image-workers | 图片并发上传数 | 2（API 限制 5 QPS） |
 | --folder, -f | 新文档的目标文件夹 Token | 根目录 |
 | --diagram-workers | 图表 (Mermaid/PlantUML) 并发导入数 | 5 |
 | --table-workers | 表格并发填充数 | 3 |
@@ -95,7 +96,7 @@ allowed-tools: Bash, Read
 - **引用块**（支持嵌套引用，自动转换为 QuoteContainer）
 - **Callout 高亮块**（`> [!NOTE]`、`> [!WARNING]` 等 6 种类型）
 - 分割线
-- **图片**（创建占位块，飞书 Open API 暂不支持插入实际图片；内联图片转为链接或文本占位符）
+- **图片**（默认通过 `--upload-images` 自动上传本地和网络图片；无此参数时创建占位块；内联图片转为链接或文本占位符）
 - **表格**（超过 9 行或 9 列自动拆分，列拆分保留首列）
 - 粗体、斜体、删除线、行内代码、**下划线**（`<u>文本</u>`）
 - 链接
@@ -204,7 +205,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 # 更新现有文档
 /feishu-import ./updated-spec.md --document-id <document_id>
 
-# 带图片导入（创建占位块，Open API 暂不支持插入实际图片）
+# 带图片导入（自动上传本地和网络图片）
 /feishu-import ./blog-post.md --title "博客文章" --upload-images
 ```
 
@@ -232,7 +233,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 | **块级公式** (`$$...$$`) | ✅ 正常 | 创建为 Text 块内 Equation 元素 |
 | **表格** | ✅ 正常 | 超过 9 行或 9 列自动拆分 |
 | 链接 | ✅ 正常 | |
-| **图片** | ✅ 占位块 | Open API 不支持插入实际图片，创建空 Image 块，用户可在网页端手动添加 |
+| **图片** | ✅ 上传 | 默认通过 `--upload-images` 自动上传本地和网络图片；关闭时创建占位块 |
 | **内联图片** | ✅ 链接化 | 网络 URL 转可点击链接，本地路径转文本占位符 |
 
 ### 大规模测试结果

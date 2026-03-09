@@ -506,7 +506,7 @@ func detectAddonDiagramLanguage(view string, source string) string {
 	src := strings.TrimSpace(source)
 
 	if normalized == "" {
-		// HasPrefix 是 Contains 的子集，直接用 Contains 即可
+		// 源码中 @startuml 可能出现在任意位置，用 Contains 匹配
 		if strings.Contains(src, "@startuml") {
 			return "plantuml"
 		}

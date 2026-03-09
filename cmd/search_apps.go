@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -14,7 +13,7 @@ var searchAppsCmd = &cobra.Command{
 	Short: "搜索应用",
 	Long: `搜索飞书应用。
 
-注意：此功能需要 User Access Token（用户授权令牌）。
+注意：此功能需要 User Access Token（用户授权令牌），推荐通过 auth login 获取。
 
 参数:
   query           搜索关键词（必需）
@@ -25,15 +24,21 @@ var searchAppsCmd = &cobra.Command{
   --user-id-type  用户 ID 类型（open_id/union_id/user_id，默认 open_id）
 
 示例:
-  # 搜索应用
-  feishu-cli search apps "审批" --user-access-token <token>
+  # 先登录获取 Token（推荐）
+  feishu-cli auth login
 
-  # 使用环境变量设置 token
-  export FEISHU_USER_ACCESS_TOKEN="u-xxx"
+  # 搜索应用
   feishu-cli search apps "审批"
 
   # 分页获取更多结果
-  feishu-cli search apps "审批" --page-size 50`,
+  feishu-cli search apps "审批" --page-size 50
+
+  # 也可以手动指定 Token
+  feishu-cli search apps "审批" --user-access-token <token>
+
+  # 或使用环境变量
+  export FEISHU_USER_ACCESS_TOKEN="u-xxx"
+  feishu-cli search apps "审批"`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
@@ -42,10 +47,8 @@ var searchAppsCmd = &cobra.Command{
 
 		query := args[0]
 
-		// 获取 user access token
-		flagToken, _ := cmd.Flags().GetString("user-access-token")
-		cfg := config.Get()
-		userAccessToken, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+		// 获取 user access token（搜索 API 必需）
+		userAccessToken, err := resolveRequiredUserToken(cmd)
 		if err != nil {
 			return err
 		}

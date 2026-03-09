@@ -29,7 +29,7 @@ allowed-tools: Bash, Read, Write
 | 8 | 素材管理 | `media upload/download` | — |
 | 9 | 评论管理 | `comment list/add/delete/resolve/unresolve` + `comment reply` | — |
 | 10 | 知识库 | `wiki get/export/spaces/nodes/space-get` + `wiki member` | — |
-| 11 | 搜索 | `search messages/apps/docs`（需 User Access Token） | `references/search-commands.md` |
+| 11 | 搜索 | `search messages/apps/docs`（需 User Access Token，推荐使用 `feishu-cli-search` 技能） | `references/search-commands.md` |
 | 12 | 用户和部门 | `user info/search/list` + `dept get/children` | — |
 | 13 | 附件下载 | `doc export` + `media download` 批量下载文档附件 | — |
 
@@ -484,17 +484,15 @@ feishu-cli search docs "关键词" \
 
 ### User Access Token 说明
 
-获取方式（按推荐优先级）：
+搜索 API 必须使用 User Access Token。**完整的认证流程、scope 配置、排错指南请参考 `feishu-cli-auth` 技能**。
 
-1. **`feishu-cli auth login`（推荐）**：一键 OAuth 登录，Token 自动保存到 `~/.feishu-cli/token.json`，过期自动刷新
-2. **`--user-access-token` 参数**：手动指定 Token
-3. **`FEISHU_USER_ACCESS_TOKEN` 环境变量**：通过环境变量提供
+快速参考：
+- 推荐 scope：`search:docs:read search:message offline_access`（`search:app` 按需添加）
+- AI Agent 使用两步式非交互登录：`auth login --print-url` + `auth callback`
+- Token 有效期 2 小时，Refresh Token 30 天（需 `offline_access` scope）
+- 登录后无需手动传 Token，过期自动刷新
 
-- Token 有效期约 2 小时，Refresh Token 有效期 30 天
-- 使用 `auth login` 后无需每次手动传 Token，过期时自动用 Refresh Token 刷新
-- 不能使用 App Access Token（会报权限错误）
-
-**详细参考**：读取 `references/search-commands.md` 获取完整筛选参数说明。
+**搜索参数详细参考**：读取 `references/search-commands.md` 获取完整筛选参数说明。
 
 ---
 

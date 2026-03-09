@@ -47,32 +47,49 @@ type tokenResponse struct {
 	ErrorDescription string `json:"error_description"`
 }
 
-// Login 执行 OAuth 登录流程
-func Login(opts LoginOptions) (*TokenStore, error) {
+// AuthURLResult 授权 URL 生成结果
+type AuthURLResult struct {
+	AuthURL     string `json:"auth_url"`
+	State       string `json:"state"`
+	RedirectURI string `json:"redirect_uri"`
+}
+
+// GenerateAuthURL 生成 OAuth 授权 URL（非阻塞，无副作用）
+// 配合 auth callback 命令实现两步式非交互登录
+func GenerateAuthURL(opts LoginOptions) (*AuthURLResult, error) {
 	if opts.AppID == "" || opts.AppSecret == "" {
 		return nil, fmt.Errorf("缺少 app_id 或 app_secret，请先配置:\n" +
 			"  环境变量: export FEISHU_APP_ID=xxx && export FEISHU_APP_SECRET=xxx\n" +
 			"  配置文件: feishu-cli config init")
 	}
 
+	state, redirectURI, authURL, err := buildAuthURL(opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthURLResult{
+		AuthURL:     authURL,
+		State:       state,
+		RedirectURI: redirectURI,
+	}, nil
+}
+
+// buildAuthURL 构造授权 URL（内部复用）
+func buildAuthURL(opts LoginOptions) (state, redirectURI, authURL string, err error) {
 	if opts.Port == 0 {
 		opts.Port = DefaultPort
 	}
-	if opts.BaseURL == "" {
-		opts.BaseURL = "https://open.feishu.cn"
-	}
 
-	// 生成 state
 	stateBytes := make([]byte, 32)
 	if _, err := rand.Read(stateBytes); err != nil {
-		return nil, fmt.Errorf("生成 state 失败: %w", err)
+		return "", "", "", fmt.Errorf("生成 state 失败: %w", err)
 	}
-	state := hex.EncodeToString(stateBytes)
+	state = hex.EncodeToString(stateBytes)
 
-	redirectURI := fmt.Sprintf("http://127.0.0.1:%d%s", opts.Port, CallbackPath)
+	redirectURI = fmt.Sprintf("http://127.0.0.1:%d%s", opts.Port, CallbackPath)
 
-	// 构造授权 URL
-	authURL := fmt.Sprintf("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
+	authURL = fmt.Sprintf("%s?client_id=%s&redirect_uri=%s&response_type=code&state=%s",
 		FeishuAuthURL,
 		url.QueryEscape(opts.AppID),
 		url.QueryEscape(redirectURI),
@@ -82,19 +99,39 @@ func Login(opts LoginOptions) (*TokenStore, error) {
 		authURL += "&scope=" + url.QueryEscape(opts.Scopes)
 	}
 
+	return state, redirectURI, authURL, nil
+}
+
+// Login 执行 OAuth 登录流程
+func Login(opts LoginOptions) (*TokenStore, error) {
+	if opts.AppID == "" || opts.AppSecret == "" {
+		return nil, fmt.Errorf("缺少 app_id 或 app_secret，请先配置:\n" +
+			"  环境变量: export FEISHU_APP_ID=xxx && export FEISHU_APP_SECRET=xxx\n" +
+			"  配置文件: feishu-cli config init")
+	}
+
+	if opts.BaseURL == "" {
+		opts.BaseURL = "https://open.feishu.cn"
+	}
+
+	state, redirectURI, authURL, err := buildAuthURL(opts)
+	if err != nil {
+		return nil, err
+	}
+
 	// 选择模式
 	useManual := opts.Manual || (!opts.NoManual && !isLocalEnvironment())
 
 	var code string
-	var err error
+	var loginErr error
 
 	if useManual {
-		code, err = loginManual(authURL, state)
+		code, loginErr = loginManual(authURL, state)
 	} else {
-		code, err = loginLocal(authURL, state, opts.Port)
+		code, loginErr = loginLocal(authURL, state, opts.Port)
 	}
-	if err != nil {
-		return nil, err
+	if loginErr != nil {
+		return nil, loginErr
 	}
 
 	// 用 code 换 token
@@ -187,12 +224,15 @@ func loginLocal(authURL, state string, port int) (string, error) {
 	logf("等待授权回调...")
 
 	// 等待回调或超时
+	timer := time.NewTimer(2 * time.Minute)
+	defer timer.Stop()
+
 	select {
 	case code := <-codeCh:
 		return code, nil
 	case err := <-errCh:
 		return "", err
-	case <-time.After(2 * time.Minute):
+	case <-timer.C:
 		return "", fmt.Errorf("授权超时（2 分钟），请重试")
 	}
 }

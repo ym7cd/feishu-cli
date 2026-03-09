@@ -245,6 +245,7 @@ sleep 5 && feishu-cli doc export <doc_id>
 | 画板 (Board) | `[画板/Whiteboard](feishu://board/...)` 或 PNG 图片 | 使用 `--download-images` 时自动导出为 PNG |
 | **ISV 块** | 画板链接或 HTML 注释 | Mermaid 绘图/时间线 |
 | **Iframe** | `<iframe>` HTML 标签 | 嵌入内容 |
+| **AddOns/TextDrawing** | Mermaid/PlantUML 代码块 | 文本绘图小组件自动还原为图表源码 |
 | **AddOns/SyncedBlock** | 展开子块内容 | 透明展开 |
 | Wiki 目录 | `[Wiki 目录...]` | |
 | **Agenda/AgendaItem** | 展开子块内容 | 议程块 |
@@ -323,7 +324,9 @@ Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
 | `$formula$` → 行内公式 | 行内/块级公式 → `$formula$` |
 | `<u>下划线</u>` → 下划线样式 | 下划线样式 → `<u>下划线</u>` |
 
-**注意**：Mermaid/PlantUML 图表导入后会转换为飞书画板，导出时生成的是画板链接而非原始图表代码。
+**注意**：
+- Mermaid/PlantUML 图表导入后会转换为飞书画板，导出时生成的是画板链接而非原始图表代码
+- 飞书"文本绘图"小组件（TextDrawing/AddOns）导出时会自动还原为 Mermaid 或 PlantUML 代码块，保留图表源码
 
 ---
 

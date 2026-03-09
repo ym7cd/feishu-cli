@@ -20,6 +20,10 @@ var authLoginCmd = &cobra.Command{
 远程 SSH 环境（自动检测或 --manual）:
   打印授权 URL，用户在本机浏览器打开，授权后复制回调 URL 粘贴到终端。
 
+非交互模式（--print-url，推荐 AI Agent 使用）:
+  仅输出授权 URL 和 state 的 JSON，不启动服务器也不等待输入。
+  配合 auth callback 命令完成两步式登录。
+
 Token 保存位置: ~/.feishu-cli/token.json
 
 前置条件:
@@ -34,7 +38,12 @@ Token 保存位置: ~/.feishu-cli/token.json
   feishu-cli auth login --manual
 
   # 指定端口
-  feishu-cli auth login --port 8080`,
+  feishu-cli auth login --port 8080
+
+  # 非交互模式（AI Agent 推荐）
+  feishu-cli auth login --print-url
+  # 然后用户在浏览器完成授权后执行:
+  feishu-cli auth callback "<回调URL>" --state "<state>"`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
@@ -46,6 +55,7 @@ Token 保存位置: ~/.feishu-cli/token.json
 		manual, _ := cmd.Flags().GetBool("manual")
 		noManual, _ := cmd.Flags().GetBool("no-manual")
 		scopes, _ := cmd.Flags().GetString("scopes")
+		printURL, _ := cmd.Flags().GetBool("print-url")
 
 		opts := auth.LoginOptions{
 			Port:      port,
@@ -55,6 +65,15 @@ Token 保存位置: ~/.feishu-cli/token.json
 			AppSecret: cfg.AppSecret,
 			BaseURL:   cfg.BaseURL,
 			Scopes:    scopes,
+		}
+
+		// 非交互模式：仅输出授权 URL 和 state
+		if printURL {
+			result, err := auth.GenerateAuthURL(opts)
+			if err != nil {
+				return err
+			}
+			return printJSON(result)
 		}
 
 		token, err := auth.Login(opts)
@@ -84,4 +103,5 @@ func init() {
 	authLoginCmd.Flags().Bool("manual", false, "强制使用手动粘贴模式")
 	authLoginCmd.Flags().Bool("no-manual", false, "强制使用本地回调模式")
 	authLoginCmd.Flags().String("scopes", "", "请求的 OAuth scope（空格分隔，如 \"search:docs:read search:message offline_access\"）")
+	authLoginCmd.Flags().Bool("print-url", false, "仅输出授权 URL 和 state（非交互模式，用于 AI Agent）")
 }

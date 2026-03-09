@@ -368,18 +368,20 @@ flowchart TD
 
 ## 7. 图片处理
 
-### 当前限制
+### 图片上传（v1.8.0+）
 
-飞书 DocX Open API **不支持通过 API 插入实际图片内容**。`feishu-cli` 的处理方式：
+`feishu-cli` 默认通过 `--upload-images` 自动上传图片：
 
-1. 遇到 `![alt](url)` 时，创建一个空的 **Image 占位块**（BlockType=27）
-2. 导入完成后，报告中显示 **跳过的图片数量**
-3. 用户需要在飞书文档中手动替换图片
+1. 遇到 `![alt](url)` 时，自动下载网络图片或读取本地图片
+2. 通过素材上传 API 上传到飞书，获取 file_token
+3. 创建 Image 块并引用 file_token，实现图片插入
+4. 上传失败时降级为占位块，导入报告显示失败数量
 
-### 建议
+### 注意事项
 
-- 如果文档中有大量图片，考虑在导入后手动上传
-- 可以使用 `feishu-cli media upload` 上传素材到飞书，获取文件 token
+- 默认开启图片上传，使用 `--no-upload-images` 可关闭（创建占位块）
+- 图片并发上传数通过 `--image-workers` 控制（默认 2，API 限制 5 QPS）
+- 支持本地图片路径和网络 URL（HTTP/HTTPS）
 - 图片相关的 alt 文字会作为占位信息保留
 
 ---

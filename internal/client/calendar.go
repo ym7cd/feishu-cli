@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkcalendar "github.com/larksuite/oapi-sdk-go/v3/service/calendar/v4"
 )
 
@@ -57,7 +56,7 @@ func ListCalendars(pageSize int, pageToken string, userAccessToken string) ([]*C
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Calendar.Calendar.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.Calendar.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取日历列表失败: %w", err)
 	}
@@ -149,7 +148,7 @@ func CreateEvent(params *CreateEventParams, userAccessToken string) (*CalendarEv
 		CalendarEvent(eventBuilder.Build()).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("创建日程失败: %w", err)
 	}
@@ -177,7 +176,7 @@ func GetEvent(calendarID, eventID string, userAccessToken string) (*CalendarEven
 		EventId(eventID).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Get(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.Get(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取日程详情失败: %w", err)
 	}
@@ -236,7 +235,7 @@ func ListEvents(params *ListEventsParams, userAccessToken string) ([]*CalendarEv
 		reqBuilder.PageToken(params.PageToken)
 	}
 
-	resp, err := client.Calendar.CalendarEvent.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取日程列表失败: %w", err)
 	}
@@ -325,7 +324,7 @@ func UpdateEvent(params *UpdateEventParams, userAccessToken string) (*CalendarEv
 		CalendarEvent(eventBuilder.Build()).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Patch(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.Patch(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("更新日程失败: %w", err)
 	}
@@ -353,7 +352,7 @@ func DeleteEvent(calendarID, eventID string, userAccessToken string) error {
 		EventId(eventID).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Delete(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.Delete(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("删除日程失败: %w", err)
 	}
@@ -426,7 +425,7 @@ func GetCalendar(calendarID string, userAccessToken string) (*Calendar, error) {
 		CalendarId(calendarID).
 		Build()
 
-	resp, err := client.Calendar.Calendar.Get(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.Calendar.Get(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取日历详情失败: %w", err)
 	}
@@ -462,7 +461,7 @@ func GetPrimaryCalendar(userAccessToken string) (*Calendar, error) {
 
 	req := larkcalendar.NewPrimaryCalendarReqBuilder().Build()
 
-	resp, err := client.Calendar.Calendar.Primary(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.Calendar.Primary(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("获取主日历失败: %w", err)
 	}
@@ -542,7 +541,7 @@ func SearchEvents(calendarID, query string, startTime, endTime string, pageToken
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Calendar.CalendarEvent.Search(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.Search(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", fmt.Errorf("搜索日程失败: %w", err)
 	}
@@ -603,7 +602,7 @@ func AddEventAttendees(calendarID, eventID string, attendees []*EventAttendee, u
 		Body(body).
 		Build()
 
-	resp, err := client.Calendar.CalendarEventAttendee.Create(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEventAttendee.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("添加日程参与人失败: %w", err)
 	}
@@ -633,7 +632,7 @@ func ListEventAttendees(calendarID, eventID string, pageSize int, pageToken stri
 		reqBuilder.PageToken(pageToken)
 	}
 
-	resp, err := client.Calendar.CalendarEventAttendee.List(Context(), reqBuilder.Build(), larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEventAttendee.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, "", false, fmt.Errorf("获取日程参与人列表失败: %w", err)
 	}
@@ -690,7 +689,7 @@ func ListFreebusy(startTime, endTime string, userID string, userAccessToken stri
 		Body(bodyBuilder.Build()).
 		Build()
 
-	resp, err := client.Calendar.Freebusy.List(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.Freebusy.List(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("查询忙闲信息失败: %w", err)
 	}
@@ -729,7 +728,7 @@ func ReplyEvent(calendarID, eventID, rsvpStatus string, userAccessToken string) 
 		Body(body).
 		Build()
 
-	resp, err := client.Calendar.CalendarEvent.Reply(Context(), req, larkcore.WithUserAccessToken(userAccessToken))
+	resp, err := client.Calendar.CalendarEvent.Reply(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("回复日程失败: %w", err)
 	}

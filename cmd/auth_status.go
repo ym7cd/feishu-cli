@@ -19,19 +19,52 @@ var authStatusCmd = &cobra.Command{
   - 授权范围
 
 示例:
-  feishu-cli auth status`,
+  feishu-cli auth status
+
+  # JSON 格式输出（AI Agent 推荐）
+  feishu-cli auth status -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		output, _ := cmd.Flags().GetString("output")
+
 		token, err := auth.LoadToken()
 		if err != nil {
+			if output == "json" {
+				return printJSON(map[string]any{"logged_in": false, "error": err.Error()})
+			}
 			return fmt.Errorf("读取 token 失败: %w", err)
 		}
 
 		if token == nil {
+			if output == "json" {
+				return printJSON(map[string]any{"logged_in": false})
+			}
 			fmt.Println("授权状态: 未登录")
 			fmt.Println("  使用 feishu-cli auth login 进行授权")
 			return nil
 		}
 
+		// JSON 输出模式
+		if output == "json" {
+			result := map[string]any{
+				"logged_in":          true,
+				"access_token_valid": token.IsAccessTokenValid(),
+			}
+			if !token.ExpiresAt.IsZero() {
+				result["access_token_expires_at"] = token.ExpiresAt.Format("2006-01-02T15:04:05+08:00")
+			}
+			if token.RefreshToken != "" {
+				result["refresh_token_valid"] = token.IsRefreshTokenValid()
+				if !token.RefreshExpiresAt.IsZero() {
+					result["refresh_token_expires_at"] = token.RefreshExpiresAt.Format("2006-01-02T15:04:05+08:00")
+				}
+			}
+			if token.Scope != "" {
+				result["scope"] = token.Scope
+			}
+			return printJSON(result)
+		}
+
+		// 人类可读输出
 		fmt.Println("授权状态: 已登录")
 		fmt.Printf("  Access Token:   %s\n", auth.MaskToken(token.AccessToken))
 
@@ -86,4 +119,5 @@ func formatDuration(d time.Duration) string {
 
 func init() {
 	authCmd.AddCommand(authStatusCmd)
+	authStatusCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 }

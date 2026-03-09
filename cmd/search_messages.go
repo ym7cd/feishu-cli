@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -14,7 +13,7 @@ var searchMessagesCmd = &cobra.Command{
 	Short: "搜索消息",
 	Long: `搜索飞书消息。
 
-注意：此功能需要 User Access Token（用户授权令牌）。
+注意：此功能需要 User Access Token（用户授权令牌），推荐通过 auth login 获取。
 
 参数:
   query           搜索关键词（必需）
@@ -32,8 +31,11 @@ var searchMessagesCmd = &cobra.Command{
   --user-id-type  用户 ID 类型（open_id/union_id/user_id，默认 open_id）
 
 示例:
+  # 先登录获取 Token（推荐）
+  feishu-cli auth login
+
   # 搜索包含"会议"的消息
-  feishu-cli search messages "会议" --user-access-token <token>
+  feishu-cli search messages "会议"
 
   # 搜索指定会话中的消息
   feishu-cli search messages "会议" --chat-ids oc_xxx,oc_yyy
@@ -44,7 +46,10 @@ var searchMessagesCmd = &cobra.Command{
   # 搜索指定时间范围内的消息
   feishu-cli search messages "项目" --start-time 1704067200 --end-time 1704153600
 
-  # 使用环境变量设置 token
+  # 也可以手动指定 Token
+  feishu-cli search messages "会议" --user-access-token <token>
+
+  # 或使用环境变量
   export FEISHU_USER_ACCESS_TOKEN="u-xxx"
   feishu-cli search messages "会议"`,
 	Args: cobra.ExactArgs(1),
@@ -55,10 +60,8 @@ var searchMessagesCmd = &cobra.Command{
 
 		query := args[0]
 
-		// 获取 user access token
-		flagToken, _ := cmd.Flags().GetString("user-access-token")
-		cfg := config.Get()
-		userAccessToken, err := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+		// 获取 user access token（搜索 API 必需）
+		userAccessToken, err := resolveRequiredUserToken(cmd)
 		if err != nil {
 			return err
 		}

@@ -83,7 +83,7 @@ func SearchMessages(opts SearchMessagesOptions, userAccessToken string) (*Search
 
 	// 使用 User Access Token 调用 API
 	resp, err := client.Search.Message.Create(Context(), reqBuilder.Build(),
-		larkcore.WithUserAccessToken(userAccessToken))
+		UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("搜索消息失败: %w", err)
 	}
@@ -141,7 +141,7 @@ func SearchApps(opts SearchAppsOptions, userAccessToken string) (*SearchAppsResu
 
 	// 使用 User Access Token 调用 API
 	resp, err := client.Search.App.Create(Context(), reqBuilder.Build(),
-		larkcore.WithUserAccessToken(userAccessToken))
+		UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("搜索应用失败: %w", err)
 	}
@@ -240,7 +240,7 @@ func SearchDocWiki(opts SearchDocWikiOptions, userAccessToken string) (*SearchDo
 
 	resp, err := client.Post(Context(), apiPath, body,
 		larkcore.AccessTokenTypeUser,
-		larkcore.WithUserAccessToken(userAccessToken))
+		UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return nil, fmt.Errorf("搜索文档失败: %w", err)
 	}
