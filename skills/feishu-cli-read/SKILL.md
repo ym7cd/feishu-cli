@@ -48,12 +48,16 @@ allowed-tools: Bash, Read, Grep
    feishu-cli doc export <document_id> --output /tmp/feishu_doc.md --download-images --assets-dir /tmp/feishu_assets
    ```
 
-   `doc export` 会按以下优先级自动获取权限：
+   `doc export` 会自动解析 User Access Token（如已登录），解析优先级：
 
-   1. App Access Token（需应用有 `docx:document:readonly` 权限）
-   2. User Access Token（从 `auth login` 保存的 token.json 自动读取，或通过 `--user-access-token` 手动指定）
+   1. `--user-access-token` 命令行参数
+   2. `FEISHU_USER_ACCESS_TOKEN` 环境变量
+   3. `~/.feishu-cli/token.json`（通过 `auth login` 保存）
+   4. `config.yaml` 中的 `user_access_token`
 
-   若遇到 `code=1770032 forBidden`（App 无权限）或 `code=99991679 Unauthorized`（User Token 缺少 scope），需先完成 User Token 授权：
+   找到 User Token 时使用用户身份访问，未找到时回退为 App Access Token（租户身份）。
+
+   若遇到 `code=1770032 forBidden`（App 无权限且未登录）或 `code=99991679 Unauthorized`（User Token 缺少 scope），需先完成 User Token 授权：
 
    ```bash
    feishu-cli auth login --scopes "docx:document:readonly offline_access"

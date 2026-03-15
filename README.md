@@ -239,6 +239,8 @@ feishu-cli doc import doc.md --title "文档标题" --upload-images --verbose
 
 # 导出为 Markdown
 feishu-cli doc export <doc_id> -o output.md --download-images
+# 导出他人文档（自动从 auth login 读取 User Token，或手动指定）
+feishu-cli doc export <doc_id> -o output.md --user-access-token <token>
 
 # 获取文档信息
 feishu-cli doc get <doc_id>

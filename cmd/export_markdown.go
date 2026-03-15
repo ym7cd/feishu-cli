@@ -5,7 +5,6 @@ import (
 	"os"
 	"regexp"
 
-	"github.com/riba2534/feishu-cli/internal/auth"
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/riba2534/feishu-cli/internal/converter"
@@ -45,9 +44,7 @@ var exportMarkdownCmd = &cobra.Command{
 		assetsDir, _ := cmd.Flags().GetString("assets-dir")
 
 		// 获取可选的 User Access Token（用于访问无 App 权限的文档）
-		flagToken, _ := cmd.Flags().GetString("user-access-token")
-		cfg := config.Get()
-		userAccessToken, _ := auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		// Get all blocks
 		blocks, err := client.GetAllBlocksWithToken(documentID, userAccessToken)
