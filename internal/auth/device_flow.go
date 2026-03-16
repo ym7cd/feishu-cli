@@ -162,12 +162,22 @@ func PollDeviceToken(appID, appSecret, baseURL, deviceCode string, interval, exp
 	for time.Now().Before(deadline) && attempts < maxPollAttempts {
 		attempts++
 
-		if onTick != nil {
-			elapsed := int(time.Since(startTime).Seconds())
-			onTick(elapsed, expiresIn)
+		// 将等待时间拆成 1 秒粒度，每秒触发一次 onTick，实现逐秒进度更新。
+		// HTTP 请求频率保持 currentInterval 不变。
+		for i := 0; i < currentInterval; i++ {
+			if !time.Now().Before(deadline) {
+				break
+			}
+			if onTick != nil {
+				elapsed := int(time.Since(startTime).Seconds())
+				onTick(elapsed, expiresIn)
+			}
+			time.Sleep(time.Second)
 		}
 
-		time.Sleep(time.Duration(currentInterval) * time.Second)
+		if !time.Now().Before(deadline) {
+			break
+		}
 
 		formBody := url.Values{}
 		formBody.Set("grant_type", "urn:ietf:params:oauth:grant-type:device_code")

@@ -168,12 +168,13 @@ func TestPollDeviceToken_Success(t *testing.T) {
 		func(elapsed, total int) { tickCount++ },
 	)
 
-	// 注意：由于 interval 默认 5 秒，测试会等待较长时间
-	// 为了避免测试超时，验证错误路径和基本结构
 	if err != nil {
-		// 预期可能因超时失败（测试环境中 5s*3 = 15s），记录但不断言
-		t.Logf("PollDeviceToken 返回错误（可能是测试环境限制）: %v", err)
+		t.Fatalf("PollDeviceToken 返回错误: %v", err)
 	} else {
+		// 3 轮 × 1s 间隔，每秒一次 tick，tickCount 至少应为 3
+		if tickCount < 3 {
+			t.Errorf("tickCount = %d，每秒应至少触发一次 onTick", tickCount)
+		}
 		if token.AccessToken != "test_access_token" {
 			t.Errorf("AccessToken = %q, want %q", token.AccessToken, "test_access_token")
 		}
