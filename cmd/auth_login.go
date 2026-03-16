@@ -22,7 +22,7 @@ Authorization Code Flow（默认）:
   · 非交互模式（--print-url）: 仅输出授权 URL JSON，配合 auth callback 两步完成。
 
 Device Flow（--device，RFC 8628）:
-  无需配置重定向 URL，适合 CI/CD、无头服务器、容器等环境。
+  无需在飞书开放平台配置重定向 URL 白名单。
   终端显示用户码，用户在任意浏览器打开链接输入用户码完成授权，命令自动轮询等待结果。
 
 Token 保存位置: ~/.feishu-cli/token.json
@@ -49,7 +49,7 @@ Authorization Code Flow 前置条件:
   # 然后用户在浏览器完成授权后执行:
   feishu-cli auth callback "<回调URL>" --state "<state>"
 
-  # Device Flow（无需重定向 URL，适合无头环境）
+  # Device Flow（无需配置重定向 URL 白名单）
   feishu-cli auth login --device`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {

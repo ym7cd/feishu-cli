@@ -15,7 +15,7 @@ var authCmd = &cobra.Command{
   # 标准登录（Authorization Code Flow，需配置重定向 URL）
   feishu-cli auth login
 
-  # Device Flow（无需重定向 URL，适合 CI/CD 和无头环境）
+  # Device Flow（无需配置重定向 URL 白名单）
   feishu-cli auth login --device
 
   # 查看授权状态
