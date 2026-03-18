@@ -9,6 +9,11 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
+const (
+	maxIMFileSize  = 30 << 20 // 30 MB，IM 文件上传限制
+	maxIMImageSize = 10 << 20 // 10 MB，IM 图片上传限制
+)
+
 // fileExtToIMType maps common file extensions to Feishu IM file_type values.
 // Falls back to "stream" for unknown extensions.
 func fileExtToIMType(filename string) string {
@@ -45,6 +50,14 @@ func UploadIMFile(filePath string, fileName string) (string, error) {
 	}
 	defer f.Close()
 
+	stat, err := f.Stat()
+	if err != nil {
+		return "", fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	if stat.Size() > maxIMFileSize {
+		return "", fmt.Errorf("文件大小 %s 超过 IM 上传限制（30MB），请使用 file upload 命令上传到云空间", formatSize(int(stat.Size())))
+	}
+
 	if fileName == "" {
 		fileName = filepath.Base(filePath)
 	}
@@ -59,7 +72,7 @@ func UploadIMFile(filePath string, fileName string) (string, error) {
 			Build()).
 		Build()
 
-	resp, err := client.Im.File.Create(Context(), req)
+	resp, err := client.Im.File.Create(ContextWithTimeout(downloadTimeout), req)
 	if err != nil {
 		return "", fmt.Errorf("上传文件失败: %w", err)
 	}
@@ -89,6 +102,14 @@ func UploadIMImage(filePath string) (string, error) {
 	}
 	defer f.Close()
 
+	stat, err := f.Stat()
+	if err != nil {
+		return "", fmt.Errorf("获取图片信息失败: %w", err)
+	}
+	if stat.Size() > maxIMImageSize {
+		return "", fmt.Errorf("图片大小 %s 超过 IM 上传限制（10MB）", formatSize(int(stat.Size())))
+	}
+
 	req := larkim.NewCreateImageReqBuilder().
 		Body(larkim.NewCreateImageReqBodyBuilder().
 			ImageType("message").
@@ -96,7 +117,7 @@ func UploadIMImage(filePath string) (string, error) {
 			Build()).
 		Build()
 
-	resp, err := client.Im.Image.Create(Context(), req)
+	resp, err := client.Im.Image.Create(ContextWithTimeout(downloadTimeout), req)
 	if err != nil {
 		return "", fmt.Errorf("上传图片失败: %w", err)
 	}

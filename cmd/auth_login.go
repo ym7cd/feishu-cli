@@ -62,7 +62,7 @@ Authorization Code Flow 前置条件:
 
 		switch method {
 		case "device":
-			return runDeviceFlow(cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+			return runDeviceFlow(cfg.AppID, cfg.AppSecret, cfg.BaseURL, scopes)
 		case "code", "":
 			// Authorization Code Flow，继续往下
 		default:
@@ -104,8 +104,8 @@ Authorization Code Flow 前置条件:
 }
 
 // runDeviceFlow 执行 Device Flow 授权（RFC 8628）
-func runDeviceFlow(appID, appSecret, baseURL string) error {
-	deviceResp, err := auth.RequestDeviceAuthorization(appID, appSecret, baseURL, "")
+func runDeviceFlow(appID, appSecret, baseURL, scope string) error {
+	deviceResp, err := auth.RequestDeviceAuthorization(appID, appSecret, baseURL, scope)
 	if err != nil {
 		return err
 	}

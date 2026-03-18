@@ -294,6 +294,7 @@ feishu-cli doc export-file <doc_token> --type pdf -o output.pdf
 | `<doc_token>` | 文档 Token | 必填 |
 | `--type` | 导出格式 | 必填 |
 | `-o, --output` | 输出文件路径 | 必填 |
+| `--user-access-token` | User Access Token（用于导出无 App 权限的文档） | 自动读取 |
 
 ### 示例
 
@@ -303,6 +304,9 @@ feishu-cli doc export-file JKbxdRez1oNWEKxPz14cWMpBnKh --type pdf -o /tmp/report
 
 # 导出为 Word
 feishu-cli doc export-file JKbxdRez1oNWEKxPz14cWMpBnKh --type docx -o /tmp/report.docx
+
+# 使用 User Token 导出（无 App 权限的文档）
+feishu-cli doc export-file JKbxdRez1oNWEKxPz14cWMpBnKh --type pdf -o /tmp/report.pdf --user-access-token u-xxx
 ```
 
 ---

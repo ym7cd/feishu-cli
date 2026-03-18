@@ -125,7 +125,7 @@ func RequestDeviceAuthorization(appID, appSecret, baseURL, scope string) (*Devic
 	expiresIn := int(deviceFlowToFloat64(raw["expires_in"], 240))
 	interval := int(deviceFlowToFloat64(raw["interval"], 5))
 
-	if deviceCode == "" || userCode == "" {
+	if deviceCode == "" || userCode == "" || verificationURI == "" {
 		return nil, fmt.Errorf("设备授权响应缺少必要字段，响应: %s", deviceFlowTruncate(string(respBody), 300))
 	}
 

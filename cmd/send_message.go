@@ -117,12 +117,12 @@ var sendMessageCmd = &cobra.Command{
 		// 文件/图片路径预检查
 		if filePath != "" {
 			if _, err := os.Stat(filePath); err != nil {
-				return fmt.Errorf("指定的文件不存在: %s", filePath)
+				return fmt.Errorf("无法访问文件: %w", err)
 			}
 		}
 		if imagePath != "" {
 			if _, err := os.Stat(imagePath); err != nil {
-				return fmt.Errorf("指定的图片文件不存在: %s", imagePath)
+				return fmt.Errorf("无法访问图片文件: %w", err)
 			}
 		}
 
@@ -130,7 +130,7 @@ var sendMessageCmd = &cobra.Command{
 		switch {
 		case filePath != "":
 			// Upload file via IM API, then send as file message
-			fmt.Printf("正在上传文件: %s\n", filepath.Base(filePath))
+			fmt.Fprintf(os.Stderr, "正在上传文件: %s\n", filepath.Base(filePath))
 			fileKey, err := client.UploadIMFile(filePath, "")
 			if err != nil {
 				return err
@@ -141,7 +141,7 @@ var sendMessageCmd = &cobra.Command{
 
 		case imagePath != "":
 			// Upload image via IM API, then send as image message
-			fmt.Printf("正在上传图片: %s\n", filepath.Base(imagePath))
+			fmt.Fprintf(os.Stderr, "正在上传图片: %s\n", filepath.Base(imagePath))
 			imageKey, err := client.UploadIMImage(imagePath)
 			if err != nil {
 				return err

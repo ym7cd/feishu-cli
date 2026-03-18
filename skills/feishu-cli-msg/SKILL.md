@@ -28,10 +28,12 @@ allowed-tools: Bash, Read, Write
 | 输入方式 | 参数 | 适用场景 |
 |---------|------|---------|
 | 快捷文本 | `--text "内容"` | 纯文本消息，最简单 |
+| 发送文件 | `--file <路径>` 或 `-f` | 本地文件自动上传并发送（限 30MB） |
+| 发送图片 | `--image <路径>` | 本地图片自动上传并发送（限 10MB） |
 | 内联 JSON | `--content '{"key":"val"}'` 或 `-c` | 简单 JSON，一行搞定 |
 | JSON 文件 | `--content-file file.json` | 复杂消息（卡片、富文本等） |
 
-**优先级**：`--text` > `--content` > `--content-file`（同时指定时前者优先）
+**互斥**：以上 5 种输入方式**只能指定一个**，同时指定会报错。
 
 ### 接收者类型
 
@@ -93,8 +95,32 @@ feishu-cli msg send \
   --receive-id-type <type> \
   --receive-id <id> \
   [--msg-type <msg_type>] \
-  [--text "<text>" | --content '<json>' | --content-file <file.json>]
+  [--text "<text>" | --file <path> | --image <path> | --content '<json>' | --content-file <file.json>]
 ```
+
+### file 类型（直发文件）
+
+```bash
+# 直接发送本地文件（自动上传，限 30MB）
+feishu-cli msg send \
+  --receive-id-type email \
+  --receive-id user@example.com \
+  --file /path/to/report.pdf
+```
+
+自动推断文件 MIME 类型（opus/mp4/pdf/doc/xls/ppt），未知类型使用 `stream`。超过 30MB 的文件请先用 `file upload` 上传到云空间，再用 `--msg-type file --content '{"file_key":"..."}'` 发送。
+
+### image 类型（直发图片）
+
+```bash
+# 直接发送本地图片（自动上传，限 10MB）
+feishu-cli msg send \
+  --receive-id-type chat_id \
+  --receive-id oc_xxx \
+  --image /path/to/screenshot.png
+```
+
+支持 JPEG、PNG、BMP、GIF、TIFF、WebP 格式。
 
 ### text 类型
 

@@ -294,7 +294,7 @@ feishu-cli file move <file_token> --target <folder_token> --type <docx|sheet|fil
 feishu-cli file copy <file_token> --target <folder_token> --type <type> [--name "新名"]
 feishu-cli file delete <file_token> --type <type>    # 移到回收站，30 天可恢复
 
-# 下载/上传
+# 下载/上传（≤20MB 单步上传，>20MB 自动分片上传）
 feishu-cli file download <file_token> -o output.pdf
 feishu-cli file upload local_file.pdf --parent <FOLDER_TOKEN> [--name "自定义名"]
 

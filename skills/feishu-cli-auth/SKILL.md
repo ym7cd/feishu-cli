@@ -282,6 +282,9 @@ feishu-cli auth login --manual --scopes "offline_access search:docs:read search:
 
 # Device Flow：无需在飞书开放平台配置重定向 URL 白名单
 feishu-cli auth login --method device
+
+# Device Flow + 指定 scope
+feishu-cli auth login --method device --scopes "offline_access search:docs:read"
 ```
 
 ### Authorization Code Flow 前置条件
@@ -303,7 +306,7 @@ Device Flow（`--method device`）无需此配置。
 2. 终端显示用户码和验证链接，在浏览器中打开链接并输入用户码完成授权
 3. 命令自动轮询等待授权完成，成功后保存 Token
 
-**注意**：Device Flow 不支持指定 scope，服务端按应用已开通的权限授予。如需特定 scope，请改用标准 `auth login` 并配置重定向 URL 白名单。
+Device Flow 支持 `--scopes` 参数指定 OAuth scope（会自动追加 `offline_access`）。未指定时默认请求 `offline_access`。
 
 ---
 

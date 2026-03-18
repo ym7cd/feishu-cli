@@ -95,7 +95,7 @@ var exportMarkdownCmd = &cobra.Command{
 
 		// Output
 		if output != "" {
-			if err := os.WriteFile(output, []byte(markdown), 0644); err != nil {
+			if err := os.WriteFile(output, []byte(markdown), 0600); err != nil {
 				return fmt.Errorf("写入输出文件失败: %w", err)
 			}
 			fmt.Printf("已导出到 %s\n", output)

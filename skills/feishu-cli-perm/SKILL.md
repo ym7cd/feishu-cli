@@ -196,16 +196,18 @@ feishu-cli perm password delete <TOKEN> [--doc-type <DOC_TYPE>]
 
 ### member-type（协作者 ID 类型）
 
-| 值 | 说明 | 使用场景 | 示例 |
-|----|------|----------|------|
-| `email` | 邮箱 | **最常用**，精确到个人 | user@example.com |
-| `openid` | Open ID | 通过开放平台获取的用户 ID | ou_xxx |
-| `userid` | User ID | 企业内部用户 ID | 123456 |
-| `unionid` | Union ID | 跨应用统一 ID | on_xxx |
-| `openchat` | 群聊 ID | **按群聊授权**，群内所有成员获得权限 | oc_xxx |
-| `opendepartmentid` | 部门 ID | **按部门授权**，部门内所有成员获得权限 | od_xxx |
-| `groupid` | 群组 ID | 用户组 | gc_xxx |
-| `wikispaceid` | 知识空间 ID | 知识库空间 | ws_xxx |
+| 值 | 别名（IM 风格） | 说明 | 使用场景 | 示例 |
+|----|-----------------|------|----------|------|
+| `email` | — | 邮箱 | **最常用**，精确到个人 | user@example.com |
+| `openid` | `open_id` | Open ID | 通过开放平台获取的用户 ID | ou_xxx |
+| `userid` | `user_id` | User ID | 企业内部用户 ID | 123456 |
+| `unionid` | `union_id` | Union ID | 跨应用统一 ID | on_xxx |
+| `openchat` | `chat_id` | 群聊 ID | **按群聊授权**，群内所有成员获得权限 | oc_xxx |
+| `opendepartmentid` | — | 部门 ID | **按部门授权**，部门内所有成员获得权限 | od_xxx |
+| `groupid` | — | 群组 ID | 用户组 | gc_xxx |
+| `wikispaceid` | — | 知识空间 ID | 知识库空间 | ws_xxx |
+
+> IM API 风格别名（`open_id`、`user_id`、`union_id`、`chat_id`）会自动映射为标准值，两种写法等效。
 
 ### doc-type（云文档类型）
 
