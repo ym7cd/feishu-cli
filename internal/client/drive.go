@@ -489,13 +489,13 @@ func DownloadFile(fileToken string, outputPath string) error {
 	return saveToFile(resp.File, outputPath)
 }
 
-// UploadFile 上传文件到云空间
-func UploadFile(filePath, parentToken, fileName string) (string, error) {
-	client, err := GetClient()
-	if err != nil {
-		return "", err
-	}
+// maxSingleUploadSize is the max file size for single-request upload (20MB).
+// Files larger than this must use multipart upload.
+const maxSingleUploadSize = 20 * 1024 * 1024
 
+// UploadFile uploads a file to Feishu Drive.
+// Automatically uses multipart upload for files larger than 20MB.
+func UploadFile(filePath, parentToken, fileName string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("打开文件失败: %w", err)
@@ -510,6 +510,19 @@ func UploadFile(filePath, parentToken, fileName string) (string, error) {
 
 	if fileName == "" {
 		fileName = filepath.Base(filePath)
+	}
+
+	if fileSize > maxSingleUploadSize {
+		return uploadFileMultipart(filePath, parentToken, fileName, fileSize)
+	}
+	return uploadFileSingle(file, parentToken, fileName, fileSize)
+}
+
+// uploadFileSingle uploads a file in a single request (for files ≤ 20MB).
+func uploadFileSingle(file *os.File, parentToken, fileName string, fileSize int) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
 	}
 
 	req := larkdrive.NewUploadAllFileReqBuilder().
@@ -536,6 +549,126 @@ func UploadFile(filePath, parentToken, fileName string) (string, error) {
 	}
 
 	return *resp.Data.FileToken, nil
+}
+
+// uploadFileMultipart uploads a large file using the three-step multipart API:
+// 1. upload_prepare — get upload_id, block_size, block_num
+// 2. upload_part   — upload each block sequentially
+// 3. upload_finish — finalize and get file_token
+func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	// Step 1: Prepare
+	prepareReq := larkdrive.NewUploadPrepareFileReqBuilder().
+		FileUploadInfo(larkdrive.NewFileUploadInfoBuilder().
+			FileName(fileName).
+			ParentType("explorer").
+			ParentNode(parentToken).
+			Size(fileSize).
+			Build()).
+		Build()
+
+	prepareResp, err := client.Drive.File.UploadPrepare(Context(), prepareReq)
+	if err != nil {
+		return "", fmt.Errorf("分片上传准备失败: %w", err)
+	}
+	if !prepareResp.Success() {
+		return "", fmt.Errorf("分片上传准备失败: code=%d, msg=%s", prepareResp.Code, prepareResp.Msg)
+	}
+
+	uploadID := StringVal(prepareResp.Data.UploadId)
+	blockSize := IntVal(prepareResp.Data.BlockSize)
+	blockNum := IntVal(prepareResp.Data.BlockNum)
+
+	if uploadID == "" || blockSize <= 0 || blockNum <= 0 {
+		return "", fmt.Errorf("分片上传准备返回数据异常: upload_id=%s, block_size=%d, block_num=%d", uploadID, blockSize, blockNum)
+	}
+
+	fmt.Printf("分片上传: 文件大小 %s, 分片大小 %s, 共 %d 个分片\n",
+		formatSize(fileSize), formatSize(blockSize), blockNum)
+
+	// Step 2: Upload parts
+	for seq := 0; seq < blockNum; seq++ {
+		offset := int64(seq) * int64(blockSize)
+		partSize := int64(blockSize)
+		remaining := int64(fileSize) - offset
+		if partSize > remaining {
+			partSize = remaining
+		}
+
+		partFile, err := os.Open(filePath)
+		if err != nil {
+			return "", fmt.Errorf("打开文件失败: %w", err)
+		}
+		if _, err := partFile.Seek(offset, io.SeekStart); err != nil {
+			partFile.Close()
+			return "", fmt.Errorf("定位文件分片 %d 失败: %w", seq, err)
+		}
+
+		partReq := larkdrive.NewUploadPartFileReqBuilder().
+			Body(larkdrive.NewUploadPartFileReqBodyBuilder().
+				UploadId(uploadID).
+				Seq(seq).
+				Size(int(partSize)).
+				File(io.LimitReader(partFile, partSize)).
+				Build()).
+			Build()
+
+		partResp, err := client.Drive.File.UploadPart(ContextWithTimeout(downloadTimeout), partReq)
+		partFile.Close()
+		if err != nil {
+			return "", fmt.Errorf("上传分片 %d/%d 失败: %w", seq+1, blockNum, err)
+		}
+		if !partResp.Success() {
+			return "", fmt.Errorf("上传分片 %d/%d 失败: code=%d, msg=%s", seq+1, blockNum, partResp.Code, partResp.Msg)
+		}
+
+		fmt.Printf("  分片 %d/%d 上传完成 (%s)\n", seq+1, blockNum, formatSize(int(partSize)))
+	}
+
+	// Step 3: Finish
+	finishReq := larkdrive.NewUploadFinishFileReqBuilder().
+		Body(larkdrive.NewUploadFinishFileReqBodyBuilder().
+			UploadId(uploadID).
+			BlockNum(blockNum).
+			Build()).
+		Build()
+
+	finishResp, err := client.Drive.File.UploadFinish(Context(), finishReq)
+	if err != nil {
+		return "", fmt.Errorf("完成分片上传失败: %w", err)
+	}
+	if !finishResp.Success() {
+		return "", fmt.Errorf("完成分片上传失败: code=%d, msg=%s", finishResp.Code, finishResp.Msg)
+	}
+
+	if finishResp.Data == nil || finishResp.Data.FileToken == nil {
+		return "", fmt.Errorf("分片上传完成但未返回文件 Token")
+	}
+
+	return *finishResp.Data.FileToken, nil
+}
+
+// formatSize formats bytes into a human-readable string.
+func formatSize(bytes int) string {
+	const (
+		KB = 1024
+		MB = KB * 1024
+		GB = MB * 1024
+	)
+	switch {
+	case bytes >= GB:
+		return fmt.Sprintf("%.1f GB", float64(bytes)/float64(GB))
+	case bytes >= MB:
+		return fmt.Sprintf("%.1f MB", float64(bytes)/float64(MB))
+	case bytes >= KB:
+		return fmt.Sprintf("%.1f KB", float64(bytes)/float64(KB))
+	default:
+		return fmt.Sprintf("%d B", bytes)
+	}
 }
 
 // FileVersionInfo 文件版本信息
