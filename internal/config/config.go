@@ -10,13 +10,15 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	AppID           string       `mapstructure:"app_id"`
-	AppSecret       string       `mapstructure:"app_secret"`
-	UserAccessToken string       `mapstructure:"user_access_token"`
-	BaseURL         string       `mapstructure:"base_url"`
-	Debug           bool         `mapstructure:"debug"`
-	Export          ExportConfig `mapstructure:"export"`
-	Import          ImportConfig `mapstructure:"import"`
+	AppID             string       `mapstructure:"app_id"`
+	AppSecret         string       `mapstructure:"app_secret"`
+	UserAccessToken   string       `mapstructure:"user_access_token"`
+	BaseURL           string       `mapstructure:"base_url"`
+	OwnerEmail        string       `mapstructure:"owner_email"`
+	TransferOwnership bool         `mapstructure:"transfer_ownership"`
+	Debug             bool         `mapstructure:"debug"`
+	Export            ExportConfig `mapstructure:"export"`
+	Import            ImportConfig `mapstructure:"import"`
 }
 
 // ExportConfig holds export-related configuration
@@ -53,6 +55,8 @@ func Init(cfgFile string) error {
 
 	// 2. 设置默认值
 	viper.SetDefault("base_url", "https://open.feishu.cn")
+	viper.SetDefault("owner_email", "")
+	viper.SetDefault("transfer_ownership", false)
 	viper.SetDefault("debug", false)
 	viper.SetDefault("export.download_images", false)
 	viper.SetDefault("export.assets_dir", "./assets")
@@ -67,6 +71,8 @@ func Init(cfgFile string) error {
 	_ = viper.BindEnv("app_secret", "FEISHU_APP_SECRET")
 	_ = viper.BindEnv("user_access_token", "FEISHU_USER_ACCESS_TOKEN")
 	_ = viper.BindEnv("base_url", "FEISHU_BASE_URL")
+	_ = viper.BindEnv("owner_email", "FEISHU_OWNER_EMAIL")
+	_ = viper.BindEnv("transfer_ownership", "FEISHU_TRANSFER_OWNERSHIP")
 	_ = viper.BindEnv("debug", "FEISHU_DEBUG")
 
 	// 4. 读取配置文件
@@ -88,7 +94,9 @@ func Init(cfgFile string) error {
 func Get() *Config {
 	if cfg == nil {
 		return &Config{
-			BaseURL: "https://open.feishu.cn",
+			BaseURL:           "https://open.feishu.cn",
+			OwnerEmail:        "",
+			TransferOwnership: false,
 			Export: ExportConfig{
 				AssetsDir: "./assets",
 			},
@@ -144,6 +152,8 @@ func CreateDefaultConfig() error {
 app_id: ""
 app_secret: ""
 base_url: "https://open.feishu.cn"
+owner_email: ""              # 文档创建后自动授权的邮箱（环境变量: FEISHU_OWNER_EMAIL）
+transfer_ownership: false    # 创建文档后是否转移所有权给 owner_email（默认仅添加 full_access）
 debug: false
 
 # 导出配置
