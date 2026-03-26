@@ -78,6 +78,11 @@ func SaveToken(t *TokenStore) error {
 		return fmt.Errorf("写入 token 文件失败: %w", err)
 	}
 
+	// Token 更新后清理旧的当前用户缓存，避免残留旧会话信息。
+	if err := DeleteCurrentUserCache(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -90,12 +95,12 @@ func DeleteToken() error {
 
 	if err := os.Remove(path); err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return DeleteCurrentUserCache()
 		}
 		return fmt.Errorf("删除 token 文件失败: %w", err)
 	}
 
-	return nil
+	return DeleteCurrentUserCache()
 }
 
 // IsAccessTokenValid 检查 access_token 是否有效（预留 60s 缓冲）

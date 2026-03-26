@@ -1,0 +1,99 @@
+package cmd
+
+import (
+	"testing"
+
+	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/spf13/cobra"
+)
+
+func TestNormalizeApprovalTaskTopic(t *testing.T) {
+	tests := []struct {
+		input   string
+		want    string
+		wantErr bool
+	}{
+		{input: "todo", want: "1"},
+		{input: "1", want: "1"},
+		{input: "done", want: "2"},
+		{input: "started", want: "3"},
+		{input: "cc-unread", want: "17"},
+		{input: "cc-read", want: "18"},
+		{input: "unknown", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		got, err := normalizeApprovalTaskTopic(tt.input)
+		if (err != nil) != tt.wantErr {
+			t.Fatalf("normalizeApprovalTaskTopic(%q) error = %v, wantErr %v", tt.input, err, tt.wantErr)
+		}
+		if err == nil && got != tt.want {
+			t.Fatalf("normalizeApprovalTaskTopic(%q) = %q, want %q", tt.input, got, tt.want)
+		}
+	}
+}
+
+func TestApprovalTaskTopicLabel(t *testing.T) {
+	tests := map[string]string{
+		"1":  "待我审批",
+		"2":  "我已审批",
+		"3":  "我发起的审批",
+		"17": "未读抄送",
+		"18": "已读抄送",
+		"x":  "x",
+	}
+
+	for input, want := range tests {
+		if got := approvalTaskTopicLabel(input); got != want {
+			t.Fatalf("approvalTaskTopicLabel(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestResolveFlagUserTokenIgnoresEnvironment(t *testing.T) {
+	t.Setenv("FEISHU_USER_ACCESS_TOKEN", "env-token")
+
+	cmd := &cobra.Command{}
+	cmd.Flags().String("user-access-token", "", "")
+
+	if got := resolveFlagUserToken(cmd); got != "" {
+		t.Fatalf("resolveFlagUserToken() = %q, want empty string", got)
+	}
+
+	if err := cmd.Flags().Set("user-access-token", "flag-token"); err != nil {
+		t.Fatalf("Set flag: %v", err)
+	}
+
+	if got := resolveFlagUserToken(cmd); got != "flag-token" {
+		t.Fatalf("resolveFlagUserToken() = %q, want %q", got, "flag-token")
+	}
+}
+
+func TestCurrentUserIDFromInfo(t *testing.T) {
+	info := &client.UserInfo{
+		OpenID:  "ou_test",
+		UserID:  "u_test",
+		UnionID: "on_test",
+	}
+
+	tests := []struct {
+		userIDType string
+		want       string
+		wantErr    bool
+	}{
+		{userIDType: "open_id", want: "ou_test"},
+		{userIDType: "user_id", want: "u_test"},
+		{userIDType: "union_id", want: "on_test"},
+		{userIDType: "employee_id", wantErr: true},
+	}
+
+	for _, tt := range tests {
+		got, err := currentUserIDFromInfo(info, tt.userIDType)
+		if (err != nil) != tt.wantErr {
+			t.Fatalf("currentUserIDFromInfo(..., %q) error = %v, wantErr %v", tt.userIDType, err, tt.wantErr)
+		}
+		if err == nil && got != tt.want {
+			t.Fatalf("currentUserIDFromInfo(..., %q) = %q, want %q", tt.userIDType, got, tt.want)
+		}
+	}
+}

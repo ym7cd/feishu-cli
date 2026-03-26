@@ -2,13 +2,13 @@
 name: feishu-cli-toolkit
 description: >-
   飞书综合工具箱：电子表格（含导出 XLSX/CSV）、日历日程（含日程列表/agenda）、
-  任务管理（含我的任务/重新打开/评论）、任务清单（含任务关联/成员管理）、
+  任务管理、审批查询（含我的任务/重新打开/评论）、任务清单（含任务关联/成员管理）、
   画板操作、PlantUML 图表、文件管理、素材上传下载、文档评论、知识库、
   用户通讯录、文档附件下载。
   当用户请求操作飞书表格、导出表格、查看日历、查看日程列表、创建任务、
-  查看我的任务、重新打开任务、任务评论、任务清单成员、操作画板、生成 PlantUML、
-  管理文件、上传素材、查看评论、查看知识库、查询用户信息、查询部门、
-  下载文档附件时使用。
+  查看我的任务、重新打开任务、任务评论、任务清单成员、查询审批定义或当前登录用户审批任务、
+  操作画板、生成 PlantUML、管理文件、上传素材、查看评论、查看知识库、查询用户信息、
+  查询部门、下载文档附件时使用。
   注意：群聊浏览/管理请使用 feishu-cli-chat，搜索请使用 feishu-cli-search，
   发送消息请使用 feishu-cli-msg。
 argument-hint: <module> <command> [args]
@@ -18,7 +18,7 @@ allowed-tools: Bash, Read, Write
 
 # 飞书综合工具箱
 
-覆盖 feishu-cli 的 13 个功能模块，提供命令速查和核心用法。复杂模块的详细参考文档在 `references/` 目录中。
+覆盖 feishu-cli 的 14 个功能模块，提供命令速查和核心用法。复杂模块的详细参考文档在 `references/` 目录中。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
@@ -36,9 +36,10 @@ allowed-tools: Bash, Read, Write
 | 8 | 素材管理 | `media upload/download` | — |
 | 9 | 评论管理 | `comment list/add/delete/resolve/unresolve` + `comment reply` | — |
 | 10 | 知识库 | `wiki get/export/spaces/nodes/space-get` + `wiki member` | — |
-| 11 | 搜索 | 请使用 **feishu-cli-search**（文档/应用）或 **feishu-cli-chat**（消息/群聊） | `references/search-commands.md` |
-| 12 | 用户和部门 | `user info/search/list` + `dept get/children` | — |
-| 13 | 附件下载 | `doc export` + `media download` 批量下载文档附件 | — |
+| 11 | 审批 | `approval get` + `approval task query` | — |
+| 12 | 搜索 | 请使用 **feishu-cli-search**（文档/应用）或 **feishu-cli-chat**（消息/群聊） | `references/search-commands.md` |
+| 13 | 用户和部门 | `user info/search/list` + `dept get/children` | — |
+| 14 | 附件下载 | `doc export` + `media download` 批量下载文档附件 | — |
 
 ---
 
@@ -343,7 +344,29 @@ feishu-cli chat link <chat_id> [--validity-period week|year|permanently]
 
 ---
 
-## 5. 画板操作
+## 5. 审批查询
+
+查询审批定义详情（审批模板/流程定义），以及当前登录用户的审批待办、已办、已发起或抄送任务。`approval task query` 依赖 `auth login` 的当前登录态，也支持 `--output raw-json` 查看飞书 API 原始响应。
+
+### 常用命令
+
+```bash
+# 查询审批定义详情（审批模板/流程定义）
+feishu-cli approval get <approval_code>
+feishu-cli approval get <approval_code> --output json
+
+# 查询当前登录用户审批任务
+feishu-cli approval task query --topic todo
+feishu-cli approval task query --topic done
+feishu-cli approval task query --topic started --output json
+feishu-cli approval task query --topic started --output raw-json
+```
+
+**权限要求**：`approval:approval:readonly`、`approval:task`
+
+---
+
+## 6. 画板操作
 
 下载画板图片、导入 Mermaid/PlantUML 图表到画板。
 

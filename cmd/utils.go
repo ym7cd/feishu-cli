@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/auth"
+	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -25,6 +26,13 @@ func resolveOptionalUserToken(cmd *cobra.Command) string {
 		return envToken
 	}
 	return ""
+}
+
+// resolveFlagUserToken 仅解析命令行显式传入的 user_access_token。
+// 适用于默认应使用 App/Tenant Token，仅在用户明确指定时才切换到 User Token 的命令。
+func resolveFlagUserToken(cmd *cobra.Command) string {
+	flagToken, _ := cmd.Flags().GetString("user-access-token")
+	return flagToken
 }
 
 // resolveOptionalUserTokenWithFallback 尝试完整优先级链解析 User Token（可选）
@@ -59,6 +67,97 @@ func resolveRequiredUserToken(cmd *cobra.Command) (string, error) {
 	flagToken, _ := cmd.Flags().GetString("user-access-token")
 	cfg := config.Get()
 	return auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
+}
+
+// resolveCurrentAuthedUserID returns the current logged-in user's ID for the requested type.
+func resolveCurrentAuthedUserID(cmd *cobra.Command, userIDType string) (string, error) {
+	token, err := resolveRequiredUserToken(cmd)
+	if err != nil {
+		return "", err
+	}
+
+	cfg := config.Get()
+	cachePath, _ := auth.UserCachePath()
+	cached, cacheErr := auth.LoadCurrentUserCache()
+	switch {
+	case cacheErr != nil:
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] [cache:%s] 读取当前登录用户缓存失败，回源 user_info: %v\n", cachePath, cacheErr)
+		}
+	case cached != nil && cached.MatchesToken(token):
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] [cache:%s] 命中当前登录用户缓存\n", cachePath)
+		}
+		return currentUserIDFromInfo(currentUserIDCacheToInfo(cached), userIDType)
+	case cached != nil:
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] [cache:%s] 当前登录 token 已变化，忽略旧缓存并回源 user_info\n", cachePath)
+		}
+	default:
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] [cache:%s] 未命中当前登录用户缓存，回源 user_info\n", cachePath)
+		}
+	}
+
+	info, err := client.GetCurrentUserInfo(token)
+	if err != nil {
+		return "", err
+	}
+
+	cache := &auth.CurrentUserCache{
+		OpenID:           info.OpenID,
+		UserID:           info.UserID,
+		UnionID:          info.UnionID,
+		Name:             info.Name,
+		TokenFingerprint: auth.UserTokenFingerprint(token),
+	}
+	if err := auth.SaveCurrentUserCache(cache); err != nil {
+		if cfg.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] [cache:%s] 写入当前登录用户缓存失败: %v\n", cachePath, err)
+		}
+	} else if cfg.Debug {
+		fmt.Fprintf(os.Stderr, "[Debug] [cache:%s] 已更新当前登录用户缓存\n", cachePath)
+	}
+
+	return currentUserIDFromInfo(info, userIDType)
+}
+
+func currentUserIDCacheToInfo(cache *auth.CurrentUserCache) *client.UserInfo {
+	if cache == nil {
+		return &client.UserInfo{}
+	}
+
+	return &client.UserInfo{
+		OpenID:  cache.OpenID,
+		UserID:  cache.UserID,
+		UnionID: cache.UnionID,
+		Name:    cache.Name,
+	}
+}
+
+func currentUserIDFromInfo(info *client.UserInfo, userIDType string) (string, error) {
+	if info == nil {
+		return "", fmt.Errorf("当前登录用户信息为空")
+	}
+
+	switch userIDType {
+	case "open_id":
+		if info.OpenID != "" {
+			return info.OpenID, nil
+		}
+	case "user_id":
+		if info.UserID != "" {
+			return info.UserID, nil
+		}
+	case "union_id":
+		if info.UnionID != "" {
+			return info.UnionID, nil
+		}
+	default:
+		return "", fmt.Errorf("不支持的 user-id-type: %s", userIDType)
+	}
+
+	return "", fmt.Errorf("当前登录用户缺少 %s，无法自动推断 --user-id", userIDType)
 }
 
 // mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic

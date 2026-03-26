@@ -26,7 +26,7 @@ func SetVersionInfo(v, bt string) {
 var rootCmd = &cobra.Command{
 	Use:   "feishu-cli",
 	Short: "飞书开放平台命令行工具",
-	Long: `飞书开放平台命令行工具，支持文档操作、Markdown 双向转换、消息发送、权限管理、日历管理、搜索等功能。
+	Long: `飞书开放平台命令行工具，支持文档操作、Markdown 双向转换、消息发送、权限管理、审批查询、日历管理、搜索等功能。
 
 命令模块:
   doc       文档操作（创建、获取、编辑、导入导出、添加高亮块/画板）
@@ -40,6 +40,7 @@ var rootCmd = &cobra.Command{
   msg       消息操作（发送消息、搜索群聊、会话历史）
   bitable   多维表格操作（数据表、字段、记录、视图管理）
   task      任务操作（创建、查看、更新、完成）
+  approval  审批操作（定义详情、当前登录用户任务查询）
   calendar  日历操作（日历、日程管理）
   search    搜索操作（消息、应用搜索，需要用户授权）
   config    配置管理（初始化配置）
@@ -66,6 +67,9 @@ var rootCmd = &cobra.Command{
 
   # 发送消息
   feishu-cli msg send --receive-id-type email --receive-id user@example.com --text "你好"
+
+  # 查询当前登录用户的审批待办（需先 auth login）
+  feishu-cli approval task query --topic todo
 
 更多信息请访问: https://github.com/riba2534/feishu-cli`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {

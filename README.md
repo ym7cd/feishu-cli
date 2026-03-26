@@ -109,6 +109,7 @@ feishu-cli doc import large-doc.md --title "大文档" \
 | **群聊** | 创建、获取、更新、删除、分享链接、成员管理 |
 | **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询 |
 | **任务** | 创建、查看、完成、删除、子任务、成员管理、提醒管理、任务列表 |
+| **审批** | 审批定义详情查询、当前登录用户审批任务查询（待办 / 已办 / 已发起 / 抄送） |
 | **权限** | 添加 / 更新 / 删除协作者、批量添加、公开权限管理、分享密码、权限检查、转移所有权 |
 | **文件** | 云空间文件列表、创建、移动、复制、删除、上传、下载、版本管理、元数据、统计 |
 | **素材** | 上传 / 下载（图片、文件、音视频） |
@@ -183,7 +184,7 @@ export FEISHU_APP_SECRET="xxx"
 feishu-cli config init
 ```
 
-4. （可选）如果需要使用搜索功能，还需完成 OAuth 用户授权：
+4. （可选）如果需要使用搜索、审批任务查询等需要用户身份的功能，还需完成 OAuth 用户授权：
 
 ```bash
 # 前置条件：在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加：
@@ -222,6 +223,7 @@ Commands:
   dept      部门操作（详情、子部门列表）
   board     画板操作（导入图表、下载图片）
   comment   评论操作（列出、添加、解决/恢复、回复管理）
+  approval  审批操作（定义详情、当前登录用户任务查询）
   search    搜索操作（消息、应用、文档）
   auth      身份认证（OAuth 登录、状态、退出）
   config    配置管理
@@ -462,9 +464,47 @@ feishu-cli search docs "产品需求"
 </details>
 
 <details>
+<summary>审批操作</summary>
+
+`approval get` 使用应用权限查询审批定义（审批模板/流程定义），需要开通 `approval:approval:readonly`；`approval task query` 会优先根据当前 `auth login` 登录态自动识别当前用户，需要开通 `approval:task` 并完成用户授权。
+
+输出说明：
+- 不传 `--output`：输出便于阅读的文本摘要
+- `--output json`：输出 CLI 归一化后的 JSON，部分字段会做拍平和字符串化处理
+- `--output raw-json`：输出飞书 API 原始响应，便于排查字段差异
+
+```bash
+# 查询审批定义详情（审批模板/流程定义）
+feishu-cli approval get <approval_code>
+
+# 输出完整 JSON
+feishu-cli approval get <approval_code> --output json
+
+# 查询当前登录用户的待我审批
+feishu-cli approval task query --topic todo
+
+# 查询我已审批的任务
+feishu-cli approval task query --topic done
+
+# 查询我发起的审批
+feishu-cli approval task query --topic started --output json
+
+# 输出飞书 API 原始响应
+feishu-cli approval task query --topic started --output raw-json
+
+# 翻页查询
+feishu-cli approval task query --topic todo --page-size 20 --page-token <token>
+
+# 显式指定 User Access Token
+feishu-cli approval task query --topic cc-unread --user-access-token <token>
+```
+
+</details>
+
+<details>
 <summary>身份认证</summary>
 
-通过 OAuth 2.0 获取 User Access Token，用于搜索等需要用户授权的功能。
+通过 OAuth 2.0 获取 User Access Token，用于搜索、审批待办查询等需要用户授权的功能。
 
 **前置条件**：在飞书开放平台 → 应用详情 → 安全设置 → 重定向 URL 中添加 `http://127.0.0.1:9768/callback`
 
@@ -498,6 +538,7 @@ feishu-cli auth logout
 - Access Token 过期时自动使用 Refresh Token 刷新（Refresh Token 有效期 30 天）
 - **重要**：登录时需包含 `offline_access` scope 才会返回 Refresh Token，否则 2 小时后需重新登录
 - Token 优先级：`--user-access-token` 参数 > `FEISHU_USER_ACCESS_TOKEN` 环境变量 > `token.json` > `config.yaml`
+- 审批任务查询会缓存当前登录用户资料到 `~/.feishu-cli/user_profile.json`，登录态变化或执行 `auth logout` 时会自动清理
 
 </details>
 
@@ -648,6 +689,8 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 | 日历 | `calendar:calendar` | 需单独申请 |
 | 任务 | `task:task:read`, `task:task:write` | 需单独申请 |
 | 任务列表 | `task:tasklist:read`, `task:tasklist:write` | 任务列表管理 |
+| 审批定义查询 | `approval:approval:readonly` | 用于 `approval get` |
+| 审批任务查询 | `approval:task` | 用于 `approval task query`，并需完成用户授权 |
 | 搜索消息/应用 | 需要 User Access Token | 通过 `auth login` 或手动获取 |
 | 搜索文档 | 需要 User Access Token | 通过 `auth login` 或手动获取，支持 `search:read` 权限 |
 | 读取他人文档（User 身份） | `docx:document:readonly`（User scope） | 通过 `feishu-cli auth login --scopes "docx:document:readonly offline_access"` 授权 |
@@ -659,6 +702,8 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 {
   "scopes": {
     "tenant": [
+      "approval:approval:readonly",
+      "approval:task",
       "board:whiteboard:node:create",
       "board:whiteboard:node:read",
       "board:whiteboard:node:update",
@@ -722,6 +767,8 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 {
   "scopes": {
     "tenant": [
+      "approval:approval:readonly",
+      "approval:task",
       "board:whiteboard:node:create",
       "board:whiteboard:node:delete",
       "board:whiteboard:node:read",
