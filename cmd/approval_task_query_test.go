@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/riba2534/feishu-cli/internal/client"
@@ -69,6 +70,22 @@ func TestResolveFlagUserTokenIgnoresEnvironment(t *testing.T) {
 	}
 }
 
+func TestApprovalTaskQueryDoesNotRegisterUserIDFlag(t *testing.T) {
+	if flag := approvalTaskQueryCmd.Flags().Lookup("user-id"); flag != nil {
+		t.Fatalf("approvalTaskQueryCmd should not register --user-id, got %q", flag.Name)
+	}
+}
+
+func TestApprovalTaskQueryRequiresTopicFlag(t *testing.T) {
+	flag := approvalTaskQueryCmd.Flags().Lookup("topic")
+	if flag == nil {
+		t.Fatal("approvalTaskQueryCmd should register --topic")
+	}
+	if got := flag.Annotations[cobra.BashCompOneRequiredFlag]; len(got) != 1 || got[0] != "true" {
+		t.Fatalf("--topic should be marked required, got annotations %#v", flag.Annotations)
+	}
+}
+
 func TestCurrentUserIDFromInfo(t *testing.T) {
 	info := &client.UserInfo{
 		OpenID:  "ou_test",
@@ -95,5 +112,15 @@ func TestCurrentUserIDFromInfo(t *testing.T) {
 		if err == nil && got != tt.want {
 			t.Fatalf("currentUserIDFromInfo(..., %q) = %q, want %q", tt.userIDType, got, tt.want)
 		}
+	}
+}
+
+func TestCurrentUserIDFromInfoMissingIDDoesNotMentionRemovedUserIDFlag(t *testing.T) {
+	_, err := currentUserIDFromInfo(&client.UserInfo{}, "open_id")
+	if err == nil {
+		t.Fatal("currentUserIDFromInfo(..., open_id) error = nil, want non-nil")
+	}
+	if strings.Contains(err.Error(), "--user-id") {
+		t.Fatalf("error %q should not mention removed --user-id flag", err.Error())
 	}
 }

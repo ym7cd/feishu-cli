@@ -125,3 +125,67 @@ func TestDeleteTokenDeletesCurrentUserCache(t *testing.T) {
 		t.Fatalf("expected current user cache to be cleared after DeleteToken")
 	}
 }
+
+func TestSaveTokenIgnoresCurrentUserCacheDeleteError(t *testing.T) {
+	tmpDir := t.TempDir()
+	tokenFile := filepath.Join(tmpDir, "token.json")
+	cachePath := nonRemovableCachePath(t)
+
+	originalTokenPath := tokenPathFunc
+	originalUserCachePath := userCachePathFunc
+	tokenPathFunc = func() (string, error) { return tokenFile, nil }
+	userCachePathFunc = func() (string, error) { return cachePath, nil }
+	defer func() {
+		tokenPathFunc = originalTokenPath
+		userCachePathFunc = originalUserCachePath
+	}()
+
+	if err := SaveToken(&TokenStore{AccessToken: "access"}); err != nil {
+		t.Fatalf("SaveToken() error = %v, want nil when cache cleanup fails", err)
+	}
+
+	if _, err := os.Stat(tokenFile); err != nil {
+		t.Fatalf("token file not written: %v", err)
+	}
+}
+
+func TestDeleteTokenIgnoresCurrentUserCacheDeleteError(t *testing.T) {
+	tmpDir := t.TempDir()
+	tokenFile := filepath.Join(tmpDir, "token.json")
+	cachePath := nonRemovableCachePath(t)
+
+	originalTokenPath := tokenPathFunc
+	originalUserCachePath := userCachePathFunc
+	tokenPathFunc = func() (string, error) { return tokenFile, nil }
+	userCachePathFunc = func() (string, error) { return cachePath, nil }
+	defer func() {
+		tokenPathFunc = originalTokenPath
+		userCachePathFunc = originalUserCachePath
+	}()
+
+	if err := os.WriteFile(tokenFile, []byte(`{"access_token":"access"}`), 0600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+
+	if err := DeleteToken(); err != nil {
+		t.Fatalf("DeleteToken() error = %v, want nil when cache cleanup fails", err)
+	}
+
+	if _, err := os.Stat(tokenFile); !os.IsNotExist(err) {
+		t.Fatalf("token file should be removed, got err = %v", err)
+	}
+}
+
+func nonRemovableCachePath(t *testing.T) string {
+	t.Helper()
+
+	cacheDir := filepath.Join(t.TempDir(), "user_profile.json")
+	if err := os.Mkdir(cacheDir, 0700); err != nil {
+		t.Fatalf("mkdir cache dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cacheDir, "child"), []byte("busy"), 0600); err != nil {
+		t.Fatalf("write cache dir child: %v", err)
+	}
+
+	return cacheDir
+}

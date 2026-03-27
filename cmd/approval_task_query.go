@@ -44,10 +44,6 @@ var approvalTaskQueryCmd = &cobra.Command{
 			return err
 		}
 
-		if userID, _ := cmd.Flags().GetString("user-id"); strings.TrimSpace(userID) != "" {
-			return fmt.Errorf("approval task query 不再支持 --user-id，请直接使用当前 auth 登录用户")
-		}
-
 		userID, err := resolveCurrentAuthedUserID(cmd, "open_id")
 		if err != nil {
 			return fmt.Errorf("无法从当前登录态自动获取用户身份，请先执行 feishu-cli auth login: %w", err)
@@ -168,4 +164,5 @@ func init() {
 	approvalTaskQueryCmd.Flags().String("page-token", "", "分页标记")
 	approvalTaskQueryCmd.Flags().StringP("output", "o", "", "输出格式（json/raw-json）")
 	approvalTaskQueryCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	mustMarkFlagRequired(approvalTaskQueryCmd, "topic")
 }

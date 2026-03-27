@@ -157,7 +157,7 @@ func currentUserIDFromInfo(info *client.UserInfo, userIDType string) (string, er
 		return "", fmt.Errorf("不支持的 user-id-type: %s", userIDType)
 	}
 
-	return "", fmt.Errorf("当前登录用户缺少 %s，无法自动推断 --user-id", userIDType)
+	return "", fmt.Errorf("当前登录用户缺少 %s，无法自动推断当前登录用户身份", userIDType)
 }
 
 // mustMarkFlagRequired 标记 flag 为必填，如果失败则 panic
