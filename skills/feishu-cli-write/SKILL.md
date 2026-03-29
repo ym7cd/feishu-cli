@@ -2,8 +2,11 @@
 name: feishu-cli-write
 description: >-
   向飞书文档写入内容、创建新文档、新建空白文档。支持 Mermaid/PlantUML 图表自动转画板、
-  Callout、批量更新块等高级操作。当用户请求"创建文档"、"新建文档"、"写一份文档"、
-  "写入"、"更新文档"、"编辑文档"、"添加内容"时使用。推荐使用 Mermaid 画图。
+  Callout、批量更新块、插入图片/文件等高级操作。支持 content-update 命令实现
+  文档更新、替换、插入、删除等 7 种模式。当用户请求"创建文档"、"新建文档"、
+  "写一份文档"、"写入"、"更新文档"、"编辑文档"、"添加内容"、"插入图片"、
+  "插入文件"、"上传图片到文档"、"content-update"、"文档更新"、"替换章节"、
+  "插入章节"、"删除章节"、"追加内容"、"覆盖文档"时使用。推荐使用 Mermaid 画图。
 argument-hint: <title|document_id> [content]
 user-invocable: true
 allowed-tools: Bash, Write, Read
@@ -345,6 +348,56 @@ JSON 格式示例：
 /feishu-write <document_id>
 ```
 
+## 向文档插入图片或文件
+
+通过 `doc media-insert` 命令向文档中插入本地图片或文件。
+
+### 插入图片
+
+图片采用三步法：上传素材 → 创建 Image Block → 设置对齐和描述。
+
+```bash
+# 插入图片（默认居中对齐）
+feishu-cli doc media-insert <document_id> --file /path/to/image.png
+
+# 指定对齐方式和描述
+feishu-cli doc media-insert <document_id> \
+  --file /path/to/screenshot.png \
+  --type image \
+  --align left \
+  --caption "系统架构图"
+```
+
+### 插入文件
+
+文件采用三步法：上传素材 → 创建 File Block → 关联文件。
+
+```bash
+# 插入文件附件
+feishu-cli doc media-insert <document_id> \
+  --file /path/to/report.pdf \
+  --type file
+```
+
+### 参数说明
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<document_id>` | 文档 ID | 必填 |
+| `--file` | 本地文件路径 | 必填 |
+| `--type` | 插入类型 `image`/`file` | `image` |
+| `--align` | 图片对齐方式 `left`/`center`/`right`（仅图片） | `center` |
+| `--caption` | 图片描述（仅图片） | — |
+
+### 两种模式的区别
+
+| 维度 | 图片（image） | 文件（file） |
+|------|--------------|-------------|
+| 上传方式 | `media upload --parent-type docx_image` | `media upload --parent-type docx_file` |
+| 创建块 | Image Block（block_type=27） | File Block（block_type=23） |
+| 额外属性 | 支持 `--align`（对齐）和 `--caption`（描述） | 无额外属性 |
+| 显示效果 | 内嵌图片显示 | 文件卡片显示 |
+
 ## 常见问题
 
 | 问题 | 原因与解决方案 |
@@ -354,3 +407,180 @@ JSON 格式示例：
 | 认证过期（401 错误） | 重新执行 `feishu-cli auth login`，建议包含 `offline_access` scope 以获取 30 天 Refresh Token |
 | 文档创建成功但无法访问 | 确认已执行 `perm add` 授予 `full_access` 权限并 `perm transfer-owner` 转移所有权 |
 | 表格内容显示不全 | 飞书 API 单个表格限制 9 行 9 列，超出部分会自动拆分为多个表格，属于正常行为 |
+
+## doc content-update 命令
+
+高级文档更新命令，支持 7 种模式，通过定位器精确操控文档内容。相比手动 `doc blocks` + `doc delete` + `doc add` 的多步操作，`content-update` 一条命令即可完成。
+
+```bash
+feishu-cli doc content-update <document_id> --mode <mode> [flags]
+```
+
+### 7 种模式
+
+| 模式 | 说明 | 是否需要定位 | 是否需要内容 |
+|------|------|:----------:|:----------:|
+| `append` | 追加到文档末尾 | 否 | 是 |
+| `overwrite` | 完全覆盖文档内容（先删后写） | 否 | 是 |
+| `replace_range` | 按定位替换一段内容（取第一个匹配） | 是 | 是 |
+| `replace_all` | 全文查找替换所有匹配（从后往前替换） | 是 | 是 |
+| `insert_before` | 在定位内容前插入 | 是 | 是 |
+| `insert_after` | 在定位内容后插入 | 是 | 是 |
+| `delete_range` | 删除定位的内容（从后往前删除） | 是 | 否 |
+
+### 定位方式
+
+需要定位的模式（`replace_range`/`replace_all`/`insert_before`/`insert_after`/`delete_range`）必须提供以下两种定位方式之一：
+
+| 参数 | 说明 | 示例 |
+|------|------|------|
+| `--selection-by-title` | 按标题定位，范围从该标题到下一个同级/更高级标题（或文档末尾） | `"## 章节标题"` |
+| `--selection-with-ellipsis` | 按内容范围定位，`...` 分隔开头和结尾文本 | `"开头内容...结尾内容"` |
+
+**标题定位规则**：
+- `"## 标题文本"` — 匹配 H2 级别且包含"标题文本"的标题
+- 范围自动延伸到下一个同级或更高级标题（或文档末尾）
+
+**内容范围定位规则**：
+- `"开头...结尾"` — 从包含"开头"的块到包含"结尾"的块（左闭右闭）
+- 不含 `...` 时作为精确匹配，匹配所有包含该文本的块
+
+### 其他参数
+
+| 参数 | 说明 |
+|------|------|
+| `--markdown` | 直接传入 Markdown 内容（支持 `\n` 转义为换行） |
+| `--markdown-file` | 从文件读取 Markdown 内容 |
+| `--upload-images` | 上传 Markdown 中的本地图片 |
+| `-o json` | JSON 格式输出 |
+
+> `--markdown` 和 `--markdown-file` 不能同时使用。
+
+### 使用示例
+
+```bash
+# 追加内容到文档末尾
+feishu-cli doc content-update DOC_ID --mode append \
+  --markdown "## 新章节\n\n这是追加的内容"
+
+# 完全覆盖文档
+feishu-cli doc content-update DOC_ID --mode overwrite \
+  --markdown-file new_content.md
+
+# 按标题替换整个章节（从 H2 标题到下一个 H2）
+feishu-cli doc content-update DOC_ID --mode replace_range \
+  --selection-by-title "## 旧章节" \
+  --markdown "## 新章节\n\n更新后的内容"
+
+# 全文查找替换（替换所有匹配）
+feishu-cli doc content-update DOC_ID --mode replace_all \
+  --selection-with-ellipsis "旧文本" \
+  --markdown "新文本"
+
+# 在指定章节前插入
+feishu-cli doc content-update DOC_ID --mode insert_before \
+  --selection-by-title "## 目标章节" \
+  --markdown "## 插入的章节\n\n新增内容"
+
+# 在指定章节后插入
+feishu-cli doc content-update DOC_ID --mode insert_after \
+  --selection-by-title "## 目标章节" \
+  --markdown-file additional.md
+
+# 删除整个章节
+feishu-cli doc content-update DOC_ID --mode delete_range \
+  --selection-by-title "## 废弃章节"
+
+# 删除指定范围的内容
+feishu-cli doc content-update DOC_ID --mode delete_range \
+  --selection-with-ellipsis "开始段落...结束段落"
+```
+
+## Markdown 扩展语法（HTML 标签）
+
+除标准 Markdown 语法外，导入时还支持以下 HTML 标签形式的扩展语法。这些标签由导出端自动生成，支持 roundtrip（导出→导入不丢失信息）。
+
+### @用户（MentionUser）
+
+```html
+<mention-user id="ou_xxx"/>
+```
+
+导入时创建 MentionUser 元素，`id` 为用户的 Open ID。
+
+### @文档（MentionDoc）
+
+```html
+<mention-doc token="xxx" type="docx">文档标题</mention-doc>
+```
+
+导入时创建 MentionDoc 元素。`type` 支持：`docx`、`doc`、`sheet`、`bitable`、`mindnote`、`wiki`、`file`、`slides`。
+
+### 分栏布局（Grid）
+
+```html
+<grid cols="2">
+<column>
+左栏内容（支持嵌套 Markdown）
+</column>
+<column>
+右栏内容（支持嵌套 Markdown）
+</column>
+</grid>
+```
+
+导入时创建 Grid Block（type=24）+ GridColumn 子块（type=25），每个 `<column>` 内的 Markdown 递归转换。
+
+### Callout 高亮块（HTML 标签形式）
+
+```html
+<callout type="NOTE">提示内容</callout>
+```
+
+与 `> [!NOTE]` 语法效果相同，支持 6 种类型：`NOTE`、`WARNING`、`TIP`、`CAUTION`、`IMPORTANT`、`SUCCESS`。
+
+### 空白画板（Whiteboard）
+
+```html
+<whiteboard type="blank"/>
+```
+
+导入时创建 Board Block（type=43）。
+
+### 电子表格（Sheet）
+
+```html
+<sheet rows="5" cols="5"/>
+```
+
+导入时创建 Sheet Block（type=30），可选 `rows`、`cols` 属性指定行列数。
+
+### 多维表格（Bitable）
+
+```html
+<bitable view="table"/>
+```
+
+导入时创建 Bitable Block（type=18）。`view` 支持：`table`（默认）、`kanban`、`calendar`、`gallery`、`gantt`、`form`。
+
+### 带属性图片（Image）
+
+```html
+<image token="xxx" width="800" height="600" align="center" caption="图片说明"/>
+```
+
+导入时创建 Image Block（type=27）。属性说明：
+- `token`：图片素材 Token（必需）
+- `width`/`height`：图片尺寸（可选）
+- `align`：对齐方式 `left`/`center`/`right`（可选）
+- `caption`：图片描述（可选）
+
+> 与标准 `![alt](url)` 语法的区别：HTML 标签形式保留了 token、尺寸、对齐等飞书原生属性，适用于 roundtrip 场景。
+
+### 文件块（File）
+
+```html
+<file token="xxx" name="report.pdf" view-type="1"/>
+```
+
+导入时创建 File Block（type=23）。`view-type` 控制文件卡片显示模式。

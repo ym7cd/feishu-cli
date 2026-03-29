@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"time"
@@ -738,6 +739,140 @@ func ReplyEvent(calendarID, eventID, rsvpStatus string, userAccessToken string) 
 	}
 
 	return nil
+}
+
+// AgendaEvent 日程视图中的事件实例（展开重复日程后的独立实例）
+type AgendaEvent struct {
+	EventID        string `json:"event_id"`
+	Summary        string `json:"summary"`
+	StartTime      string `json:"start_time"`
+	EndTime        string `json:"end_time"`
+	Status         string `json:"status,omitempty"`
+	FreeBusyStatus string `json:"free_busy_status,omitempty"`
+	SelfRSVP       string `json:"self_rsvp_status,omitempty"`
+	IsAllDay       bool   `json:"is_all_day,omitempty"`
+}
+
+// ListCalendarAgenda 获取日程实例视图（展开重复日程为独立实例）
+// 使用 raw HTTP 方式调用 instance_view API（SDK 未封装此接口）
+func ListCalendarAgenda(calendarID string, startTime, endTime int64, pageSize int, pageToken string, userAccessToken string) ([]*AgendaEvent, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	// 构建 URL 和查询参数
+	apiPath := fmt.Sprintf("/open-apis/calendar/v4/calendars/%s/events/instance_view?start_time=%s&end_time=%s",
+		calendarID,
+		strconv.FormatInt(startTime, 10),
+		strconv.FormatInt(endTime, 10),
+	)
+	if pageSize > 0 {
+		apiPath += fmt.Sprintf("&page_size=%d", pageSize)
+	}
+	if pageToken != "" {
+		apiPath += "&page_token=" + pageToken
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取日程视图失败: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, "", false, fmt.Errorf("获取日程视图失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	// 解析响应
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Items     []json.RawMessage `json:"items"`
+			PageToken string            `json:"page_token"`
+			HasMore   bool              `json:"has_more"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, "", false, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, "", false, fmt.Errorf("获取日程视图失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	// 逐个解析事件实例，提取时间字段
+	var events []*AgendaEvent
+	for _, raw := range apiResp.Data.Items {
+		var item struct {
+			EventID   string `json:"event_id"`
+			Summary   string `json:"summary"`
+			StartTime *struct {
+				Timestamp string `json:"timestamp"`
+				Date      string `json:"date"`
+				Timezone  string `json:"timezone"`
+			} `json:"start_time"`
+			EndTime *struct {
+				Timestamp string `json:"timestamp"`
+				Date      string `json:"date"`
+				Timezone  string `json:"timezone"`
+			} `json:"end_time"`
+			Status         string `json:"status"`
+			FreeBusyStatus string `json:"free_busy_status"`
+			SelfRSVP       string `json:"self_rsvp_status"`
+		}
+
+		if err := json.Unmarshal(raw, &item); err != nil {
+			continue
+		}
+
+		event := &AgendaEvent{
+			EventID:        item.EventID,
+			Summary:        item.Summary,
+			Status:         item.Status,
+			FreeBusyStatus: item.FreeBusyStatus,
+			SelfRSVP:       item.SelfRSVP,
+		}
+
+		// 提取开始时间：优先 timestamp，回退 date（全天日程）
+		if item.StartTime != nil {
+			tz := ""
+			if item.StartTime.Timezone != "" {
+				tz = item.StartTime.Timezone
+			}
+			if item.StartTime.Timestamp != "" {
+				event.StartTime = timestampToRFC3339(item.StartTime.Timestamp, tz)
+			} else if item.StartTime.Date != "" {
+				event.StartTime = item.StartTime.Date
+				event.IsAllDay = true
+			}
+		}
+
+		// 提取结束时间
+		if item.EndTime != nil {
+			tz := ""
+			if item.EndTime.Timezone != "" {
+				tz = item.EndTime.Timezone
+			}
+			if item.EndTime.Timestamp != "" {
+				event.EndTime = timestampToRFC3339(item.EndTime.Timestamp, tz)
+			} else if item.EndTime.Date != "" {
+				event.EndTime = item.EndTime.Date
+			}
+		}
+
+		events = append(events, event)
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	nextPageToken = apiResp.Data.PageToken
+	hasMore = apiResp.Data.HasMore
+
+	return events, nextPageToken, hasMore, nil
 }
 
 // 辅助函数：转换日程对象

@@ -287,6 +287,43 @@ func CompleteTask(taskGuid string, userAccessToken string) (*TaskInfo, error) {
 	}, userAccessToken)
 }
 
+// ReopenTask reopens a completed task by setting completed_at to "0"
+func ReopenTask(taskGuid string, userAccessToken string) (*TaskInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	taskBuilder := larktask.NewInputTaskBuilder().
+		CompletedAt("0")
+
+	body := larktask.NewPatchTaskReqBodyBuilder().
+		Task(taskBuilder.Build()).
+		UpdateFields([]string{"completed_at"}).
+		Build()
+
+	req := larktask.NewPatchTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.Patch(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("重新打开任务失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("重新打开任务失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("重新打开任务成功但未返回数据")
+	}
+
+	return taskToInfo(resp.Data.Task), nil
+}
+
 // TasklistInfo 任务清单信息
 type TasklistInfo struct {
 	Guid      string `json:"guid"`
@@ -668,6 +705,347 @@ func tasklistToInfo(tl *larktask.Tasklist) *TasklistInfo {
 		}
 	}
 	return info
+}
+
+// CommentInfo 任务评论信息
+type CommentInfo struct {
+	ID               string `json:"id"`
+	Content          string `json:"content"`
+	Creator          string `json:"creator,omitempty"`
+	ReplyToCommentID string `json:"reply_to_comment_id,omitempty"`
+	CreatedAt        string `json:"created_at,omitempty"`
+	UpdatedAt        string `json:"updated_at,omitempty"`
+}
+
+// AddTaskComment 添加任务评论
+func AddTaskComment(taskGuid, content, replyToCommentID, userAccessToken string) (*CommentInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	commentBuilder := larktask.NewInputCommentBuilder().
+		Content(content).
+		ResourceType("task").
+		ResourceId(taskGuid)
+
+	if replyToCommentID != "" {
+		commentBuilder.ReplyToCommentId(replyToCommentID)
+	}
+
+	req := larktask.NewCreateCommentReqBuilder().
+		UserIdType("open_id").
+		InputComment(commentBuilder.Build()).
+		Build()
+
+	resp, err := client.Task.V2.Comment.Create(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("添加任务评论失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("添加任务评论失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil || resp.Data.Comment == nil {
+		return nil, fmt.Errorf("添加任务评论成功但未返回数据")
+	}
+
+	return commentToInfo(resp.Data.Comment), nil
+}
+
+// ListTaskComments 列出任务评论
+func ListTaskComments(taskGuid string, pageSize int, pageToken, userAccessToken string) ([]*CommentInfo, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larktask.NewListCommentReqBuilder().
+		ResourceType("task").
+		ResourceId(taskGuid).
+		UserIdType("open_id")
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+
+	resp, err := client.Task.V2.Comment.List(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取任务评论列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取任务评论列表失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	var comments []*CommentInfo
+	if resp.Data != nil {
+		for _, c := range resp.Data.Items {
+			comments = append(comments, commentToInfo(c))
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return comments, nextPageToken, hasMore, nil
+}
+
+// commentToInfo 转换 SDK Comment 为 CommentInfo
+func commentToInfo(c *larktask.Comment) *CommentInfo {
+	if c == nil {
+		return nil
+	}
+	info := &CommentInfo{
+		ID:               StringVal(c.Id),
+		Content:          StringVal(c.Content),
+		ReplyToCommentID: StringVal(c.ReplyToCommentId),
+	}
+	if c.Creator != nil {
+		info.Creator = StringVal(c.Creator.Id)
+	}
+	if createdAt := StringVal(c.CreatedAt); createdAt != "" {
+		if ts, err := strconv.ParseInt(createdAt, 10, 64); err == nil {
+			info.CreatedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+		}
+	}
+	if updatedAt := StringVal(c.UpdatedAt); updatedAt != "" {
+		if ts, err := strconv.ParseInt(updatedAt, 10, 64); err == nil {
+			info.UpdatedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+		}
+	}
+	return info
+}
+
+// AddTaskToTasklist 将任务添加到任务清单
+func AddTaskToTasklist(taskGuid, tasklistGuid, userAccessToken string) (*TaskInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	body := larktask.NewAddTasklistTaskReqBodyBuilder().
+		TasklistGuid(tasklistGuid).
+		Build()
+
+	req := larktask.NewAddTasklistTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.AddTasklist(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("将任务添加到清单失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("将任务添加到清单失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("将任务添加到清单成功但未返回数据")
+	}
+
+	return taskToInfo(resp.Data.Task), nil
+}
+
+// RemoveTaskFromTasklist 将任务从任务清单中移除
+func RemoveTaskFromTasklist(taskGuid, tasklistGuid, userAccessToken string) (*TaskInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	body := larktask.NewRemoveTasklistTaskReqBodyBuilder().
+		TasklistGuid(tasklistGuid).
+		Build()
+
+	req := larktask.NewRemoveTasklistTaskReqBuilder().
+		TaskGuid(taskGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Task.RemoveTasklist(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("将任务从清单中移除失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("将任务从清单中移除失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("将任务从清单中移除成功但未返回数据")
+	}
+
+	return taskToInfo(resp.Data.Task), nil
+}
+
+// TaskSummaryInfo 任务摘要信息
+type TaskSummaryInfo struct {
+	Guid         string `json:"guid"`
+	Summary      string `json:"summary"`
+	CompletedAt  string `json:"completed_at,omitempty"`
+	DueTime      string `json:"due_time,omitempty"`
+	SubtaskCount int    `json:"subtask_count,omitempty"`
+}
+
+// ListTasklistTasks 列出任务清单中的任务
+func ListTasklistTasks(tasklistGuid string, pageSize int, pageToken string, completed *bool, userAccessToken string) ([]*TaskSummaryInfo, string, bool, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", false, err
+	}
+
+	reqBuilder := larktask.NewTasksTasklistReqBuilder().
+		TasklistGuid(tasklistGuid).
+		UserIdType("open_id")
+
+	if pageSize > 0 {
+		reqBuilder.PageSize(pageSize)
+	}
+	if pageToken != "" {
+		reqBuilder.PageToken(pageToken)
+	}
+	if completed != nil {
+		reqBuilder.Completed(*completed)
+	}
+
+	resp, err := client.Task.V2.Tasklist.Tasks(Context(), reqBuilder.Build(), UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, "", false, fmt.Errorf("获取清单任务列表失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, "", false, fmt.Errorf("获取清单任务列表失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	var tasks []*TaskSummaryInfo
+	if resp.Data != nil {
+		for _, item := range resp.Data.Items {
+			info := &TaskSummaryInfo{
+				Guid:         StringVal(item.Guid),
+				Summary:      StringVal(item.Summary),
+				SubtaskCount: IntVal(item.SubtaskCount),
+			}
+			if completedAt := StringVal(item.CompletedAt); completedAt != "" && completedAt != "0" {
+				if ts, err := strconv.ParseInt(completedAt, 10, 64); err == nil {
+					info.CompletedAt = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+				}
+			}
+			if item.Due != nil {
+				if ts, err := strconv.ParseInt(StringVal(item.Due.Timestamp), 10, 64); err == nil && ts > 0 {
+					info.DueTime = time.UnixMilli(ts).Format("2006-01-02 15:04:05")
+				}
+			}
+			tasks = append(tasks, info)
+		}
+	}
+
+	var nextPageToken string
+	var hasMore bool
+	if resp.Data != nil {
+		nextPageToken = StringVal(resp.Data.PageToken)
+		hasMore = BoolVal(resp.Data.HasMore)
+	}
+
+	return tasks, nextPageToken, hasMore, nil
+}
+
+// AddTasklistMembers 添加任务清单成员
+func AddTasklistMembers(tasklistGuid string, memberIDs []string, memberRole string, userAccessToken string) (*TasklistInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	var members []*larktask.Member
+	for _, id := range memberIDs {
+		member := larktask.NewMemberBuilder().
+			Id(id).
+			Type("user").
+			Role(memberRole).
+			Build()
+		members = append(members, member)
+	}
+
+	body := larktask.NewAddMembersTasklistReqBodyBuilder().
+		Members(members).
+		Build()
+
+	req := larktask.NewAddMembersTasklistReqBuilder().
+		TasklistGuid(tasklistGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Tasklist.AddMembers(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("添加清单成员失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("添加清单成员失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("添加清单成员成功但未返回数据")
+	}
+
+	return tasklistToInfo(resp.Data.Tasklist), nil
+}
+
+// RemoveTasklistMembers 移除任务清单成员
+func RemoveTasklistMembers(tasklistGuid string, memberIDs []string, memberRole string, userAccessToken string) (*TasklistInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	var members []*larktask.Member
+	for _, id := range memberIDs {
+		member := larktask.NewMemberBuilder().
+			Id(id).
+			Type("user").
+			Role(memberRole).
+			Build()
+		members = append(members, member)
+	}
+
+	body := larktask.NewRemoveMembersTasklistReqBodyBuilder().
+		Members(members).
+		Build()
+
+	req := larktask.NewRemoveMembersTasklistReqBuilder().
+		TasklistGuid(tasklistGuid).
+		UserIdType("open_id").
+		Body(body).
+		Build()
+
+	resp, err := client.Task.V2.Tasklist.RemoveMembers(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("移除清单成员失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("移除清单成员失败: %s (code: %d)", resp.Msg, resp.Code)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("移除清单成员成功但未返回数据")
+	}
+
+	return tasklistToInfo(resp.Data.Tasklist), nil
 }
 
 // taskToInfo converts SDK Task to TaskInfo

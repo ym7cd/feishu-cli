@@ -9,19 +9,28 @@ import (
 
 // CreateExportTask 创建导出任务，返回任务 ticket
 func CreateExportTask(docToken, docType, fileExtension, userAccessToken string) (string, error) {
+	return CreateExportTaskWithSubId(docToken, docType, fileExtension, "", userAccessToken)
+}
+
+// CreateExportTaskWithSubId 创建导出任务（支持子表 ID），返回任务 ticket
+// subId 用于将电子表格/多维表格导出为 CSV 时指定工作表/数据表 ID，为空时忽略
+func CreateExportTaskWithSubId(docToken, docType, fileExtension, subId, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
 	}
 
-	exportTask := larkdrive.NewExportTaskBuilder().
+	builder := larkdrive.NewExportTaskBuilder().
 		Token(docToken).
 		Type(docType).
-		FileExtension(fileExtension).
-		Build()
+		FileExtension(fileExtension)
+
+	if subId != "" {
+		builder.SubId(subId)
+	}
 
 	req := larkdrive.NewCreateExportTaskReqBuilder().
-		ExportTask(exportTask).
+		ExportTask(builder.Build()).
 		Build()
 
 	resp, err := client.Drive.ExportTask.Create(Context(), req, UserTokenOption(userAccessToken)...)

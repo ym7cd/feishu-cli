@@ -745,7 +745,7 @@ func TestConvertGrid(t *testing.T) {
 					Children: []string{},
 				},
 			},
-			want: "",
+			want: "<grid cols=\"2\">\n</grid>",
 		},
 		{
 			name: "normal grid with 2 columns",
@@ -773,7 +773,7 @@ func TestConvertGrid(t *testing.T) {
 				},
 				createTextBlock("text2", "Column 2 content"),
 			},
-			want: "Column 1 content\nColumn 2 content",
+			want: "<grid cols=\"2\">\n<column>\nColumn 1 content\n</column>\n<column>\nColumn 2 content\n</column>\n</grid>",
 		},
 		{
 			name: "grid child is not GridColumn - should skip",
@@ -795,7 +795,7 @@ func TestConvertGrid(t *testing.T) {
 				},
 				createTextBlock("text2", "Column 2 content"),
 			},
-			want: "Column 2 content",
+			want: "<grid cols=\"2\">\n<column>\nColumn 2 content\n</column>\n</grid>",
 		},
 		{
 			name: "grid column is nil",
@@ -815,7 +815,7 @@ func TestConvertGrid(t *testing.T) {
 					Children:   []string{"text1"},
 				},
 			},
-			want: "",
+			want: "<grid cols=\"1\">\n</grid>",
 		},
 	}
 
@@ -1022,7 +1022,7 @@ func TestConvertImage(t *testing.T) {
 			opts: ConvertOptions{
 				DownloadImages: false,
 			},
-			want: "![image](feishu://media/test_token_123)",
+			want: `<image token="test_token_123"/>`,
 		},
 		{
 			name: "image has child block for alt text",
@@ -1041,7 +1041,7 @@ func TestConvertImage(t *testing.T) {
 				DownloadImages: false,
 			},
 			// Note: Image child blocks are not marked as childBlockIDs, so they appear separately
-			want: "![Custom alt text](feishu://media/test_token_456)\n\nCustom alt text",
+			want: "<image token=\"test_token_456\"/>\n\nCustom alt text",
 		},
 		{
 			name: "image no children uses default alt",
@@ -1058,7 +1058,7 @@ func TestConvertImage(t *testing.T) {
 			opts: ConvertOptions{
 				DownloadImages: false,
 			},
-			want: "![image](feishu://media/test_token_789)",
+			want: `<image token="test_token_789"/>`,
 		},
 	}
 
@@ -1536,7 +1536,7 @@ func TestConvertFile(t *testing.T) {
 					},
 				},
 			},
-			want: "[document.pdf](feishu://file/file_abc123)",
+			want: `<file token="file_abc123" name="document.pdf"/>`,
 		},
 	}
 
@@ -1574,7 +1574,7 @@ func TestConvertBitable(t *testing.T) {
 		return
 	}
 	got = strings.TrimSpace(got)
-	want := "[Bitable: bitable_token123](https://feishu.cn/base/bitable_token123)"
+	want := `<bitable token="bitable_token123" view="table"/>`
 	if got != want {
 		t.Errorf("Convert() got:\n%s\n\nwant:\n%s", got, want)
 	}
@@ -1598,7 +1598,7 @@ func TestConvertSheet(t *testing.T) {
 		return
 	}
 	got = strings.TrimSpace(got)
-	want := "[Sheet: sheet_token456](https://feishu.cn/sheets/sheet_token456)"
+	want := `<sheet token="sheet_token456"/>`
 	if got != want {
 		t.Errorf("Convert() got:\n%s\n\nwant:\n%s", got, want)
 	}
@@ -1694,7 +1694,7 @@ func TestConvertBoard(t *testing.T) {
 		return
 	}
 	got = strings.TrimSpace(got)
-	want := "[画板/Whiteboard](feishu://board/board_token789)"
+	want := `<whiteboard token="board_token789" type="blank"/>`
 	if got != want {
 		t.Errorf("Convert() got:\n%s\n\nwant:\n%s", got, want)
 	}

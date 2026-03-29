@@ -8,18 +8,78 @@
 |------|------|------|
 | 创建节点 | POST `/open-apis/board/v1/whiteboards/{id}/nodes` | 批量创建，上限 3000 |
 | 获取节点 | GET `/open-apis/board/v1/whiteboards/{id}/nodes` | 获取全部节点 |
-| 修改/删除 | — | **不支持**，需 redraw（重建画板） |
+| 删除节点 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/{node_id}` | 单个删除 |
+| 批量删除 | DELETE `/open-apis/board/v1/whiteboards/{id}/nodes/batch_delete` | 批量删除 |
+| 修改节点 | -- | **不支持**，需 redraw（重建画板） |
 
 - 频率限制：50 req/s
 - 请求体格式：`{"nodes": [...]}`
 
-## 节点类型
+## CLI 命令
+
+### board create-notes
+
+批量创建节点（形状 + 连接线）。
+
+```bash
+# 从 JSON 文件（推荐，复杂图表）
+feishu-cli board create-notes <whiteboard_id> nodes.json -o json
+
+# 内联 JSON（简单场景）
+feishu-cli board create-notes <whiteboard_id> '<json_array>' --source-type content -o json
+```
+
+返回：`{"node_ids": ["o1:1", "o1:2", ...]}`
+
+### board import
+
+导入 Mermaid/PlantUML 图表（服务端渲染）。
+
+```bash
+# Mermaid 内容导入
+feishu-cli board import <whiteboard_id> --source-type content \
+  -c "graph TD; A-->B-->C" --syntax mermaid
+
+# Mermaid 文件导入
+feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
+
+# PlantUML 文件导入
+feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml
+
+# 指定图表类型
+feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid --diagram-type 6
+```
+
+### board nodes
+
+获取画板所有节点（JSON）。
+
+```bash
+feishu-cli board nodes <whiteboard_id>
+```
+
+### board image
+
+下载画板为 PNG 图片。
+
+```bash
+feishu-cli board image <whiteboard_id> output.png
+```
+
+### doc add-board
+
+在文档中添加空画板。
+
+```bash
+feishu-cli doc add-board <document_id> -o json
+# 返回 whiteboard_id
+```
+
+## 节点类型详解
 
 ### composite_shape（形状）
 
-最常用的节点类型，支持矩形、圆角矩形等。
-
-**最小格式**（推荐，多余字段可能导致 2890002 错误）：
+最常用的节点类型。**最小格式**（推荐，多余字段导致 2890002 错误）：
 
 ```json
 {
@@ -36,13 +96,16 @@
   "style": {
     "fill_color": "#8569cb",
     "fill_opacity": 100,
-    "border_style": "none"
+    "border_style": "solid",
+    "border_color": "#5178C6",
+    "border_width": "medium",
+    "border_opacity": 100
   },
   "z_index": 10
 }
 ```
 
-**text 字段说明**：
+**text 字段**：
 
 | 字段 | 值 | 说明 |
 |------|------|------|
@@ -51,7 +114,7 @@
 | `horizontal_align` | `left`, `center`, `right` | 水平对齐 |
 | `vertical_align` | `top`, `mid`, `bottom` | 垂直对齐 |
 
-**style 字段说明**：
+**style 字段**：
 
 | 字段 | 值 | 说明 |
 |------|------|------|
@@ -64,7 +127,7 @@
 
 ### connector（连接线）
 
-连接两个已创建的节点。**必须在形状节点创建后再创建连接线**（需要引用节点 ID）。
+必须在形状节点创建后再创建（需引用节点 ID）。
 
 ```json
 {
@@ -91,7 +154,7 @@
     }
   },
   "style": {
-    "border_color": "#646a73",
+    "border_color": "#BBBFC4",
     "border_opacity": 100,
     "border_style": "solid",
     "border_width": "narrow"
@@ -112,22 +175,20 @@
 
 ## z_index 与 fill_opacity（渲染层级）
 
-正确的层级和透明度设置对画板渲染至关重要：
-
-**关键规则**：背景色块 `fill_opacity` 必须 ≤60%，否则会完全遮挡上层元素。
+**关键规则**：背景色块 fill_opacity 必须 <= 60（推荐 <= 25），否则完全遮挡上层元素。
 
 | z_index 范围 | 用途 | fill_opacity |
 |-------------|------|-------------|
-| 0-1 | 外层容器、背景色带 | ≤50% |
-| 2-3 | 次级色带、表头区域 | ≤60% |
-| 4-8 | 列容器（dash border） | — |
-| 9-16 | 文本标签（表头、图例） | — |
-| 17+ | 内容卡片/条目 | 100%（实心） |
+| 0-1 | 外层容器、背景色带 | <= 25 |
+| 2-3 | 次级色带、表头区域 | <= 60 |
+| 4-8 | 列容器（dash border） | -- |
+| 9-16 | 文本标签（表头、图例） | -- |
+| 10 | 常规形状节点 | 100（实心） |
 | 50 | 连接线 | border_opacity=100 |
 
 ## 典型工作流
 
-### 1. 创建文档 + 画板 + 节点
+### 创建文档 + 画板 + 节点
 
 ```bash
 # 步骤 1: 创建文档
@@ -138,69 +199,80 @@ feishu-cli doc create --title "架构图" -o json
 feishu-cli doc add-board <document_id> -o json
 # 返回 whiteboard_id
 
-# 步骤 3: 创建节点
-feishu-cli board create-notes <whiteboard_id> nodes.json -o json
+# 步骤 3: 创建形状节点
+feishu-cli board create-notes <whiteboard_id> shapes.json -o json
 # 返回 node_ids
 
-# 步骤 4: 截图验证
+# 步骤 4: 创建连接线
+feishu-cli board create-notes <whiteboard_id> connectors.json -o json
+
+# 步骤 5: 截图验证
 feishu-cli board image <whiteboard_id> output.png
 ```
 
-### 2. 复制/修改画板（Redraw 模式）
+### 复制/修改画板（Redraw 模式）
 
-画板 API 不支持 PATCH/DELETE，修改已有画板需要 redraw：
+画板 API 不支持 PATCH，修改已有画板需要 redraw：
 
 ```bash
 # 步骤 1: 导出原始节点
 feishu-cli board nodes <original_whiteboard_id> > original.json
 
 # 步骤 2: 清洗节点数据（移除只读字段）
-# 需移除: id, locked, children, text.text_color_type,
-#         style.fill_color_type, style.border_color_type
-
 # 步骤 3: 分离形状和连接线
-# 先创建形状 → 获取新 ID → 映射旧 ID → 再创建连接线
-
-# 步骤 4: 创建新画板并写入
-feishu-cli doc create --title "修改版" -o json
-feishu-cli doc add-board <new_doc_id> -o json
-feishu-cli board create-notes <new_whiteboard_id> cleaned_shapes.json -o json
-feishu-cli board create-notes <new_whiteboard_id> remapped_connectors.json -o json
+# 步骤 4: 新画板中先创建形状 → 映射旧 ID → 再创建连接线
 ```
 
-### 3. 需要清洗的字段（GET → POST）
+### 需要清洗的字段（GET -> POST）
 
-从 `board nodes` 获取的数据不能直接用于 `create-notes`，需要移除以下字段：
+从 `board nodes` 获取的数据不能直接用于 `create-notes`，需移除以下字段：
 
 | 层级 | 需移除的字段 | 原因 |
 |------|------------|------|
-| 顶层 | `id`, `locked`, `children` | 只读/系统生成 |
+| 顶层 | `id`, `locked`, `children`, `parent_id` | 只读/系统生成 |
 | `text.*` | `text_color_type` | 未公开的内部字段 |
 | `style.*` | `fill_color_type`, `border_color_type` | 未公开的内部字段 |
 | `connector.*` | `start_object`, `end_object` | 只读，改用 `start`/`end` |
 
+**composite_shape 必须保留完整子结构**：`composite_shape.type` + `text`（如有）。
+
+**批量重建建议**：每批 10 个节点，间隔 3s，避免触发频率限制。
+
+## Mermaid 导入参数
+
+| 类型 | 声明 | diagram-type |
+|------|------|-------------|
+| 流程图 | `flowchart TD` | 6 |
+| 时序图 | `sequenceDiagram` | 2 |
+| 类图 | `classDiagram` | 4 |
+| 状态图 | `stateDiagram-v2` | 0 (auto) |
+| ER 图 | `erDiagram` | 5 |
+| 甘特图 | `gantt` | 0 (auto) |
+| 饼图 | `pie` | 0 (auto) |
+| 思维导图 | `mindmap` | 1 |
+
+**Mermaid 限制**：
+- 禁止花括号 `{text}`（被识别为菱形节点）
+- 禁止 `par...and...end`（飞书不支持）
+- 参与者建议 <= 8（过多渲染失败）
+- 复杂图表失败时降级为代码块
+
 ## 错误码
 
-| 错误码 | 含义 | 常见原因 |
-|--------|------|---------|
-| 2890001 | invalid format | JSON 格式错误 |
-| 2890002 | invalid arg | 包含未公开字段、连接线格式错误 |
-| 2890003 | record missing | whiteboard_id 不存在 |
-| 2890006 | rate limited | 超过 50 req/s 频率限制 |
+| 错误码 | 含义 | 常见原因 | 解决方案 |
+|--------|------|---------|---------|
+| 2890001 | invalid format | JSON 格式错误 | 检查 JSON 语法 |
+| 2890002 | invalid arg | 包含未公开字段或格式不对 | 逐步删减字段定位问题，只用安全字段白名单 |
+| 2890003 | record missing | whiteboard_id 不存在 | 确认 ID 来自 doc add-board 返回值 |
+| 2890006 | rate limited | 超过 50 req/s | 降低请求频率，批量操作间隔 3s |
 
-## 常用配色参考
+### 2890002 排障指引
 
-| 用途 | 颜色 | 示例 |
-|------|------|------|
-| 紫色强调 | `#8569cb` | 分类标题 |
-| 浅紫背景 | `#eae2fe` | 次级区域 |
-| 绿色标注 | `#509863` | 流程节点 |
-| 绿色域名 | `#d5e8d4` | 领域标签 |
-| 浅蓝容器 | `#f0f4fc` | 嵌套分组 |
-| 灰色背景 | `#f5f5f5` | 子条目 |
-| 灰色边框 | `#bbbfc4` | 虚线容器 |
-| 连接线灰 | `#646a73` | 连接线 |
-| 蓝色成熟 | `#3399ff` | 状态-成熟 |
-| 浅蓝进展 | `#cce5ff` | 状态-进展中 |
-| 橙色成熟 | `#ffc285` | 二级状态-成熟 |
-| 浅橙进展 | `#fff0e3` | 二级状态-进展中 |
+JSON 中包含了 API 不支持的字段。只使用以下安全字段：
+
+- `composite_shape` 节点：`type`, `x`, `y`, `width`, `height`, `composite_shape`, `text`, `style`, `z_index`
+- `connector` 节点：`type`, `width`, `height`, `z_index`, `connector`, `style`
+- `text` 对象：`text`, `font_size`, `font_weight`, `horizontal_align`, `vertical_align`
+- `style` 对象：`fill_color`, `fill_opacity`, `border_style`, `border_color`, `border_width`, `border_opacity`
+
+排查步骤：逐步删减 JSON 字段，定位导致错误的多余字段。常见陷阱包括 `id`、`locked`、`children`、`text_color_type` 等只读字段。

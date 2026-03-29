@@ -275,6 +275,24 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 - 失败回退：删除空画板块，在原位置插入代码块
 - 支持的代码块标识：` ```mermaid `、` ```plantuml `、` ```puml `
 
+### HTML 标签扩展语法
+
+除标准 Markdown 语法外，导入时还识别以下 HTML 标签形式的扩展语法。这些标签由导出端自动生成，支持 roundtrip（导出→导入不丢失信息）。
+
+| 标签 | 说明 | 示例 |
+|------|------|------|
+| `<mention-user id="ou_xxx"/>` | @用户 | 创建 MentionUser 元素 |
+| `<mention-doc token="xxx" type="docx">标题</mention-doc>` | @文档 | 创建 MentionDoc 元素 |
+| `<grid cols="2"><column>...</column><column>...</column></grid>` | 分栏布局 | 创建 Grid Block + GridColumn 子块 |
+| `<callout type="NOTE">内容</callout>` | 高亮块（HTML 标签形式） | 与 `> [!NOTE]` 等效 |
+| `<whiteboard type="blank"/>` | 空白画板 | 创建 Board Block |
+| `<sheet rows="5" cols="5"/>` | 电子表格 | 创建 Sheet Block |
+| `<bitable view="table"/>` | 多维表格 | 创建 Bitable Block |
+| `<image token="xxx" width="800" align="center" caption="说明"/>` | 带属性图片 | 创建 Image Block，保留尺寸/对齐 |
+| `<file token="xxx" name="report.pdf" view-type="1"/>` | 文件块 | 创建 File Block |
+
+这些标签主要用于 roundtrip 场景（导出后重新导入），也可手动编写用于精确控制飞书块类型。
+
 ## 常见问题
 
 | 现象 | 原因 | 解决方式 |

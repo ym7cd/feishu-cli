@@ -3,9 +3,12 @@ name: feishu-cli-auth
 description: >-
   飞书 OAuth 认证和 User Access Token 管理。两步式非交互登录（AI Agent 专用）、
   Token 状态检查、scope 配置、自动刷新机制、搜索功能的 Token 依赖关系。
+  支持自动创建飞书应用（config create-app）和批量申请权限（config add-scopes）。
   当用户请求"登录飞书"、"获取 Token"、"OAuth 授权"、"auth login"、"认证"、
-  "搜索需要什么权限"、"Token 过期了"、"刷新 Token"时使用。
-  当遇到权限错误（如 99991679 Unauthorized）、Token 过期、state 不匹配等问题时也应使用此技能。
+  "搜索需要什么权限"、"Token 过期了"、"刷新 Token"、"创建应用"、"create-app"、
+  "申请权限"、"开通权限"、"add-scopes"、"缺少权限"、"99991672"时使用。
+  当遇到权限错误（如 99991672 Access denied、99991679 Unauthorized）、Token 过期、
+  state 不匹配等问题时也应使用此技能。
   也适用于：搜索命令报权限错误、Token 相关的排错、需要判断当前授权状态的场景。
   当其他飞书技能（toolkit/msg/read 等）遇到 User Access Token 相关问题时，也应参考此技能。
 user-invocable: true
@@ -333,3 +336,82 @@ feishu-cli auth logout
 | "state 不匹配" | `auth callback` 的 `--state` 与 URL 中的 state 不一致 | 确保使用同一次 `--print-url` 的 state |
 | "端口被占用" | 9768 端口已被其他进程使用 | 使用 `--port 其他端口`，并在飞书平台添加对应回调 URL |
 | `auth login --manual` 在 AI Agent 中卡住 | stdin 阻塞 | 改用 `--print-url` + `auth callback` 两步式 |
+| 99991672 Access denied, scope required | 应用未开通所需权限 | 使用 `config add-scopes --domain <域>` 申请 |
+
+---
+
+## 创建飞书应用（自动注册）
+
+对于第一次使用 feishu-cli 的用户，无需手动到飞书开放平台创建应用，可通过 CLI 一键完成：
+
+```bash
+# 创建新应用（交互式，输出授权链接，用户扫码确认）
+feishu-cli config create-app
+
+# 创建并自动保存到配置文件
+feishu-cli config create-app --save
+
+# Lark 国际版
+feishu-cli config create-app --brand lark
+```
+
+**流程**：
+1. CLI 向 `accounts.feishu.cn/oauth/v1/app/registration` 发起 Device Flow 注册
+2. 终端输出授权链接和用户码，用户在浏览器打开链接扫码确认
+3. CLI 轮询等待，用户确认后自动获取 App ID 和 App Secret
+4. 加 `--save` 时自动写入 `~/.feishu-cli/config.yaml`
+
+**参数**：
+| 参数 | 说明 |
+|------|------|
+| `--brand` | 平台（feishu/lark，默认 feishu） |
+| `--save` | 自动保存到配置文件 |
+| `-o json` | JSON 格式输出 app_id 和 app_secret |
+
+**创建成功后的下一步**：
+```bash
+# 1. 申请需要的权限
+feishu-cli config add-scopes --domain all
+
+# 2. 登录授权
+feishu-cli auth login
+```
+
+---
+
+## 为应用申请开通权限
+
+当命令返回 `99991672 Access denied` 或 `99991679 Unauthorized` 时，说明应用缺少对应权限。使用 `config add-scopes` 批量申请：
+
+```bash
+# 按域批量申请（推荐）
+feishu-cli config add-scopes --domain calendar,task,vc
+
+# 申请所有常用权限
+feishu-cli config add-scopes --domain all
+
+# 指定具体 scope
+feishu-cli config add-scopes --scopes "vc:meeting:readonly minutes:minutes:readonly"
+
+# 只输出链接（不打开浏览器）
+feishu-cli config add-scopes --domain doc,im --print-only
+```
+
+**可用的域名**：
+
+| 域名 | 包含的权限 |
+|------|-----------|
+| `calendar` | 日历读写（calendar:calendar, calendar:calendar:readonly, calendar:calendar.event:read/write） |
+| `task` | 任务读写（task:task:read/write, task:comment:read/write, task:tasklist:read/write） |
+| `vc` | 视频会议（vc:meeting:readonly, vc:room:readonly） |
+| `minutes` | 妙记（minutes:minutes:readonly） |
+| `doc` | 文档/知识库/云空间（docx:document, wiki:wiki:readonly, drive:drive 等） |
+| `im` | 消息/群聊（im:message, im:chat 等） |
+| `bitable` | 多维表格（bitable:app） |
+| `sheet` | 电子表格（sheets:spreadsheet） |
+| `contact` | 通讯录（contact:user.base:readonly） |
+| `search` | 搜索（search:docs:read, search:message） |
+| `export` | 导出（drive:export:readonly, docs:document:export） |
+| `all` | 以上全部 |
+
+**操作流程**：命令生成飞书开放平台的权限申请链接 → 在浏览器中打开 → 点击「开通权限」即可。

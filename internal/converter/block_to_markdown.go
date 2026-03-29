@@ -788,12 +788,43 @@ func (c *BlockToMarkdown) convertImage(block *larkdocx.Block) (string, error) {
 			fmt.Fprintf(os.Stderr, "[Debug] 图片SDK下载失败: %v\n", sdkErr)
 		}
 
-		// 全部失败，保留 token 引用（可能因权限不足）
-		return fmt.Sprintf("![%s](feishu://media/%s)\n", alt, token), nil
+		// 全部失败，输出 <image> 标签（可 roundtrip）
+		return c.formatImageTag(block.Image), nil
 	}
 
-	// Just use token reference
-	return fmt.Sprintf("![%s](feishu://media/%s)\n", alt, token), nil
+	// 不下载时输出 <image> 标签，包含完整属性（可 roundtrip）
+	return c.formatImageTag(block.Image), nil
+}
+
+// formatImageTag 将 Image 块格式化为 <image .../> HTML 标签
+func (c *BlockToMarkdown) formatImageTag(img *larkdocx.Image) string {
+	token := ""
+	if img.Token != nil {
+		token = *img.Token
+	}
+	var attrs []string
+	attrs = append(attrs, fmt.Sprintf("token=\"%s\"", token))
+	if img.Width != nil && *img.Width > 0 {
+		attrs = append(attrs, fmt.Sprintf("width=\"%d\"", *img.Width))
+	}
+	if img.Height != nil && *img.Height > 0 {
+		attrs = append(attrs, fmt.Sprintf("height=\"%d\"", *img.Height))
+	}
+	if img.Align != nil && *img.Align > 0 {
+		alignStr := ""
+		switch *img.Align {
+		case 1:
+			alignStr = "left"
+		case 2:
+			alignStr = "center"
+		case 3:
+			alignStr = "right"
+		}
+		if alignStr != "" {
+			attrs = append(attrs, fmt.Sprintf("align=\"%s\"", alignStr))
+		}
+	}
+	return fmt.Sprintf("<image %s/>\n", strings.Join(attrs, " "))
 }
 
 func (c *BlockToMarkdown) convertTable(block *larkdocx.Block) (string, error) {
@@ -976,17 +1007,22 @@ func (c *BlockToMarkdown) convertFile(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 
-	name := "file"
-	if block.File.Name != nil {
-		name = *block.File.Name
+	var attrs []string
+	if block.File.Token != nil && *block.File.Token != "" {
+		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.File.Token))
+	}
+	if block.File.Name != nil && *block.File.Name != "" {
+		attrs = append(attrs, fmt.Sprintf("name=\"%s\"", *block.File.Name))
+	}
+	if block.File.ViewType != nil && *block.File.ViewType > 0 {
+		attrs = append(attrs, fmt.Sprintf("view-type=\"%d\"", *block.File.ViewType))
 	}
 
-	token := ""
-	if block.File.Token != nil {
-		token = *block.File.Token
+	if len(attrs) == 0 {
+		return "", nil
 	}
 
-	return fmt.Sprintf("[%s](feishu://file/%s)\n", name, token), nil
+	return fmt.Sprintf("<file %s/>\n", strings.Join(attrs, " ")), nil
 }
 
 func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) {
@@ -994,12 +1030,29 @@ func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) 
 		return "", nil
 	}
 
-	token := ""
-	if block.Bitable.Token != nil {
-		token = *block.Bitable.Token
+	var attrs []string
+	if block.Bitable.Token != nil && *block.Bitable.Token != "" {
+		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.Bitable.Token))
 	}
 
-	return fmt.Sprintf("[Bitable: %s](https://feishu.cn/base/%s)\n", token, token), nil
+	viewStr := "table"
+	if block.Bitable.ViewType != nil {
+		switch *block.Bitable.ViewType {
+		case 2:
+			viewStr = "kanban"
+		case 3:
+			viewStr = "calendar"
+		case 4:
+			viewStr = "gallery"
+		case 5:
+			viewStr = "gantt"
+		case 6:
+			viewStr = "form"
+		}
+	}
+	attrs = append(attrs, fmt.Sprintf("view=\"%s\"", viewStr))
+
+	return fmt.Sprintf("<bitable %s/>\n", strings.Join(attrs, " ")), nil
 }
 
 func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
@@ -1007,12 +1060,18 @@ func (c *BlockToMarkdown) convertSheet(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 
-	token := ""
-	if block.Sheet.Token != nil {
-		token = *block.Sheet.Token
+	var attrs []string
+	if block.Sheet.Token != nil && *block.Sheet.Token != "" {
+		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.Sheet.Token))
+	}
+	if block.Sheet.RowSize != nil && *block.Sheet.RowSize > 0 {
+		attrs = append(attrs, fmt.Sprintf("rows=\"%d\"", *block.Sheet.RowSize))
+	}
+	if block.Sheet.ColumnSize != nil && *block.Sheet.ColumnSize > 0 {
+		attrs = append(attrs, fmt.Sprintf("cols=\"%d\"", *block.Sheet.ColumnSize))
 	}
 
-	return fmt.Sprintf("[Sheet: %s](https://feishu.cn/sheets/%s)\n", token, token), nil
+	return fmt.Sprintf("<sheet %s/>\n", strings.Join(attrs, " ")), nil
 }
 
 func (c *BlockToMarkdown) convertChatCard(block *larkdocx.Block) (string, error) {
@@ -1079,8 +1138,13 @@ func (c *BlockToMarkdown) convertBoard(block *larkdocx.Block) (string, error) {
 		}
 	}
 
-	// 下载未启用或下载失败，降级为链接
-	return fmt.Sprintf("[画板/Whiteboard](feishu://board/%s)\n", token), nil
+	// 下载未启用或下载失败，输出 <whiteboard> 标签（可 roundtrip）
+	var attrs []string
+	if token != "" {
+		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", token))
+	}
+	attrs = append(attrs, "type=\"blank\"")
+	return fmt.Sprintf("<whiteboard %s/>\n", strings.Join(attrs, " ")), nil
 }
 
 func (c *BlockToMarkdown) convertIframe(block *larkdocx.Block) (string, error) {
@@ -1162,7 +1226,13 @@ func (c *BlockToMarkdown) convertGridWithDepth(block *larkdocx.Block, depth int)
 		return "<!-- Grid 递归深度超限 -->\n", nil
 	}
 
+	cols := 0
+	if block.Grid.ColumnSize != nil {
+		cols = *block.Grid.ColumnSize
+	}
+
 	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("<grid cols=\"%d\">\n", cols))
 
 	// Process grid columns
 	if block.Children != nil {
@@ -1175,6 +1245,7 @@ func (c *BlockToMarkdown) convertGridWithDepth(block *larkdocx.Block, depth int)
 		}
 	}
 
+	sb.WriteString("</grid>\n")
 	return sb.String(), nil
 }
 
@@ -1185,10 +1256,11 @@ func (c *BlockToMarkdown) convertGridColumnWithDepth(block *larkdocx.Block, dept
 
 	// 递归深度检查
 	if depth > maxRecursionDepth {
-		return "<!-- GridColumn 递归深度超限 -->\n", nil
+		return "<column>\n<!-- GridColumn 递归深度超限 -->\n</column>\n", nil
 	}
 
 	var sb strings.Builder
+	sb.WriteString("<column>\n")
 
 	// Process child blocks in the column
 	if block.Children != nil {
@@ -1201,6 +1273,7 @@ func (c *BlockToMarkdown) convertGridColumnWithDepth(block *larkdocx.Block, dept
 		}
 	}
 
+	sb.WriteString("</column>\n")
 	return sb.String(), nil
 }
 
@@ -1318,6 +1391,7 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 				userID = *elem.MentionUser.UserId
 			}
 			if c.options.ExpandMentions {
+				// ExpandMentions=true: 展开为友好格式
 				if info, ok := c.userCache[userID]; ok && info.Name != "" {
 					if info.Email != "" {
 						result.WriteString(fmt.Sprintf("[@%s](mailto:%s)", info.Name, info.Email))
@@ -1325,10 +1399,12 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 						result.WriteString(fmt.Sprintf("@%s", info.Name))
 					}
 				} else {
-					result.WriteString(fmt.Sprintf("@[user:%s]", userID))
+					// 用户不在缓存中时，输出 HTML 标签格式（可 roundtrip）
+					result.WriteString(fmt.Sprintf("<mention-user id=\"%s\"/>", userID))
 				}
 			} else {
-				result.WriteString(fmt.Sprintf("@[user:%s]", userID))
+				// 默认输出 HTML 标签格式（可被导入端解析还原）
+				result.WriteString(fmt.Sprintf("<mention-user id=\"%s\"/>", userID))
 			}
 		}
 
@@ -1337,19 +1413,13 @@ func (c *BlockToMarkdown) convertTextElements(elements []*larkdocx.TextElement) 
 			if elem.MentionDoc.Title != nil {
 				title = *elem.MentionDoc.Title
 			}
-			// 优先使用 API 返回的 URL（包含正确的域名和 wiki/docx 路径）
-			if elem.MentionDoc.Url != nil && *elem.MentionDoc.Url != "" {
-				docURL := *elem.MentionDoc.Url
-				docURL = strings.ReplaceAll(docURL, "(", "%28")
-				docURL = strings.ReplaceAll(docURL, ")", "%29")
-				result.WriteString(fmt.Sprintf("[%s](%s)", title, docURL))
-			} else {
-				token := ""
-				if elem.MentionDoc.Token != nil {
-					token = *elem.MentionDoc.Token
-				}
-				result.WriteString(fmt.Sprintf("[%s](feishu://doc/%s)", title, token))
+			token := ""
+			if elem.MentionDoc.Token != nil {
+				token = *elem.MentionDoc.Token
 			}
+			docType := mapObjTypeToDocType(elem.MentionDoc.ObjType)
+			// 输出 HTML 标签格式（可被导入端解析还原）
+			result.WriteString(fmt.Sprintf("<mention-doc token=\"%s\" type=\"%s\">%s</mention-doc>", token, docType, title))
 		}
 
 		if elem.Equation != nil {

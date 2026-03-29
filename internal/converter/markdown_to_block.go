@@ -222,6 +222,16 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 		case *ast.ThematicBreak:
 			result.BlockNodes = append(result.BlockNodes, &BlockNode{Block: c.createDividerBlock()})
 			return ast.WalkContinue, nil
+
+		case *ast.HTMLBlock:
+			// 处理块级 HTML 标签（如 <image/>, <callout>...</callout>）
+			raw := c.getHTMLBlockText(node)
+			tag := ParseHTMLTag(raw)
+			if tag != nil {
+				blocks := c.handleBlockHTMLTag(tag)
+				result.BlockNodes = append(result.BlockNodes, blocks...)
+			}
+			return ast.WalkSkipChildren, nil
 		}
 
 		return ast.WalkContinue, nil
@@ -291,6 +301,11 @@ func (c *MarkdownToBlock) convertParagraph(node *ast.Paragraph) (*larkdocx.Block
 		if img, ok := node.FirstChild().(*ast.Image); ok {
 			return c.convertImage(img)
 		}
+	}
+
+	// 检查段落是否只包含一个 <image> HTML 标签
+	if block := c.tryConvertHTMLImageParagraph(node); block != nil {
+		return block, nil
 	}
 
 	elements := c.extractTextElements(node)
@@ -1647,7 +1662,8 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 				seg := n.Segments.At(i)
 				htmlBuf.Write(c.source[seg.Start:seg.Stop])
 			}
-			raw := strings.TrimSpace(strings.ToLower(htmlBuf.String()))
+			rawOriginal := strings.TrimSpace(htmlBuf.String())
+			raw := strings.ToLower(rawOriginal)
 			switch {
 			case raw == "<br>" || raw == "<br/>" || raw == "<br />":
 				newline := "\n"
@@ -1658,6 +1674,14 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 				inUnderline = true
 			case raw == "</u>":
 				inUnderline = false
+			default:
+				// 尝试解析自定义 HTML 标签（如 <mention-user/>, <mention-doc>...</mention-doc>）
+				tag := ParseHTMLTag(rawOriginal)
+				if tag != nil {
+					if elems := c.handleInlineHTMLTag(tag, &inUnderline); len(elems) > 0 {
+						elements = append(elements, elems...)
+					}
+				}
 			}
 		default:
 			// 未知内联节点，递归提取子元素
@@ -1756,6 +1780,429 @@ func hasNonEmptyContent(elements []*larkdocx.TextElement) bool {
 		}
 	}
 	return false
+}
+
+// getHTMLBlockText 从 ast.HTMLBlock 节点提取原始 HTML 文本
+func (c *MarkdownToBlock) getHTMLBlockText(node *ast.HTMLBlock) string {
+	var buf bytes.Buffer
+	lines := node.Lines()
+	for i := 0; i < lines.Len(); i++ {
+		line := lines.At(i)
+		buf.Write(line.Value(c.source))
+	}
+	return strings.TrimSpace(buf.String())
+}
+
+// handleInlineHTMLTag 处理行内 HTML 标签，返回对应的 TextElement 列表
+// 支持 <mention-user id="ou_xxx"/>, <mention-doc token="xxx" type="docx">标题</mention-doc>
+func (c *MarkdownToBlock) handleInlineHTMLTag(tag *HTMLTag, inUnderline *bool) []*larkdocx.TextElement {
+	var elements []*larkdocx.TextElement
+
+	switch tag.Name {
+	case "mention-user":
+		userID := tag.Attrs["id"]
+		if userID != "" {
+			elements = append(elements, &larkdocx.TextElement{
+				MentionUser: &larkdocx.MentionUser{
+					UserId: &userID,
+				},
+			})
+		}
+
+	case "mention-doc":
+		token := tag.Attrs["token"]
+		docType := tag.Attrs["type"]
+		title := tag.Content
+		if token != "" {
+			objType := mapDocTypeToObjType(docType)
+			elements = append(elements, &larkdocx.TextElement{
+				MentionDoc: &larkdocx.MentionDoc{
+					Token:   &token,
+					ObjType: &objType,
+					Title:   &title,
+				},
+			})
+		}
+	}
+
+	return elements
+}
+
+// handleBlockHTMLTag 处理块级 HTML 标签，返回对应的 BlockNode 列表
+// 支持 <image/>, <callout>, <grid>, <whiteboard/>, <sheet/>, <bitable/>, <file/>
+func (c *MarkdownToBlock) handleBlockHTMLTag(tag *HTMLTag) []*BlockNode {
+	switch tag.Name {
+	case "image":
+		return c.handleHTMLImageBlock(tag)
+	case "callout":
+		return c.handleHTMLCalloutBlock(tag)
+	case "grid":
+		return c.handleHTMLGridBlock(tag)
+	case "whiteboard":
+		return c.handleHTMLWhiteboardBlock(tag)
+	case "sheet":
+		return c.handleHTMLSheetBlock(tag)
+	case "bitable":
+		return c.handleHTMLBitableBlock(tag)
+	case "file":
+		return c.handleHTMLFileBlock(tag)
+	}
+	return nil
+}
+
+// handleHTMLImageBlock 处理块级 <image token="..." width="800" height="600" align="center"/>
+func (c *MarkdownToBlock) handleHTMLImageBlock(tag *HTMLTag) []*BlockNode {
+	token := tag.Attrs["token"]
+	imgURL := tag.Attrs["url"]
+
+	// 有 token 时直接创建 Image Block 引用（适用于 roundtrip）
+	if token != "" {
+		blockType := int(BlockTypeImage)
+		image := &larkdocx.Image{
+			Token: &token,
+		}
+		if w := parseHTMLIntAttr(tag.Attrs["width"]); w > 0 {
+			image.Width = &w
+		}
+		if h := parseHTMLIntAttr(tag.Attrs["height"]); h > 0 {
+			image.Height = &h
+		}
+		if a := parseHTMLAlignAttr(tag.Attrs["align"]); a > 0 {
+			image.Align = &a
+		}
+		return []*BlockNode{{Block: &larkdocx.Block{
+			BlockType: &blockType,
+			Image:     image,
+		}}}
+	}
+
+	// 有 url 时按照图片上传流程处理
+	if imgURL != "" {
+		if strings.HasPrefix(imgURL, "feishu://media/") {
+			c.imageStats.Skipped++
+			return []*BlockNode{{Block: c.createImagePlaceholder(imgURL)}}
+		}
+		if !c.options.UploadImages {
+			c.imageStats.Skipped++
+			return []*BlockNode{{Block: c.createImagePlaceholder(imgURL)}}
+		}
+		c.imageStats.Total++
+		c.imageSources = append(c.imageSources, imgURL)
+		blockType := int(BlockTypeImage)
+		return []*BlockNode{{Block: &larkdocx.Block{
+			BlockType: &blockType,
+			Image:     &larkdocx.Image{},
+		}}}
+	}
+
+	return nil
+}
+
+// handleHTMLCalloutBlock 处理块级 <callout type="NOTE" color="6">内容</callout>
+// Phase 2: 基本框架，内容作为纯文本处理；Phase 3 将支持递归 Markdown 转换
+func (c *MarkdownToBlock) handleHTMLCalloutBlock(tag *HTMLTag) []*BlockNode {
+	// 确定背景色
+	bgColor := 6 // 默认蓝色
+	if colorStr := tag.Attrs["color"]; colorStr != "" {
+		if v := parseHTMLIntAttr(colorStr); v >= 2 && v <= 7 {
+			bgColor = v
+		}
+	} else if typeStr := tag.Attrs["type"]; typeStr != "" {
+		switch strings.ToUpper(typeStr) {
+		case "WARNING":
+			bgColor = 2
+		case "CAUTION":
+			bgColor = 3
+		case "TIP":
+			bgColor = 4
+		case "SUCCESS":
+			bgColor = 5
+		case "INFO", "NOTE":
+			bgColor = 6
+		case "IMPORTANT":
+			bgColor = 7
+		}
+	}
+
+	blockType := int(BlockTypeCallout)
+	calloutBlock := &larkdocx.Block{
+		BlockType: &blockType,
+		Callout: &larkdocx.Callout{
+			BackgroundColor: &bgColor,
+		},
+	}
+
+	// 将内容作为文本子块
+	var children []*BlockNode
+	content := strings.TrimSpace(tag.Content)
+	if content != "" {
+		textBlockType := int(BlockTypeText)
+		children = append(children, &BlockNode{
+			Block: &larkdocx.Block{
+				BlockType: &textBlockType,
+				Text: &larkdocx.Text{
+					Elements: []*larkdocx.TextElement{
+						{TextRun: &larkdocx.TextRun{Content: &content}},
+					},
+				},
+			},
+		})
+	}
+
+	return []*BlockNode{{Block: calloutBlock, Children: children}}
+}
+
+// handleHTMLGridBlock 处理块级 <grid cols="2"><column>左栏</column><column>右栏</column></grid>
+// 创建 Grid Block (type=24) + GridColumn 子块 (type=25)，每个 column 内容递归转换为 BlockNode
+func (c *MarkdownToBlock) handleHTMLGridBlock(tag *HTMLTag) []*BlockNode {
+	cols := parseHTMLIntAttrDefault(tag.Attrs["cols"], 2)
+	if cols < 1 {
+		cols = 2
+	}
+	if cols > 5 {
+		cols = 5 // 飞书最多 5 列
+	}
+
+	// 创建 Grid Block
+	gridBlockType := int(BlockTypeGrid)
+	gridBlock := &larkdocx.Block{
+		BlockType: &gridBlockType,
+		Grid: &larkdocx.Grid{
+			ColumnSize: &cols,
+		},
+	}
+
+	// 解析 <column>...</column> 内容
+	columnContents := ParseGridColumns(tag.Content)
+
+	// 如果没有 <column> 标签但有内容，将全部内容作为单列
+	if len(columnContents) == 0 && strings.TrimSpace(tag.Content) != "" {
+		columnContents = []string{strings.TrimSpace(tag.Content)}
+	}
+
+	// 创建 GridColumn 子块
+	var gridChildren []*BlockNode
+	for i := 0; i < cols; i++ {
+		colBlockType := int(BlockTypeGridColumn)
+		// 默认等宽
+		widthRatio := 100 / cols
+		colBlock := &larkdocx.Block{
+			BlockType:  &colBlockType,
+			GridColumn: &larkdocx.GridColumn{WidthRatio: &widthRatio},
+		}
+
+		var colChildren []*BlockNode
+		if i < len(columnContents) && columnContents[i] != "" {
+			// 递归转换 column 内容为 BlockNode
+			colChildren = c.convertInnerMarkdown(columnContents[i])
+		}
+
+		// 如果没有子块，创建空文本子块
+		if len(colChildren) == 0 {
+			textBlockType := int(BlockTypeText)
+			empty := ""
+			colChildren = []*BlockNode{{
+				Block: &larkdocx.Block{
+					BlockType: &textBlockType,
+					Text: &larkdocx.Text{
+						Elements: []*larkdocx.TextElement{
+							{TextRun: &larkdocx.TextRun{Content: &empty}},
+						},
+					},
+				},
+			}}
+		}
+
+		gridChildren = append(gridChildren, &BlockNode{Block: colBlock, Children: colChildren})
+	}
+
+	return []*BlockNode{{Block: gridBlock, Children: gridChildren}}
+}
+
+// convertInnerMarkdown 将内嵌的 Markdown 文本递归转换为 BlockNode 列表
+// 用于 <grid><column> 中的 Markdown 内容
+func (c *MarkdownToBlock) convertInnerMarkdown(markdown string) []*BlockNode {
+	inner := NewMarkdownToBlock([]byte(markdown), c.options, c.basePath)
+	result, err := inner.ConvertWithTableData()
+	if err != nil || result == nil {
+		return nil
+	}
+	// 合并 inner 的图片统计和来源
+	c.imageStats.Total += inner.imageStats.Total
+	c.imageStats.Skipped += inner.imageStats.Skipped
+	c.imageSources = append(c.imageSources, inner.imageSources...)
+	return result.BlockNodes
+}
+
+// handleHTMLWhiteboardBlock 处理 <whiteboard type="blank"/> → Board Block (type=43)
+func (c *MarkdownToBlock) handleHTMLWhiteboardBlock(tag *HTMLTag) []*BlockNode {
+	blockType := int(BlockTypeBoard)
+	board := &larkdocx.Board{}
+
+	// 若有 token 属性，设置（用于 roundtrip）
+	if token := tag.Attrs["token"]; token != "" {
+		board.Token = &token
+	}
+
+	return []*BlockNode{{Block: &larkdocx.Block{
+		BlockType: &blockType,
+		Board:     board,
+	}}}
+}
+
+// handleHTMLSheetBlock 处理 <sheet rows="5" cols="5"/> → Sheet Block (type=30)
+func (c *MarkdownToBlock) handleHTMLSheetBlock(tag *HTMLTag) []*BlockNode {
+	rows := parseHTMLIntAttrDefault(tag.Attrs["rows"], 3)
+	cols := parseHTMLIntAttrDefault(tag.Attrs["cols"], 3)
+
+	blockType := int(BlockTypeSheet)
+	sheet := &larkdocx.Sheet{
+		RowSize:    &rows,
+		ColumnSize: &cols,
+	}
+
+	// 若有 token 属性，设置（用于 roundtrip）
+	if token := tag.Attrs["token"]; token != "" {
+		sheet.Token = &token
+	}
+
+	return []*BlockNode{{Block: &larkdocx.Block{
+		BlockType: &blockType,
+		Sheet:     sheet,
+	}}}
+}
+
+// handleHTMLBitableBlock 处理 <bitable view="table"/> → Bitable Block (type=18)
+func (c *MarkdownToBlock) handleHTMLBitableBlock(tag *HTMLTag) []*BlockNode {
+	viewType := 1 // 默认数据表视图
+	switch strings.ToLower(tag.Attrs["view"]) {
+	case "kanban":
+		viewType = 2
+	case "calendar":
+		viewType = 3
+	case "gallery":
+		viewType = 4
+	case "gantt":
+		viewType = 5
+	case "form":
+		viewType = 6
+	}
+
+	blockType := int(BlockTypeBitable)
+	bitable := &larkdocx.Bitable{
+		ViewType: &viewType,
+	}
+
+	// 若有 token 属性，设置（用于 roundtrip）
+	if token := tag.Attrs["token"]; token != "" {
+		bitable.Token = &token
+	}
+
+	return []*BlockNode{{Block: &larkdocx.Block{
+		BlockType: &blockType,
+		Bitable:   bitable,
+	}}}
+}
+
+// handleHTMLFileBlock 处理 <file token="..." name="..." view-type="1"/> → File Block (type=23)
+func (c *MarkdownToBlock) handleHTMLFileBlock(tag *HTMLTag) []*BlockNode {
+	token := tag.Attrs["token"]
+	name := tag.Attrs["name"]
+	if token == "" && name == "" {
+		return nil
+	}
+
+	blockType := int(BlockTypeFile)
+	file := &larkdocx.File{}
+	if token != "" {
+		file.Token = &token
+	}
+	if name != "" {
+		file.Name = &name
+	}
+	if vt := parseHTMLIntAttr(tag.Attrs["view-type"]); vt > 0 {
+		file.ViewType = &vt
+	}
+
+	return []*BlockNode{{Block: &larkdocx.Block{
+		BlockType: &blockType,
+		File:      file,
+	}}}
+}
+
+// parseHTMLIntAttrDefault 解析 HTML 属性中的整数值，失败返回 defaultVal
+func parseHTMLIntAttrDefault(s string, defaultVal int) int {
+	if s == "" {
+		return defaultVal
+	}
+	var v int
+	if _, err := fmt.Sscanf(s, "%d", &v); err != nil {
+		return defaultVal
+	}
+	return v
+}
+
+// tryConvertHTMLImageParagraph 检查段落是否只包含一个 <image> HTML 标签
+// 如果是，转换为 Image Block；否则返回 nil
+func (c *MarkdownToBlock) tryConvertHTMLImageParagraph(node *ast.Paragraph) *larkdocx.Block {
+	// 检查段落子节点：可能是一个或多个 RawHTML 节点组成 <image ... />
+	var htmlBuf bytes.Buffer
+	onlyHTML := true
+	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
+		if raw, ok := child.(*ast.RawHTML); ok {
+			for i := 0; i < raw.Segments.Len(); i++ {
+				seg := raw.Segments.At(i)
+				htmlBuf.Write(c.source[seg.Start:seg.Stop])
+			}
+		} else {
+			onlyHTML = false
+			break
+		}
+	}
+
+	if !onlyHTML || htmlBuf.Len() == 0 {
+		return nil
+	}
+
+	rawStr := strings.TrimSpace(htmlBuf.String())
+	if !IsHTMLTag(rawStr, "image") {
+		return nil
+	}
+
+	tag := ParseHTMLTag(rawStr)
+	if tag == nil {
+		return nil
+	}
+
+	nodes := c.handleHTMLImageBlock(tag)
+	if len(nodes) > 0 {
+		return nodes[0].Block
+	}
+	return nil
+}
+
+// parseHTMLIntAttr 解析 HTML 属性中的整数值，失败返回 0
+func parseHTMLIntAttr(s string) int {
+	if s == "" {
+		return 0
+	}
+	var v int
+	fmt.Sscanf(s, "%d", &v)
+	return v
+}
+
+// parseHTMLAlignAttr 将对齐字符串映射为飞书整数 (1=left, 2=center, 3=right)
+func parseHTMLAlignAttr(s string) int {
+	switch strings.ToLower(s) {
+	case "left":
+		return 1
+	case "center":
+		return 2
+	case "right":
+		return 3
+	default:
+		return 0
+	}
 }
 
 // languageNameToCode converts language name to Feishu language code

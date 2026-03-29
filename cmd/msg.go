@@ -10,18 +10,21 @@ var msgCmd = &cobra.Command{
 	Long: `消息操作命令，用于向用户或群组发送、管理消息。
 
 子命令:
-  send            发送消息
-  reply           回复消息
-  delete          删除消息
-  list            获取消息列表
-  get             获取消息详情
-  forward         转发消息
-  merge-forward   合并转发消息
-  read-users      查询消息已读用户
-  reaction        表情回复管理（add/remove/list）
-  pin             置顶消息
-  unpin           取消置顶消息
-  pins            获取群内置顶消息列表
+  send               发送消息
+  reply              回复消息
+  delete             删除消息
+  list               获取消息列表
+  get                获取消息详情
+  mget               批量获取消息详情
+  forward            转发消息
+  merge-forward      合并转发消息
+  read-users         查询消息已读用户
+  reaction           表情回复管理（add/remove/list）
+  pin                置顶消息
+  unpin              取消置顶消息
+  pins               获取群内置顶消息列表
+  resource-download  下载消息中的资源文件
+  thread-messages    获取话题/线程中的消息列表
 
 接收者类型:
   email     邮箱

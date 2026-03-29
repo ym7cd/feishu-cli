@@ -2,8 +2,12 @@
 name: feishu-cli-bitable
 description: >-
   飞书多维表格（Bitable/Base）全功能操作：创建多维表格、数据表管理、字段管理、记录增删改查（单条+批量）、
-  视图管理、搜索过滤排序。当用户请求"创建多维表格"、"操作数据表"、"添加记录"、"查询记录"、
-  "管理字段"、"多维表格"、"base"、"bitable"、"数据表"时使用。
+  视图管理、搜索过滤排序、仪表盘、工作流、表单、角色、高级权限、附件上传、数据聚合、视图配置。
+  当用户请求"创建多维表格"、"操作数据表"、"添加记录"、"查询记录"、"管理字段"、
+  "多维表格"、"base"、"bitable"、"数据表"、"仪表盘"、"dashboard"、"工作流"、
+  "workflow"、"表单"、"form"、"角色"、"role"、"高级权限"、"advperm"、
+  "附件上传"、"upload attachment"、"数据聚合"、"data query"、"视图配置"、
+  "view filter"、"view sort"、"view group"、"复制多维表格"时使用。
   也适用于：用户需要创建结构化数据库、批量导入数据、管理表字段和视图的场景。
   注意：电子表格（Sheets）请使用 feishu-cli-toolkit，两者是不同的产品。
 argument-hint: "[app_token] [table_id]"
@@ -70,6 +74,63 @@ feishu-cli bitable delete-records <app_token> <table_id> --record-ids "recXXX,re
 feishu-cli bitable views <app_token> <table_id>
 feishu-cli bitable create-view <app_token> <table_id> --name "看板" --type kanban
 feishu-cli bitable delete-view <app_token> <table_id> <view_id>
+
+# === 多维表格复制 ===
+feishu-cli bitable copy <app_token>
+feishu-cli bitable copy <app_token> --name "副本" --folder-token FOLDER_TOKEN --without-content
+
+# === 附件上传 ===
+feishu-cli bitable record-upload-attachment <app_token> <table_id> <record_id> --field "附件" --file /path/to/file.pdf
+# 自动追加到现有附件，不覆盖
+
+# === 数据聚合查询 ===
+feishu-cli bitable data-query <app_token> <table_id> --data '{"filter":{"conjunction":"and","conditions":[...]},"sort":[...],"field_names":["名称","金额"],"page_size":100}'
+feishu-cli bitable data-query <app_token> <table_id> --data-file query.json
+
+# === 仪表盘管理 ===
+feishu-cli bitable dashboard list <app_token>
+feishu-cli bitable dashboard get <app_token> <dashboard_id>
+feishu-cli bitable dashboard create <app_token> --source-block-id <dashboard_id>   # 通过复制创建
+feishu-cli bitable dashboard update <app_token> <dashboard_id>                     # API 限制
+feishu-cli bitable dashboard delete <app_token> <dashboard_id>                     # API 限制
+
+# === 仪表盘 Block 管理 ===
+feishu-cli bitable dashboard-block list <app_token> <dashboard_id>
+feishu-cli bitable dashboard-block get <app_token> <dashboard_id> <block_id>
+feishu-cli bitable dashboard-block create <app_token> <dashboard_id>
+feishu-cli bitable dashboard-block update <app_token> <dashboard_id> <block_id>
+feishu-cli bitable dashboard-block delete <app_token> <dashboard_id> <block_id>
+
+# === 视图高级配置 ===
+feishu-cli bitable view-filter get <app_token> <table_id> <view_id>
+feishu-cli bitable view-filter set <app_token> <table_id> <view_id> --config '{"conjunction":"and","conditions":[...]}'
+feishu-cli bitable view-filter set <app_token> <table_id> <view_id> --config-file filter.json
+feishu-cli bitable view-sort get <app_token> <table_id> <view_id>
+feishu-cli bitable view-sort set <app_token> <table_id> <view_id> --config '[{"field_name":"创建时间","desc":true}]'
+feishu-cli bitable view-sort set <app_token> <table_id> <view_id> --config-file sort.json
+feishu-cli bitable view-group get <app_token> <table_id> <view_id>
+feishu-cli bitable view-group set <app_token> <table_id> <view_id> --config '[{"field_name":"状态","desc":false}]'
+feishu-cli bitable view-group set <app_token> <table_id> <view_id> --config-file group.json
+
+# === 工作流管理 ===
+feishu-cli bitable workflow list <app_token>
+feishu-cli bitable workflow get <app_token> <workflow_id>
+feishu-cli bitable workflow enable <app_token> <workflow_id>
+feishu-cli bitable workflow disable <app_token> <workflow_id>
+
+# === 表单管理 ===
+feishu-cli bitable form list <app_token> <table_id>
+feishu-cli bitable form get <app_token> <table_id> <form_id>
+feishu-cli bitable form patch <app_token> <table_id> <form_id> --name "表单名称" --description "表单描述"
+
+# === 角色管理 ===
+feishu-cli bitable role list <app_token>
+feishu-cli bitable role create <app_token> --name "编辑者" --config '{"table_roles":[...]}'
+feishu-cli bitable role delete <app_token> <role_id>
+
+# === 高级权限 ===
+feishu-cli bitable advperm enable <app_token>     # 启用高级权限
+feishu-cli bitable advperm disable <app_token>    # 禁用高级权限
 ```
 
 **别名**：`feishu-cli base` 等同于 `feishu-cli bitable`。
@@ -224,6 +285,9 @@ feishu-cli bitable create-view <app_token> <table_id> --name "状态看板" --ty
 | 字段数量 | 单表最多 200 个字段 |
 | 默认空行 | 新建表格自动创建约 10 行空记录 |
 | 权限可见性 | API 创建的表格默认仅机器人可见 |
+| 仪表盘 update/delete | API 当前不支持，调用返回错误 |
+| 附件上传 | 自动追加到现有附件列表，不覆盖 |
+| 工作流操作 | 仅支持 enable/disable，不支持创建 |
 
 ## 权限要求
 
@@ -232,3 +296,4 @@ feishu-cli bitable create-view <app_token> <table_id> --name "状态看板" --ty
 | 多维表格读写 | `bitable:app` |
 | 权限管理 | `docs:permission.member:create` |
 | 所有权转移 | `docs:permission.member:create` |
+| 云空间文件（复制到指定文件夹） | `drive:drive` |
