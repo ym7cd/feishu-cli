@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"reflect"
 	"testing"
-
-	larkapproval "github.com/larksuite/oapi-sdk-go/v3/service/approval/v4"
 )
 
 func TestParseEmbeddedJSON(t *testing.T) {
@@ -43,48 +41,6 @@ func TestParseEmbeddedJSON(t *testing.T) {
 				t.Fatalf("parseEmbeddedJSON(%q) = %#v, want %#v", tt.input, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestApprovalTaskToInfo(t *testing.T) {
-	task := &larkapproval.Task{
-		Topic:               stringPtr("1"),
-		UserId:              stringPtr("ou_user"),
-		Title:               stringPtr("审批标题"),
-		Status:              stringPtr("PENDING"),
-		ProcessStatus:       stringPtr("RUNNING"),
-		DefinitionCode:      stringPtr("approval_code"),
-		DefinitionName:      stringPtr("文档权限申请"),
-		DefinitionId:        stringPtr("definition_id"),
-		DefinitionGroupId:   stringPtr("group_id"),
-		DefinitionGroupName: stringPtr("权限类"),
-		TaskId:              stringPtr("task_id"),
-		ProcessId:           stringPtr("process_id"),
-		ProcessCode:         stringPtr("process_code"),
-		Initiators:          []string{"ou_initiator"},
-		InitiatorNames:      []string{"A"},
-		Urls: &larkapproval.TaskUrls{
-			Pc:     stringPtr("https://pc"),
-			Mobile: stringPtr("https://mobile"),
-		},
-	}
-
-	info := approvalTaskToInfo(task)
-
-	if info.Topic != "1" {
-		t.Fatalf("Topic = %q, want %q", info.Topic, "1")
-	}
-	if info.Title != "审批标题" {
-		t.Fatalf("Title = %q, want %q", info.Title, "审批标题")
-	}
-	if info.PCURL != "https://pc" {
-		t.Fatalf("PCURL = %q, want %q", info.PCURL, "https://pc")
-	}
-	if info.MobileURL != "https://mobile" {
-		t.Fatalf("MobileURL = %q, want %q", info.MobileURL, "https://mobile")
-	}
-	if !reflect.DeepEqual(info.InitiatorNames, []string{"A"}) {
-		t.Fatalf("InitiatorNames = %#v, want %#v", info.InitiatorNames, []string{"A"})
 	}
 }
 
@@ -126,6 +82,91 @@ func TestApprovalTaskStringUnmarshal(t *testing.T) {
 				t.Fatalf("json.Unmarshal(%s) = %q, want %q", tt.input, got.String(), tt.want)
 			}
 		})
+	}
+}
+
+func TestParseApprovalDefinitionResponse(t *testing.T) {
+	body := []byte(`{
+		"code": 0,
+		"msg": "success",
+		"data": {
+			"approval_name": "请假",
+			"status": "ACTIVE",
+			"form": "{\"widgets\":[{\"id\":\"widget_1\"}]}",
+			"node_list": [
+				{
+					"name": "直属上级",
+					"node_id": "node_1",
+					"custom_node_id": "custom_1",
+					"node_type": "AND",
+					"need_approver": true,
+					"approver_chosen_multi": false,
+					"require_signature": true
+				}
+			],
+			"viewers": [
+				{
+					"type": "USER",
+					"id": "ou_viewer",
+					"user_id": "ou_viewer"
+				}
+			],
+			"approval_admin_ids": ["ou_admin"],
+			"form_widget_relation": "{\"widget_1\":[\"widget_2\"]}"
+		}
+	}`)
+
+	result, err := parseApprovalDefinitionResponse(body, "approval_123")
+	if err != nil {
+		t.Fatalf("parseApprovalDefinitionResponse() error = %v", err)
+	}
+
+	if result.ApprovalCode != "approval_123" {
+		t.Fatalf("ApprovalCode = %q, want %q", result.ApprovalCode, "approval_123")
+	}
+	if result.ApprovalName != "请假" {
+		t.Fatalf("ApprovalName = %q, want %q", result.ApprovalName, "请假")
+	}
+	if result.Status != "ACTIVE" {
+		t.Fatalf("Status = %q, want %q", result.Status, "ACTIVE")
+	}
+
+	wantForm := map[string]any{
+		"widgets": []any{
+			map[string]any{"id": "widget_1"},
+		},
+	}
+	if !reflect.DeepEqual(result.Form, wantForm) {
+		t.Fatalf("Form = %#v, want %#v", result.Form, wantForm)
+	}
+
+	if len(result.NodeList) != 1 || result.NodeList[0].NodeID != "node_1" || !result.NodeList[0].NeedApprover || !result.NodeList[0].RequireSignature {
+		t.Fatalf("NodeList = %#v, want one populated node", result.NodeList)
+	}
+	if len(result.Viewers) != 1 || result.Viewers[0].UserID != "ou_viewer" {
+		t.Fatalf("Viewers = %#v, want one viewer", result.Viewers)
+	}
+	if !reflect.DeepEqual(result.ApprovalAdminIDs, []string{"ou_admin"}) {
+		t.Fatalf("ApprovalAdminIDs = %#v, want %#v", result.ApprovalAdminIDs, []string{"ou_admin"})
+	}
+
+	wantRelation := map[string]any{
+		"widget_1": []any{"widget_2"},
+	}
+	if !reflect.DeepEqual(result.FormWidgetRelation, wantRelation) {
+		t.Fatalf("FormWidgetRelation = %#v, want %#v", result.FormWidgetRelation, wantRelation)
+	}
+}
+
+func TestParseApprovalDefinitionResponseError(t *testing.T) {
+	body := []byte(`{"code": 99991663, "msg": "invalid approval code"}`)
+
+	_, err := parseApprovalDefinitionResponse(body, "approval_123")
+	if err == nil {
+		t.Fatal("parseApprovalDefinitionResponse() error = nil, want non-nil")
+	}
+	if got := err.Error(); got != "获取审批定义失败: code=99991663, msg=invalid approval code" {
+		t.Fatalf("parseApprovalDefinitionResponse() error = %q, want %q", got, "获取审批定义失败: code=99991663, msg=invalid approval code")
 	}
 }
 
@@ -185,8 +226,4 @@ func TestParseApprovalTaskQueryResponseHandlesNumericProcessStatus(t *testing.T)
 	if result.Tasks[0].PCURL != "https://pc" {
 		t.Fatalf("PCURL = %q, want %q", result.Tasks[0].PCURL, "https://pc")
 	}
-}
-
-func stringPtr(v string) *string {
-	return &v
 }

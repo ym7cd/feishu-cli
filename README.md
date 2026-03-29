@@ -466,7 +466,7 @@ feishu-cli search docs "产品需求"
 <details>
 <summary>审批操作</summary>
 
-`approval get` 使用应用权限查询审批定义（审批模板/流程定义），需要开通 `approval:approval:readonly`；`approval task query` 会优先根据当前 `auth login` 登录态自动识别当前用户，需要开通 `approval:task` 并完成用户授权。
+`approval get` 使用应用权限查询审批定义（审批模板/流程定义），支持 `--output raw-json` 查看飞书 API 原始响应，需要开通 `approval:approval:readonly`；`approval task query` 会优先根据当前 `auth login` 登录态自动识别当前用户，需要开通 `approval:task` 并完成用户授权。
 
 输出说明：
 - 不传 `--output`：输出便于阅读的文本摘要
@@ -479,6 +479,9 @@ feishu-cli approval get <approval_code>
 
 # 输出完整 JSON
 feishu-cli approval get <approval_code> --output json
+
+# 输出飞书 API 原始响应
+feishu-cli approval get <approval_code> --output raw-json
 
 # 查询当前登录用户的待我审批
 feishu-cli approval task query --topic todo
