@@ -1,9 +1,11 @@
 ---
 name: feishu-cli-export
 description: >-
-  将飞书文档或知识库文档导出为 Markdown 文件，或导出为 PDF/Word 等格式（异步任务）。
+  将飞书文档或知识库文档导出为 Markdown 文件，或导出为 PDF/Word 等格式（异步任务），
+  或下载文档素材（图片/画板缩略图）。
   当用户请求"导出文档"、"导出为 Markdown"、"转换为 Markdown"、"保存为 md"、
-  "导出 PDF"、"导出 Word"、"下载文档"时使用。
+  "导出 PDF"、"导出 Word"、"下载文档"、"下载素材"、"下载文档图片"、
+  "下载画板缩略图"时使用。
   本技能专注于导出操作。从本地 DOCX 文件导入请使用 feishu-cli-import。
 argument-hint: <document_id|node_token|url> [output_path]
 user-invocable: true
@@ -347,6 +349,51 @@ feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报
 
 ---
 
+## 下载文档素材（doc media-download）
+
+下载文档中的素材文件，支持普通素材（图片、文件）和画板缩略图两种模式。
+
+### 普通素材下载
+
+下载文档中引用的图片或文件素材（通过 file_token）：
+
+```bash
+# 下载图片素材
+feishu-cli doc media-download <file_token> -o /tmp/image.png
+
+# 下载文件素材
+feishu-cli doc media-download <file_token> -o /tmp/attachment.pdf
+```
+
+### 画板缩略图下载
+
+下载飞书画板（Whiteboard）的缩略图：
+
+```bash
+# 下载画板缩略图
+feishu-cli doc media-download <whiteboard_token> --type whiteboard -o /tmp/board.png
+```
+
+### 参数说明
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<token>` | 素材 Token 或画板 Token | 必填 |
+| `--type` | 素材类型 `media`/`whiteboard` | `media` |
+| `-o, --output` | 输出文件路径 | — |
+
+### 两种下载模式的区别
+
+| 维度 | 普通素材（media） | 画板缩略图（whiteboard） |
+|------|-------------------|------------------------|
+| Token 来源 | 文档导出解析的 `file_token` | 画板块的 `whiteboard_token` |
+| 下载内容 | 原始图片/文件 | 画板渲染的 PNG 缩略图 |
+| 适用场景 | 下载文档中的图片和附件 | 获取画板预览图 |
+
+> **提示**：如需批量下载文档中所有图片，推荐使用 `doc export --download-images --assets-dir <dir>` 命令，它会自动提取并下载所有图片和画板缩略图。
+
+---
+
 ## 常见问题
 
 | 问题 | 原因 | 解决方法 |
@@ -424,6 +471,23 @@ Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
 - **块级公式**：独立行 `$formula$`
 - **行内公式**：段落内嵌 `$E = mc^2$`
 - 公式内容保持 LaTeX 原文，不做转义
+
+### HTML 标签导出格式
+
+以下飞书块类型导出为 HTML 标签格式（而非标准 Markdown），用于保留飞书原生属性，支持 roundtrip（导出→导入不丢失信息）。
+
+| 飞书块/元素 | 导出格式 | 说明 |
+|------------|---------|------|
+| MentionUser（@用户） | `<mention-user id="ou_xxx"/>` | 使用 `--expand-mentions` 时展开为友好名称，未命中缓存或关闭时输出此标签 |
+| MentionDoc（@文档） | `<mention-doc token="xxx" type="docx">标题</mention-doc>` | `type` 根据 ObjType 映射（docx/doc/sheet/bitable/wiki 等） |
+| Image（图片） | `<image token="xxx" width="800" height="600" align="center"/>` | 使用 `--download-images` 时下载为本地文件输出 `![alt](path)`，否则输出此标签 |
+| Grid（分栏） | `<grid cols="N"><column>内容</column>...</grid>` | 每个 GridColumn 子块递归导出 |
+| Board（画板） | `<whiteboard token="xxx" type="blank"/>` | 使用 `--download-images` 时导出为 PNG 图片，否则输出此标签 |
+| Sheet（电子表格块） | `<sheet token="xxx" rows="N" cols="N"/>` | 文档内嵌的电子表格块 |
+| Bitable（多维表格块） | `<bitable token="xxx" view="table"/>` | `view` 支持 table/kanban/calendar/gallery/gantt/form |
+| File（文件块） | `<file token="xxx" name="report.pdf" view-type="1"/>` | 文件附件块 |
+
+> 这些 HTML 标签可被 `doc import` 导入端解析还原为对应的飞书块类型，实现无损 roundtrip。
 
 ### 特殊字符处理
 

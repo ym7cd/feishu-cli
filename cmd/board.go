@@ -14,6 +14,8 @@ var boardCmd = &cobra.Command{
   import        导入图表到画板
   nodes         获取画板节点列表
   create-notes  创建画板节点
+  update        更新画板内容（支持覆盖）
+  delete        删除画板节点
 
 示例:
   # 下载画板图片
@@ -29,7 +31,13 @@ var boardCmd = &cobra.Command{
   feishu-cli board nodes <whiteboard_id>
 
   # 创建画板节点
-  feishu-cli board create-notes <whiteboard_id> nodes.json`,
+  feishu-cli board create-notes <whiteboard_id> nodes.json
+
+  # 更新画板内容（覆盖模式）
+  feishu-cli board update <whiteboard_id> nodes.json --overwrite
+
+  # 删除画板节点
+  feishu-cli board delete <whiteboard_id> --all`,
 }
 
 func init() {

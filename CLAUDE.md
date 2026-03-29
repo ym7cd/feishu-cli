@@ -202,6 +202,15 @@ feishu-cli doc add-callout <doc_id> "内容" --callout-type info
 feishu-cli doc add-board <doc_id>
 feishu-cli doc batch-update <doc_id> '[...]' --source-type content
 feishu-cli doc delete <doc_id> --start 1 --end 3
+feishu-cli doc media-insert <doc_id> --file photo.png --type image --align center   # 向文档插入图片
+feishu-cli doc media-insert <doc_id> --file report.pdf --type file                  # 向文档插入文件
+feishu-cli doc media-download <file_token> -o image.png                             # 下载文档素材
+feishu-cli doc media-download <id> --type whiteboard -o board.png                   # 下载画板缩略图
+feishu-cli doc content-update <doc_id> --mode append --markdown "## 新内容"         # 追加内容
+feishu-cli doc content-update <doc_id> --mode overwrite --markdown "# 全新文档"     # 完全覆盖
+feishu-cli doc content-update <doc_id> --mode replace_range --selection-by-title "## 旧章节" --markdown "## 新章节\n\n新内容"  # 按标题替换
+feishu-cli doc content-update <doc_id> --mode delete_range --selection-by-title "## 废弃章节"  # 删除章节
+feishu-cli doc content-update <doc_id> --mode insert_after --selection-by-title "## 目标" --markdown "插入的内容"  # 在指定位置后插入
 
 # === 知识库 ===
 feishu-cli wiki get <node_token>
@@ -216,6 +225,9 @@ feishu-cli msg search-chats --query "关键词"
 feishu-cli msg history --container-id <chat_id> --container-id-type chat
 feishu-cli msg get <message_id>
 feishu-cli msg forward <message_id> --receive-id <id> --receive-id-type email
+feishu-cli msg mget --message-ids om_xxx,om_yyy                                     # 批量获取消息详情
+feishu-cli msg resource-download <message_id> <file_key> --type image -o photo.png  # 下载消息资源
+feishu-cli msg thread-messages <thread_id> --page-size 20                           # 获取话题回复列表
 
 # === 电子表格 ===
 feishu-cli sheet create --title "新表格"
@@ -223,6 +235,8 @@ feishu-cli sheet read <token> "Sheet1!A1:C10"
 feishu-cli sheet write <token> "Sheet1!A1:B2" --data '[["姓名","年龄"],["张三",25]]'
 feishu-cli sheet read-rich <token> <sheet_id> "sheet!A1:C10"   # V3 富文本
 feishu-cli sheet write-rich <token> <sheet_id> --data-file data.json
+feishu-cli sheet export <token> -o output.xlsx                                       # 导出为 XLSX
+feishu-cli sheet export <token> --format csv --sheet-id SHEET_ID -o output.csv       # 导出为 CSV
 
 # === 多维表格（Bitable） ===
 feishu-cli bitable create --name "项目管理"                       # 创建多维表格
@@ -245,6 +259,20 @@ feishu-cli bitable delete-records <app_token> <table_id> --record-ids "rec1,rec2
 feishu-cli bitable views <app_token> <table_id>                   # 列出视图
 feishu-cli bitable create-view <app_token> <table_id> --name "看板" --type kanban
 feishu-cli bitable delete-view <app_token> <table_id> <view_id>
+feishu-cli bitable copy <app_token> --name "副本"                                    # 复制多维表格
+feishu-cli bitable copy <app_token> --name "空白副本" --without-content              # 仅复制结构
+feishu-cli bitable record-upload-attachment <app_token> <table_id> <record_id> --field "附件" --file report.pdf  # 上传附件
+feishu-cli bitable data-query <app_token> <table_id> --data '{"page_size":100}'     # 数据聚合查询
+feishu-cli bitable dashboard list <app_token>                                        # 列出仪表盘
+feishu-cli bitable view-filter get <app_token> <table_id> <view_id>                 # 获取视图过滤条件
+feishu-cli bitable view-filter set <app_token> <table_id> <view_id> --config '{...}'  # 设置过滤条件
+feishu-cli bitable view-sort get <app_token> <table_id> <view_id>                   # 获取视图排序
+feishu-cli bitable view-group get <app_token> <table_id> <view_id>                  # 获取视图分组
+feishu-cli bitable workflow list <app_token>                                         # 列出工作流
+feishu-cli bitable workflow enable <app_token> <workflow_id>                         # 启用工作流
+feishu-cli bitable form list <app_token> <table_id>                                 # 列出表单
+feishu-cli bitable role list <app_token>                                             # 列出角色
+feishu-cli bitable advperm enable <app_token>                                        # 启用高级权限
 
 # === 权限管理 ===
 feishu-cli perm add <doc_id> --doc-type docx --member-type email --member-id user@example.com --perm full_access
@@ -299,6 +327,8 @@ feishu-cli calendar event-reply <calendar_id> <event_id> --status accept
 feishu-cli calendar attendee add <calendar_id> <event_id> --user-ids id1,id2
 feishu-cli calendar attendee list <calendar_id> <event_id>
 feishu-cli calendar freebusy --start "2024-01-01T00:00:00+08:00" --end "2024-01-02T00:00:00+08:00" --user-ids id1,id2
+feishu-cli calendar agenda                                           # 查看今日日程（展开重复日程）
+feishu-cli calendar agenda --start-date 2026-03-28 --end-date 2026-03-29  # 指定日期范围
 
 # === 任务增强 ===
 feishu-cli task create --summary "待办事项"
@@ -307,9 +337,25 @@ feishu-cli task subtask create <task_guid> --summary "子任务"
 feishu-cli task subtask list <task_guid>
 feishu-cli task member add <task_guid> --members id1,id2 --role assignee
 feishu-cli task reminder add <task_guid> --minutes 30
+feishu-cli task my                                                   # 查看我的任务
+feishu-cli task my --completed                                       # 查看已完成的任务
+feishu-cli task reopen <task_guid>                                   # 重新打开已完成的任务
+feishu-cli task comment add <task_guid> --content "评论内容"          # 添加任务评论
+feishu-cli task comment list <task_guid>                             # 列出任务评论
 feishu-cli tasklist create --name "任务列表"
 feishu-cli tasklist list
 feishu-cli tasklist delete <tasklist_guid>
+feishu-cli tasklist task-add <tasklist_guid> --task-ids guid1,guid2  # 将任务添加到清单
+feishu-cli tasklist task-remove <tasklist_guid> --task-ids guid1     # 从清单移除任务
+feishu-cli tasklist tasks <tasklist_guid>                            # 列出清单中的任务
+feishu-cli tasklist member add <tasklist_guid> --members ou_xxx      # 添加清单成员
+feishu-cli tasklist member remove <tasklist_guid> --members ou_xxx   # 移除清单成员
+
+# === 视频会议与妙记 ===
+feishu-cli vc search --start "2026-03-20" --end "2026-03-28"         # 搜索历史会议
+feishu-cli vc notes --meeting-id 69xxxx                              # 获取会议纪要
+feishu-cli vc notes --minute-token obcnxxxx                          # 通过妙记 token 获取
+feishu-cli minutes get <minute_token>                                # 获取妙记信息
 
 # === 知识库增强 ===
 feishu-cli wiki space-get <space_id>
@@ -325,6 +371,10 @@ feishu-cli dept get <department_id>
 feishu-cli dept children <department_id>
 feishu-cli board create-notes <whiteboard_id> nodes.json -o json  # 精排绘图（JSON 控制坐标/颜色/连线）
 feishu-cli board import <whiteboard_id> --source-type content -c "graph TD; A-->B" --syntax mermaid
+feishu-cli board update <whiteboard_id> nodes.json --overwrite    # 覆盖更新画板（先写后删）
+feishu-cli board update <whiteboard_id> nodes.json --overwrite --dry-run  # 预览覆盖
+feishu-cli board delete <whiteboard_id> --all                     # 清空画板所有节点
+feishu-cli board delete <whiteboard_id> --node-ids o1:1,o1:2      # 删除指定节点
 feishu-cli board nodes <whiteboard_id>                            # 获取画板所有节点
 feishu-cli board image <whiteboard_id> output.png                 # 下载画板截图
 feishu-cli media upload image.png --parent-type docx_image --parent-node <doc_id>
@@ -429,19 +479,21 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 
 ## Claude Code 技能
 
-本项目提供以下 Claude Code 技能，位于 `skills/` 目录（12 个技能）：
+本项目提供以下 Claude Code 技能，位于 `skills/` 目录（14 个技能）：
 
 | 技能 | 说明 | 用法 |
 |------|------|------|
 | `/feishu-cli-read` | 读取飞书文档/知识库并转换为 Markdown | `/feishu-cli-read <doc_id\|url>` |
-| `/feishu-cli-write` | 创建/写入飞书文档（含快速创建空白文档） | `/feishu-cli-write "标题"` |
+| `/feishu-cli-write` | 创建/写入飞书文档（含素材插入、快速创建空白文档） | `/feishu-cli-write "标题"` |
 | `/feishu-cli-import` | 从 Markdown 导入创建文档 | `/feishu-cli-import <file.md>` |
-| `/feishu-cli-export` | 导出为 Markdown/PDF/Word，或从 DOCX 导入 | `/feishu-cli-export <doc_id> [path]` |
+| `/feishu-cli-export` | 导出为 Markdown/PDF/Word，下载文档素材 | `/feishu-cli-export <doc_id> [path]` |
 | `/feishu-cli-perm` | 权限管理 | `/feishu-cli-perm <doc_token>` |
-| `/feishu-cli-msg` | 消息全功能管理（发送/回复/转发/Reaction/Pin） | `/feishu-cli-msg <receive_id>` |
-| `/feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/群聊/文件/素材/评论/知识库/搜索/通讯录/**附件下载**） | `/feishu-cli-toolkit` |
+| `/feishu-cli-msg` | 消息全功能管理（发送/回复/转发/批量获取/资源下载/话题回复） | `/feishu-cli-msg <receive_id>` |
+| `/feishu-cli-chat` | 会话浏览、消息互动与群聊管理 | `/feishu-cli-chat` |
+| `/feishu-cli-toolkit` | 综合工具箱（表格导出/日历agenda/任务管理/清单成员/文件/素材/评论/知识库/通讯录） | `/feishu-cli-toolkit` |
 | `/feishu-cli-board` | 画板操作（精排绘图/Mermaid 导入/截图/节点管理） | `/feishu-cli-board` |
-| `/feishu-cli-bitable` | 多维表格操作（数据表/字段/记录/视图管理） | `/feishu-cli-bitable` |
+| `/feishu-cli-bitable` | 多维表格全功能（数据表/字段/记录/视图配置/仪表盘/工作流/表单/角色/附件/聚合查询） | `/feishu-cli-bitable` |
+| `/feishu-cli-vc` | 视频会议与妙记（搜索会议/获取纪要/妙记信息） | `/feishu-cli-vc` |
 | `/feishu-cli-auth` | OAuth 认证、Token 管理、scope 配置、搜索权限排错 | `/feishu-cli-auth` |
 | `/feishu-cli-search` | 搜索飞书文档/消息/应用（含 Token 前置检查流程） | `/feishu-cli-search` |
 | `feishu-cli-doc-guide` | 飞书文档创建规范（内部参考，不可直接调用） | — |
@@ -651,4 +703,21 @@ feishu-cli perm transfer-owner <DOC_ID> --doc-type <type> --member-type email --
 ✅ PlantUML 图表导入（时序图、活动图已验证）
 ✅ 大规模导入：10,000+ 行 / 127 个图表 / 170+ 个表格
 ✅ doc import --upload-images（本地图片 + HTTP 图片上传）
+✅ doc media-insert（图片插入 + 文件插入，含三步法编排和自动回滚）
+✅ doc media-download（素材下载 + 画板缩略图下载）
+✅ msg mget（批量获取消息详情）
+✅ msg resource-download（下载消息中的图片/文件资源）
+✅ msg thread-messages（获取话题群回复列表，需 User Token）
+✅ sheet export（导出为 XLSX/CSV，异步任务轮询）
+✅ bitable copy（复制多维表格，含仅复制结构选项）
+✅ bitable record-upload-attachment（向记录附件字段上传文件，自动追加）
+✅ bitable data-query（数据聚合查询）
+✅ bitable dashboard list + workflow list + form list + role list
+✅ bitable advperm enable/disable（高级权限开关）
+✅ bitable view-filter/sort/group get/set（视图配置读写）
+✅ task my（查看我的任务）+ task reopen（重新打开任务）
+✅ task comment add/list（任务评论）
+✅ tasklist task-add/task-remove/tasks（清单任务管理）
+✅ tasklist member add/remove（清单成员管理）
+✅ vc search + vc notes + minutes get（视频会议与妙记）
 ```

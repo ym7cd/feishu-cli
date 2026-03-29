@@ -1,9 +1,12 @@
 ---
 name: feishu-cli-toolkit
 description: >-
-  飞书综合工具箱：电子表格、日历日程、任务管理、画板操作、PlantUML 图表、
-  文件管理、素材上传下载、文档评论、知识库、用户通讯录、文档附件下载。
-  当用户请求操作飞书表格、查看日历、创建任务、操作画板、生成 PlantUML、
+  飞书综合工具箱：电子表格（含导出 XLSX/CSV）、日历日程（含日程列表/agenda）、
+  任务管理（含我的任务/重新打开/评论）、任务清单（含任务关联/成员管理）、
+  画板操作、PlantUML 图表、文件管理、素材上传下载、文档评论、知识库、
+  用户通讯录、文档附件下载。
+  当用户请求操作飞书表格、导出表格、查看日历、查看日程列表、创建任务、
+  查看我的任务、重新打开任务、任务评论、任务清单成员、操作画板、生成 PlantUML、
   管理文件、上传素材、查看评论、查看知识库、查询用户信息、查询部门、
   下载文档附件时使用。
   注意：群聊浏览/管理请使用 feishu-cli-chat，搜索请使用 feishu-cli-search，
@@ -87,6 +90,29 @@ feishu-cli sheet replace <token> <sheet_id> "查找词" "替换词" --range "A1:
 - V2 范围格式：`SheetID!A1:C10`，支持整列 `A:C` 和整行 `1:3`
 - V3 写入限制：单次最多 10 个范围
 
+### 导出为 XLSX/CSV
+
+```bash
+# 导出为 XLSX（默认格式）
+feishu-cli sheet export <spreadsheet_token> -o /tmp/report.xlsx
+
+# 导出为 CSV（需指定工作表 ID）
+feishu-cli sheet export <spreadsheet_token> -f csv --sheet-id <sheet_id> -o /tmp/data.csv
+
+# 自定义轮询次数
+feishu-cli sheet export <spreadsheet_token> -o /tmp/report.xlsx --max-retries 50
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<spreadsheet_token>` | 电子表格 Token | 必填 |
+| `-f, --format` | 导出格式 `xlsx`/`csv` | `xlsx` |
+| `--sheet-id` | 工作表 ID（CSV 格式必填） | — |
+| `-o, --output` | 输出文件路径 | — |
+| `--max-retries` | 最大轮询次数 | 30 |
+
+> **注意**：导出为 CSV 时必须指定 `--sheet-id`，因为 CSV 只能导出单个工作表。
+
 **详细参考**：读取 `references/sheet-commands.md` 获取 V3 富文本格式、工作表管理、单元格图片等完整说明。
 
 **权限要求**：`sheets:spreadsheet`
@@ -135,6 +161,31 @@ feishu-cli calendar freebusy \
   --user-id <user_id>
 ```
 
+### 日程列表（展开重复日程）
+
+```bash
+# 查看今天的日程
+feishu-cli calendar agenda [calendar_id]
+
+# 指定日期范围
+feishu-cli calendar agenda <calendar_id> \
+  --start-date 2024-01-21 \
+  --end-date 2024-01-28
+
+# 分页
+feishu-cli calendar agenda <calendar_id> --page-size 20 --page-token <token>
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `[calendar_id]` | 日历 ID | 主日历 |
+| `--start-date` | 起始日期 YYYY-MM-DD | 今天 |
+| `--end-date` | 结束日期 YYYY-MM-DD | start + 1 天 |
+| `--page-size` | 每页数量 | — |
+| `--page-token` | 分页标记 | — |
+
+与 `list-events` 的区别：`agenda` 会展开重复日程为独立实例，适合查看某段时间内所有实际发生的日程。
+
 **详细参考**：读取 `references/calendar-commands.md` 获取完整参数说明。
 
 **权限要求**：`calendar:calendar:readonly`（读取），`calendar:calendar`（写操作，需单独申请）
@@ -174,6 +225,99 @@ feishu-cli tasklist list
 feishu-cli tasklist get <tasklist_guid>
 feishu-cli tasklist delete <tasklist_guid>
 ```
+
+### 我的任务
+
+```bash
+# 查看我的所有任务（需 User Token）
+feishu-cli task my
+
+# 只显示未完成的任务
+feishu-cli task my --uncompleted
+
+# 只显示已完成的任务
+feishu-cli task my --completed
+
+# 指定每页数量
+feishu-cli task my --page-size 20
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--completed` | 只显示已完成 | — |
+| `--uncompleted` | 只显示未完成 | — |
+| `--page-size` | 每页数量 | 50 |
+
+> **注意**：`task my` 需要 User Token，请先通过 `auth login` 授权。
+
+### 重新打开任务
+
+```bash
+# 重新打开已完成的任务
+feishu-cli task reopen <task_guid>
+```
+
+### 任务评论
+
+```bash
+# 添加评论
+feishu-cli task comment add <task_guid> --content "评论内容"
+
+# 添加回复评论
+feishu-cli task comment add <task_guid> --content "回复内容" --reply-to <comment_id>
+
+# 列出任务评论
+feishu-cli task comment list <task_guid>
+
+# 分页列出
+feishu-cli task comment list <task_guid> --page-size 20
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--content` | 评论内容 | 必填 |
+| `--reply-to` | 回复某评论 ID | — |
+| `--page-size` | 每页数量 | — |
+
+### 任务清单：任务关联
+
+```bash
+# 将任务添加到清单
+feishu-cli tasklist task-add <tasklist_guid> --task-ids id1,id2,id3
+
+# 从清单移除任务
+feishu-cli tasklist task-remove <tasklist_guid> --task-ids id1,id2
+
+# 列出清单中的任务
+feishu-cli tasklist tasks <tasklist_guid>
+
+# 只显示已完成的任务
+feishu-cli tasklist tasks <tasklist_guid> --completed
+
+# 指定每页数量
+feishu-cli tasklist tasks <tasklist_guid> --page-size 20
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--task-ids` | 任务 ID 列表（逗号分隔） | 必填 |
+| `--completed` | 只显示已完成 | — |
+| `--page-size` | 每页数量 | — |
+
+### 任务清单：成员管理
+
+```bash
+# 添加清单成员
+feishu-cli tasklist member add <tasklist_guid> --members id1,id2 --role editor
+
+# 移除清单成员
+feishu-cli tasklist member remove <tasklist_guid> --members id1,id2 --role editor
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--members` | 成员 ID 列表（逗号分隔） | 必填 |
+| `--role` | 角色 `editor`/`viewer` | `editor` |
 
 **详细参考**：读取 `references/task-commands.md` 获取完整参数说明。
 

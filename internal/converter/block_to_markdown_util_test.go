@@ -604,26 +604,28 @@ func TestConvertTextElements(t *testing.T) {
 		want     string
 	}{
 		{
-			name: "MentionDoc URL编码",
+			name: "MentionDoc HTML标签格式",
 			elements: []*larkdocx.TextElement{
 				{MentionDoc: &larkdocx.MentionDoc{
 					Title: strPtr("文档"),
+					Token: strPtr("doxcnXXX"),
 					Url:   strPtr("https://example.com/doc?id=123&name=test"),
 				}},
 			},
 			options: ConvertOptions{},
-			want:    "[文档](https://example.com/doc?id=123&name=test)",
+			want:    `<mention-doc token="doxcnXXX" type="docx">文档</mention-doc>`,
 		},
 		{
-			name: "MentionDoc URL包含括号",
+			name: "MentionDoc有ObjType",
 			elements: []*larkdocx.TextElement{
 				{MentionDoc: &larkdocx.MentionDoc{
-					Title: strPtr("文档(草稿)"),
-					Url:   strPtr("https://example.com/doc(1)"),
+					Title: strPtr("表格"),
+					Token: strPtr("sheetXXX"),
+					ObjType: intPtr(3),
 				}},
 			},
 			options: ConvertOptions{},
-			want:    "[文档(草稿)](https://example.com/doc%281%29)",
+			want:    `<mention-doc token="sheetXXX" type="sheet">表格</mention-doc>`,
 		},
 		{
 			name: "Link URL解码",
@@ -1027,10 +1029,11 @@ func TestConvertTextElementsEdgeCases(t *testing.T) {
 			elements: []*larkdocx.TextElement{
 				{MentionDoc: &larkdocx.MentionDoc{
 					Title: strPtr(""),
+					Token: strPtr("doxcnXXX"),
 					Url:   strPtr("https://example.com"),
 				}},
 			},
-			want: "[](https://example.com)",
+			want: `<mention-doc token="doxcnXXX" type="docx"></mention-doc>`,
 		},
 		{
 			name: "Link空内容",

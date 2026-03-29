@@ -13,9 +13,11 @@ var taskCmd = &cobra.Command{
   create    创建新任务
   get       获取任务详情
   list      列出任务
+  my        查看我的任务（需要 User Access Token）
   update    更新任务
   delete    删除任务
   complete  完成任务
+  reopen    重新打开已完成的任务
 
 示例:
   # 创建任务
@@ -33,11 +35,17 @@ var taskCmd = &cobra.Command{
   # 列出已完成的任务
   feishu-cli task list --completed
 
+  # 查看我的任务
+  feishu-cli task my
+
   # 更新任务
   feishu-cli task update <task_id> --summary "新标题"
 
   # 完成任务
   feishu-cli task complete <task_id>
+
+  # 重新打开已完成的任务
+  feishu-cli task reopen <task_id>
 
   # 删除任务
   feishu-cli task delete <task_id>`,

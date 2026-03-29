@@ -793,3 +793,605 @@ func parseBitableRecordsResponse(resp *larkcore.ApiResp, action string) ([]Bitab
 
 	return apiResp.Data.Records, nil
 }
+
+// ==================== 仪表盘（Dashboard）操作 ====================
+
+// ListBitableDashboards 列出仪表盘
+func ListBitableDashboards(appToken string, pageSize int, pageToken string, userAccessToken string) ([]map[string]any, string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := buildBitablePagePath(
+		fmt.Sprintf("%s/apps/%s/dashboards", bitableBase, appToken),
+		pageSize,
+		pageToken,
+	)
+
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, "", fmt.Errorf("列出仪表盘失败: %w", err)
+	}
+
+	return parseBitableRawPagedListResponse(resp, "列出仪表盘", "dashboards")
+}
+
+// GetBitableDashboard 获取仪表盘
+// 注意：飞书 API 没有单独的获取仪表盘接口，通过 list 接口过滤实现
+func GetBitableDashboard(appToken string, dashboardID string, userAccessToken string) (map[string]any, error) {
+	// 通过 list 接口获取所有仪表盘，然后从中查找匹配的
+	dashboards, _, err := ListBitableDashboards(appToken, 500, "", userAccessToken)
+	if err != nil {
+		return nil, fmt.Errorf("获取仪表盘失败: %w", err)
+	}
+
+	for _, d := range dashboards {
+		if id, _ := d["block_id"].(string); id == dashboardID {
+			return d, nil
+		}
+	}
+
+	return nil, fmt.Errorf("获取仪表盘失败: 未找到 ID 为 %s 的仪表盘", dashboardID)
+}
+
+// CreateBitableDashboard 复制仪表盘创建新仪表盘
+// 注意：飞书 API 不支持直接创建仪表盘，只支持复制现有仪表盘
+// reqBody 需包含 "name"（新仪表盘名称）和 "source_block_id"（源仪表盘 block_id）
+func CreateBitableDashboard(appToken string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	sourceBlockID, _ := reqBody["source_block_id"].(string)
+	if sourceBlockID == "" {
+		return nil, fmt.Errorf("飞书 API 不支持直接创建仪表盘，请通过 --source-block-id 指定要复制的源仪表盘 block_id")
+	}
+
+	// 只传 name 到 API
+	copyBody := map[string]any{}
+	if name, ok := reqBody["name"]; ok {
+		copyBody["name"] = name
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	// 正确路径：POST /dashboards/:block_id/copy
+	apiPath := fmt.Sprintf("%s/apps/%s/dashboards/%s/copy", bitableBase, appToken, sourceBlockID)
+	resp, err := client.Post(Context(), apiPath, copyBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("复制仪表盘失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "复制仪表盘")
+}
+
+// UpdateBitableDashboard 更新仪表盘
+// 注意：飞书 API 不支持更新仪表盘，此函数保留签名兼容但返回错误提示
+func UpdateBitableDashboard(appToken string, dashboardID string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	return nil, fmt.Errorf("飞书 API 不支持更新仪表盘（仅支持 list 和 copy 操作）")
+}
+
+// DeleteBitableDashboard 删除仪表盘
+// 注意：飞书 API 不支持删除仪表盘，此函数保留签名兼容但返回错误提示
+func DeleteBitableDashboard(appToken string, dashboardID string, userAccessToken string) error {
+	return fmt.Errorf("飞书 API 不支持删除仪表盘（仅支持 list 和 copy 操作）")
+}
+
+// ==================== 仪表盘 Block 操作（飞书 API 不支持） ====================
+// 注意：飞书开放 API 不提供仪表盘 Block 的 CRUD 接口，以下函数保留签名兼容但返回错误提示
+
+// ListBitableDashboardBlocks 列出仪表盘 Block（API 不支持）
+func ListBitableDashboardBlocks(appToken string, dashboardID string, pageSize int, pageToken string, userAccessToken string) ([]map[string]any, string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := buildBitablePagePath(
+		fmt.Sprintf("%s/apps/%s/dashboards/%s/blocks", bitableBase, appToken, dashboardID),
+		pageSize,
+		pageToken,
+	)
+
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, "", fmt.Errorf("列出仪表盘 Block 失败: %w", err)
+	}
+
+	return parseBitableRawPagedListResponse(resp, "列出仪表盘 Block", "blocks")
+}
+
+// GetBitableDashboardBlock 获取仪表盘 Block
+func GetBitableDashboardBlock(appToken string, dashboardID string, blockID string, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/dashboards/%s/blocks/%s", bitableBase, appToken, dashboardID, blockID)
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("获取仪表盘 Block 失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "获取仪表盘 Block")
+}
+
+// CreateBitableDashboardBlock 创建仪表盘 Block
+func CreateBitableDashboardBlock(appToken string, dashboardID string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/dashboards/%s/blocks", bitableBase, appToken, dashboardID)
+	resp, err := client.Post(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("创建仪表盘 Block 失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "创建仪表盘 Block")
+}
+
+// UpdateBitableDashboardBlock 更新仪表盘 Block
+func UpdateBitableDashboardBlock(appToken string, dashboardID string, blockID string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/dashboards/%s/blocks/%s", bitableBase, appToken, dashboardID, blockID)
+	resp, err := client.Patch(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("更新仪表盘 Block 失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "更新仪表盘 Block")
+}
+
+// DeleteBitableDashboardBlock 删除仪表盘 Block
+func DeleteBitableDashboardBlock(appToken string, dashboardID string, blockID string, userAccessToken string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/dashboards/%s/blocks/%s", bitableBase, appToken, dashboardID, blockID)
+	resp, err := client.Delete(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return fmt.Errorf("删除仪表盘 Block 失败: %w", err)
+	}
+
+	return checkBitableError(resp, "删除仪表盘 Block")
+}
+
+// ==================== 视图高级配置 ====================
+
+// GetBitableViewConfig 获取视图配置（filter_info/sort_info/group_info）
+// 通过 GET /views/:view_id 获取完整视图信息，然后从 property 中提取对应配置
+func GetBitableViewConfig(appToken string, tableID string, viewID string, configType string, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	// 正确路径：GET /views/:view_id，无独立的 filter_info/sort_info/group_info 子路径
+	apiPath := fmt.Sprintf("%s/apps/%s/tables/%s/views/%s", bitableBase, appToken, tableID, viewID)
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("获取视图配置失败: %w", err)
+	}
+
+	data, err := parseBitableRawResponse(resp, "获取视图配置")
+	if err != nil {
+		return nil, err
+	}
+
+	// 从 view.property 中提取对应的配置
+	view, _ := data["view"].(map[string]any)
+	if view == nil {
+		return data, nil
+	}
+	property, _ := view["property"].(map[string]any)
+	if property == nil {
+		return map[string]any{}, nil
+	}
+	if configData, ok := property[configType]; ok {
+		if m, ok := configData.(map[string]any); ok {
+			return m, nil
+		}
+	}
+
+	return map[string]any{}, nil
+}
+
+// SetBitableViewConfig 设置视图配置（filter_info/sort_info/group_info）
+// 通过 PATCH /views/:view_id 更新视图属性
+func SetBitableViewConfig(appToken string, tableID string, viewID string, configType string, reqBody any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	// 正确路径：PATCH /views/:view_id，将配置包装在 property 中
+	patchBody := map[string]any{
+		"property": map[string]any{
+			configType: reqBody,
+		},
+	}
+
+	apiPath := fmt.Sprintf("%s/apps/%s/tables/%s/views/%s", bitableBase, appToken, tableID, viewID)
+	resp, err := client.Patch(Context(), apiPath, patchBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("设置视图配置失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "设置视图配置")
+}
+
+// ==================== 工作流（Workflow）操作 ====================
+
+// ListBitableWorkflows 列出工作流
+func ListBitableWorkflows(appToken string, pageSize int, pageToken string, userAccessToken string) ([]map[string]any, string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := buildBitablePagePath(
+		fmt.Sprintf("%s/apps/%s/workflows", bitableBase, appToken),
+		pageSize,
+		pageToken,
+	)
+
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, "", fmt.Errorf("列出工作流失败: %w", err)
+	}
+
+	return parseBitableRawPagedListResponse(resp, "列出工作流", "workflows")
+}
+
+// GetBitableWorkflow 获取工作流
+func GetBitableWorkflow(appToken string, workflowID string, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/workflows/%s", bitableBase, appToken, workflowID)
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("获取工作流失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "获取工作流")
+}
+
+// EnableBitableWorkflow 启用工作流
+// 正确 API：PUT /workflows/:workflow_id，请求体 {"status": "Enable"}
+func EnableBitableWorkflow(appToken string, workflowID string, userAccessToken string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	reqBody := map[string]any{
+		"status": "Enable",
+	}
+
+	apiPath := fmt.Sprintf("%s/apps/%s/workflows/%s", bitableBase, appToken, workflowID)
+	resp, err := client.Put(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return fmt.Errorf("启用工作流失败: %w", err)
+	}
+
+	return checkBitableError(resp, "启用工作流")
+}
+
+// DisableBitableWorkflow 禁用工作流
+// 正确 API：PUT /workflows/:workflow_id，请求体 {"status": "Disable"}
+func DisableBitableWorkflow(appToken string, workflowID string, userAccessToken string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	reqBody := map[string]any{
+		"status": "Disable",
+	}
+
+	apiPath := fmt.Sprintf("%s/apps/%s/workflows/%s", bitableBase, appToken, workflowID)
+	resp, err := client.Put(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return fmt.Errorf("禁用工作流失败: %w", err)
+	}
+
+	return checkBitableError(resp, "禁用工作流")
+}
+
+// ==================== 表单（Form）操作 ====================
+
+// ListBitableForms 列出表单
+// 注意：飞书 API 没有独立的 list forms 接口，通过 list views 过滤 form 类型实现
+func ListBitableForms(appToken string, tableID string, pageSize int, pageToken string, userAccessToken string) ([]map[string]any, string, error) {
+	// 通过列出视图接口获取所有视图，然后过滤出 form 类型的
+	views, nextToken, err := ListBitableViews(appToken, tableID, 100, pageToken, userAccessToken)
+	if err != nil {
+		return nil, "", fmt.Errorf("列出表单失败: %w", err)
+	}
+
+	var forms []map[string]any
+	for _, v := range views {
+		if v.ViewType == "form" {
+			forms = append(forms, map[string]any{
+				"form_id":   v.ViewID,
+				"name":      v.ViewName,
+				"view_type": v.ViewType,
+			})
+		}
+	}
+
+	return forms, nextToken, nil
+}
+
+// GetBitableForm 获取表单
+func GetBitableForm(appToken string, tableID string, formID string, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/tables/%s/forms/%s", bitableBase, appToken, tableID, formID)
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("获取表单失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "获取表单")
+}
+
+// PatchBitableForm 更新表单
+func PatchBitableForm(appToken string, tableID string, formID string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/tables/%s/forms/%s", bitableBase, appToken, tableID, formID)
+	resp, err := client.Patch(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("更新表单失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "更新表单")
+}
+
+// ==================== 角色（Role）操作 ====================
+
+// ListBitableRoles 列出角色（使用 base/v2 新版 API）
+func ListBitableRoles(appToken string, pageSize int, pageToken string, userAccessToken string) ([]map[string]any, string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, "", err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	// 新版 API 路径：/open-apis/base/v2/apps/:app_token/roles
+	apiPath := buildBitablePagePath(
+		fmt.Sprintf("/open-apis/base/v2/apps/%s/roles", appToken),
+		pageSize,
+		pageToken,
+	)
+
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, "", fmt.Errorf("列出角色失败: %w", err)
+	}
+
+	return parseBitableRawPagedListResponse(resp, "列出角色", "items")
+}
+
+// CreateBitableRole 创建角色（使用 base/v2 新版 API）
+func CreateBitableRole(appToken string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	// 新版 API 路径：/open-apis/base/v2/apps/:app_token/roles
+	apiPath := fmt.Sprintf("/open-apis/base/v2/apps/%s/roles", appToken)
+	resp, err := client.Post(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("创建角色失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "创建角色")
+}
+
+// DeleteBitableRole 删除角色
+func DeleteBitableRole(appToken string, roleID string, userAccessToken string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/roles/%s", bitableBase, appToken, roleID)
+	resp, err := client.Delete(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return fmt.Errorf("删除角色失败: %w", err)
+	}
+
+	return checkBitableError(resp, "删除角色")
+}
+
+// ==================== 复制（Copy）操作 ====================
+
+// CopyBitableApp 复制多维表格
+func CopyBitableApp(appToken string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	apiPath := fmt.Sprintf("%s/apps/%s/copy", bitableBase, appToken)
+	resp, err := client.Post(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("复制多维表格失败: %w", err)
+	}
+
+	return parseBitableRawResponse(resp, "复制多维表格")
+}
+
+// ==================== 高级权限（Advanced Permissions）操作 ====================
+
+// UpdateBitableAdvancedPermissions 启用或禁用多维表格高级权限
+// 正确 API：PUT /open-apis/bitable/v1/apps/:app_token，请求体 {"is_advanced": true/false}
+func UpdateBitableAdvancedPermissions(appToken string, enabled bool, userAccessToken string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	reqBody := map[string]any{
+		"is_advanced": enabled,
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+
+	// 正确路径：PUT /apps/:app_token（更新多维表格元数据）
+	apiPath := fmt.Sprintf("%s/apps/%s", bitableBase, appToken)
+	resp, err := client.Put(Context(), apiPath, reqBody, tokenType, opts...)
+	if err != nil {
+		action := "启用"
+		if !enabled {
+			action = "禁用"
+		}
+		return fmt.Errorf("%s高级权限失败: %w", action, err)
+	}
+
+	action := "启用"
+	if !enabled {
+		action = "禁用"
+	}
+	return checkBitableError(resp, action+"高级权限")
+}
+
+// ==================== 通用 Raw 响应解析 ====================
+
+// parseBitableRawResponse 解析 Bitable API 响应，返回 data 字段的原始 map
+func parseBitableRawResponse(resp *larkcore.ApiResp, action string) (map[string]any, error) {
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s失败: HTTP %d, body: %s", action, resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int            `json:"code"`
+		Msg  string         `json:"msg"`
+		Data map[string]any `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("%s失败: code=%d, msg=%s", action, apiResp.Code, apiResp.Msg)
+	}
+
+	return apiResp.Data, nil
+}
+
+// parseBitableRawPagedListResponse 解析带分页的 Bitable API 列表响应，返回原始 map 切片
+func parseBitableRawPagedListResponse(resp *larkcore.ApiResp, action string, itemsKey string) ([]map[string]any, string, error) {
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("%s失败: HTTP %d, body: %s", action, resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Items     json.RawMessage `json:"items"`
+			PageToken string          `json:"page_token"`
+			HasMore   bool            `json:"has_more"`
+		} `json:"data"`
+	}
+
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, "", fmt.Errorf("解析响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, "", fmt.Errorf("%s失败: code=%d, msg=%s", action, apiResp.Code, apiResp.Msg)
+	}
+
+	// 优先尝试从指定 key 获取列表
+	var rawData map[string]json.RawMessage
+	if err := json.Unmarshal(resp.RawBody, &struct {
+		Data *map[string]json.RawMessage `json:"data"`
+	}{Data: &rawData}); err == nil {
+		if raw, ok := rawData[itemsKey]; ok {
+			var items []map[string]any
+			if err := json.Unmarshal(raw, &items); err == nil {
+				nextPageToken := ""
+				if apiResp.Data.HasMore {
+					nextPageToken = apiResp.Data.PageToken
+				}
+				return items, nextPageToken, nil
+			}
+		}
+	}
+
+	// 回退到 items 字段
+	var items []map[string]any
+	if apiResp.Data.Items != nil {
+		if err := json.Unmarshal(apiResp.Data.Items, &items); err != nil {
+			return nil, "", fmt.Errorf("解析列表数据失败: %w", err)
+		}
+	}
+
+	nextPageToken := ""
+	if apiResp.Data.HasMore {
+		nextPageToken = apiResp.Data.PageToken
+	}
+
+	return items, nextPageToken, nil
+}

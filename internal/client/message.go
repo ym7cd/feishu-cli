@@ -806,6 +806,57 @@ func ListPins(chatID string, startTime, endTime, pageToken string, pageSize int,
 	}, nil
 }
 
+// DownloadMessageResource 下载消息中的资源文件（图片/文件）
+func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userAccessToken string) error {
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).
+		FileKey(fileKey).
+		Type(resourceType).
+		Build()
+
+	resp, err := client.Im.MessageResource.Get(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return fmt.Errorf("下载消息资源失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return fmt.Errorf("下载消息资源失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if err := resp.WriteFile(outputPath); err != nil {
+		return fmt.Errorf("保存文件失败: %w", err)
+	}
+
+	return nil
+}
+
+// BatchGetMessages 批量获取消息详情（逐条调用 GetMessage）
+func BatchGetMessages(messageIDs []string, userAccessToken string) ([]*larkim.Message, error) {
+	var results []*larkim.Message
+	for _, id := range messageIDs {
+		msgResult, err := GetMessage(id, userAccessToken)
+		if err != nil {
+			return nil, fmt.Errorf("获取消息 %s 失败: %w", id, err)
+		}
+		results = append(results, msgResult.Message)
+	}
+	return results, nil
+}
+
+// ListThreadMessages 列出线程/话题中的消息
+func ListThreadMessages(threadID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
+	// 设置 container_id_type 为 thread
+	opts.ContainerIDType = "thread"
+
+	// 复用 ListMessages 逻辑（支持 user token 绕过 SDK 限制）
+	return ListMessages(threadID, opts, userAccessToken)
+}
+
 // GetReadUsers gets the list of users who have read a message
 func GetReadUsers(messageID string, userIDType string, pageSize int, pageToken string, userAccessToken string) (*ReadUsersResult, error) {
 	client, err := GetClient()

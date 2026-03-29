@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 )
@@ -317,4 +318,61 @@ func GetBoardNodes(whiteboardID string) (json.RawMessage, error) {
 	}
 
 	return resp.RawBody, nil
+}
+
+// DeleteBoardNodes 批量删除画板节点
+// 每批最多 100 个，间隔 1s 避免限流
+func DeleteBoardNodes(whiteboardID string, nodeIDs []string) error {
+	if len(nodeIDs) == 0 {
+		return nil
+	}
+
+	client, err := GetClient()
+	if err != nil {
+		return err
+	}
+
+	apiPath := fmt.Sprintf("/open-apis/board/v1/whiteboards/%s/nodes/batch_delete", whiteboardID)
+
+	// 分批删除，每批 100 个
+	batchSize := 100
+	for i := 0; i < len(nodeIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(nodeIDs) {
+			end = len(nodeIDs)
+		}
+		batch := nodeIDs[i:end]
+
+		reqBody := map[string]any{
+			"ids": batch,
+		}
+
+		resp, err := client.Delete(Context(), apiPath, reqBody, larkcore.AccessTokenTypeTenant)
+		if err != nil {
+			return fmt.Errorf("删除画板节点失败: %w", err)
+		}
+
+		if resp.StatusCode != http.StatusOK {
+			return fmt.Errorf("删除画板节点失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+		}
+
+		// 解析响应检查业务错误
+		var apiResp struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+		}
+		if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+			return fmt.Errorf("解析响应失败: %w", err)
+		}
+		if apiResp.Code != 0 {
+			return fmt.Errorf("删除画板节点失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+		}
+
+		// 多批次时间隔 1s 避免限流
+		if end < len(nodeIDs) {
+			time.Sleep(1 * time.Second)
+		}
+	}
+
+	return nil
 }

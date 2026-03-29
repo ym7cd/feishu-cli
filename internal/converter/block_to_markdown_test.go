@@ -1161,8 +1161,8 @@ func TestBlockToMd_MentionUserFallback(t *testing.T) {
 		t.Fatalf("转换失败: %v", err)
 	}
 
-	if !strings.Contains(result, "@[user:ou_unknown]") {
-		t.Errorf("找不到用户时应降级为原始格式: %s", result)
+	if !strings.Contains(result, `<mention-user id="ou_unknown"/>`) {
+		t.Errorf("找不到用户时应降级为 HTML 标签格式: %s", result)
 	}
 }
 
@@ -1178,8 +1178,8 @@ func TestBlockToMd_MentionDisabled(t *testing.T) {
 		t.Fatalf("转换失败: %v", err)
 	}
 
-	if !strings.Contains(result, "@[user:ou_123]") {
-		t.Errorf("ExpandMentions=false 应保持原始格式: %s", result)
+	if !strings.Contains(result, `<mention-user id="ou_123"/>`) {
+		t.Errorf("ExpandMentions=false 应输出 HTML 标签格式: %s", result)
 	}
 }
 

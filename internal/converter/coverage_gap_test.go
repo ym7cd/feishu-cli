@@ -141,8 +141,8 @@ func TestConvertBitableWithToken(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(md, "[Bitable:") {
-		t.Errorf("expected Bitable link in output, got: %s", md)
+	if !strings.Contains(md, "<bitable") {
+		t.Errorf("expected <bitable tag in output, got: %s", md)
 	}
 }
 
@@ -164,8 +164,8 @@ func TestConvertSheetWithToken(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !strings.Contains(md, "[Sheet:") {
-		t.Errorf("expected Sheet link in output, got: %s", md)
+	if !strings.Contains(md, "<sheet") {
+		t.Errorf("expected <sheet tag in output, got: %s", md)
 	}
 }
 
@@ -2613,8 +2613,8 @@ func TestConvertTextElementsMentionDocWithToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(md, "feishu://doc/doc_token_123") {
-		t.Errorf("expected feishu://doc/ URL, got: %s", md)
+	if !strings.Contains(md, `<mention-doc token="doc_token_123" type="docx">文档标题</mention-doc>`) {
+		t.Errorf("expected mention-doc HTML tag, got: %s", md)
 	}
 }
 
@@ -2847,23 +2847,25 @@ func TestConvertMentionUserExpandedNotInCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(md, "@[user:user_unknown]") {
-		t.Errorf("expected unknown user format, got: %s", md)
+	if !strings.Contains(md, `<mention-user id="user_unknown"/>`) {
+		t.Errorf("expected mention-user HTML tag format, got: %s", md)
 	}
 }
 
-// TestConvertMentionDocURLWithParens 测试 MentionDoc URL 包含括号时编码
-func TestConvertMentionDocURLWithParens(t *testing.T) {
+// TestConvertMentionDocHTMLTagFormat 测试 MentionDoc 输出 HTML 标签格式
+func TestConvertMentionDocHTMLTagFormat(t *testing.T) {
 	title := "文档"
-	docURL := "https://feishu.cn/docx/abc(1)"
+	token := "doxcnABC"
+	objType := 22
 	block := &larkdocx.Block{
 		BlockId:   strPtr("b1"),
 		BlockType: intPtr(int(BlockTypeText)),
 		Text: &larkdocx.Text{
 			Elements: []*larkdocx.TextElement{
 				{MentionDoc: &larkdocx.MentionDoc{
-					Title: &title,
-					Url:   &docURL,
+					Title:   &title,
+					Token:   &token,
+					ObjType: &objType,
 				}},
 			},
 		},
@@ -2875,8 +2877,9 @@ func TestConvertMentionDocURLWithParens(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if !strings.Contains(md, "%28") {
-		t.Errorf("expected encoded parentheses in doc URL, got: %s", md)
+	expected := `<mention-doc token="doxcnABC" type="docx">文档</mention-doc>`
+	if !strings.Contains(md, expected) {
+		t.Errorf("expected %q, got: %s", expected, md)
 	}
 }
 

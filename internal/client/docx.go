@@ -14,6 +14,8 @@ import (
 const (
 	blockTypeText   = 2
 	blockTypeBullet = 12
+	BlockTypeFile   = 23
+	BlockTypeImage  = 27
 	blockTypeBoard  = 43
 )
 
@@ -256,6 +258,16 @@ func UpdateBlock(documentID string, blockID string, updateContent any) error {
 func ReplaceImage(documentID, imageBlockID, fileToken string) error {
 	return UpdateBlock(documentID, imageBlockID, map[string]any{
 		"replace_image": map[string]any{
+			"token": fileToken,
+		},
+	})
+}
+
+// ReplaceFile replaces the file token of a File block.
+// 用于文件三步法上传的���三步：将上传后的 fileToken 设置到 File Block。
+func ReplaceFile(documentID, fileBlockID, fileToken string) error {
+	return UpdateBlock(documentID, fileBlockID, map[string]any{
+		"replace_file": map[string]any{
 			"token": fileToken,
 		},
 	})

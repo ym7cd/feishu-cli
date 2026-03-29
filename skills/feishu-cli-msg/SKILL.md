@@ -2,10 +2,12 @@
 name: feishu-cli-msg
 description: >-
   飞书消息发送。发送消息（text/post/interactive 卡片等 11 种类型）、回复消息、
-  转发/合并转发。使用 App Token（Bot 身份），无需登录。
+  转发/合并转发、批量获取消息、下载消息资源（图片/文件）、获取话题回复列表。
+  使用 App Token（Bot 身份），无需登录。
   当用户请求"发消息"、"回复"、"转发"、"合并转发"、"发通知"、"发卡片"、
-  "给某人发飞书消息"、"通知某人"时使用，即使没有明确说"发送"，
-  只要意图是把信息传达给某人，都应使用此技能。
+  "给某人发飞书消息"、"通知某人"、"批量获取消息"、"下载消息资源"、
+  "下载消息图片"、"下载消息文件"、"话题回复"、"thread 消息"时使用，
+  即使没有明确说"发送"，只要意图是把信息传达给某人，都应使用此技能。
   注意：Reaction/Pin/删除/获取消息详情/消息历史/搜索群聊/群聊管理
   请使用 feishu-cli-chat 技能（需 User Token）。
 argument-hint: <receive_id> [--msg-type <type>]
@@ -546,6 +548,66 @@ feishu-cli msg forward <message_id> \
 | `user not found` | 用户不存在 | 检查邮箱或 ID 是否正确 |
 | `card content too large` | 卡片 JSON 超过 30 KB | 精简卡片内容或拆分为多条消息 |
 | `Bot/User can NOT be out of the chat` | Bot 不在目标群内 | 添加 `--user-access-token` 切换为 User 身份重试 |
+
+## 批量获取消息
+
+一次获取多条消息的详细信息。
+
+```bash
+feishu-cli msg mget --message-ids om_xxx,om_yyy,om_zzz
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `--message-ids` | 消息 ID 列表（逗号分隔） | 必填 |
+
+## 下载消息资源
+
+下载消息中的图片或文件附件。
+
+```bash
+# 下载消息中的图片
+feishu-cli msg resource-download <message_id> <file_key> --type image -o /tmp/photo.png
+
+# 下载消息中的文件
+feishu-cli msg resource-download <message_id> <file_key> --type file -o /tmp/attachment.pdf
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<message_id>` | 消息 ID | 必填 |
+| `<file_key>` | 资源的 file_key | 必填 |
+| `--type` | 资源类型 `image`/`file` | 必填 |
+| `-o, --output` | 输出文件路径 | — |
+
+> **file_key 来源**：通过 `msg get <message_id>` 获取消息详情，从 content 中提取 `image_key` 或 `file_key`。
+
+## 话题回复列表
+
+获取话题（Thread）中的所有回复消息。
+
+```bash
+# 获取话题回复
+feishu-cli msg thread-messages <thread_id>
+
+# 指定排序和分页
+feishu-cli msg thread-messages <thread_id> \
+  --sort ByCreateTimeAsc \
+  --page-size 20
+
+# 指定时间范围
+feishu-cli msg thread-messages <thread_id> \
+  --start-time 1704067200000 \
+  --end-time 1704153600000
+```
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<thread_id>` | 话题 ID | 必填 |
+| `--sort` | 排序方式 `ByCreateTimeAsc`/`ByCreateTimeDesc` | — |
+| `--page-size` | 每页数量 | 50 |
+| `--start-time` | 起始时间（毫秒时间戳） | — |
+| `--end-time` | 结束时间（毫秒时间戳） | — |
 
 ## 参考文档
 

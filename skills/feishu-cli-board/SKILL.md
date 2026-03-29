@@ -13,381 +13,232 @@ user-invocable: true
 allowed-tools: Bash, Read, Write
 ---
 
-# 飞书画板操作技能
+# 飞书画板全功能操作
 
 ## 前置条件
 
-- **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
-- **认证**：需要有效的 App Access Token（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，或 `~/.feishu-cli/config.yaml`）
-- **权限**：应用需开通 `board:whiteboard`（画板读写）和 `docx:document`（文档中添加画板）
-- **验证**：`feishu-cli auth status` 确认认证状态正常
+- **feishu-cli**：如尚未安装，前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取
+- **认证**：环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，或 `~/.feishu-cli/config.yaml`
+- **权限**：`board:whiteboard`（画板读写）+ `docx:document`（文档中添加画板）
+- **验证**：`feishu-cli auth status` 确认认证正常
 
-## 两种模式
+## 工作流程（3 步）
 
-在飞书文档中创建画板并绘制可视化图表。支持两种模式：
+```
+Step 1: 路由选择
+  判断渲染路径：Mermaid 还是 OpenAPI JSON？
 
-| 模式 | 方式 | 适用场景 |
-|------|------|---------|
-| **精排绘图** | `board create-notes` — JSON 描述节点坐标、颜色、连线 | 架构图、看板、自定义布局 |
-| **图表导入** | `board import` — Mermaid/PlantUML 代码自动渲染 | 标准流程图、时序图等 8 种图表 |
+Step 2: 生成节点 JSON 或 Mermaid 代码
+  - JSON 路径：参考 schema.md 构建节点数组 → layout.md 计算坐标 → style.md 上色
+  - Mermaid 路径：直接生成 .mmd 内容
 
-### 何时使用哪种方式
+Step 3: 创建/更新并验证
+  - 创建：board create-notes（先形状，再连线）
+  - 验证：board image 截图检查
+  - 有问题：调整坐标/样式后重新创建
+```
 
-| 需求 | 推荐方式 | 说明 |
-|------|---------|------|
-| 精确控制节点位置、颜色、坐标 | `board create-notes`（本技能） | 完全自定义布局，适合架构图、看板 |
-| 从 Mermaid/PlantUML 代码快速生成图 | `board import` 或 `doc import` | 服务端自动排版，无需手动计算坐标 |
-| 在文档中内嵌简单图表 | `feishu-cli-write` / `feishu-cli-import` 的 Mermaid 支持 | Markdown 中写 Mermaid 代码块，导入时自动转画板 |
+### Step 1: 路由选择
 
-**简单判断**：如果你只需要"画个流程图"且不关心精确坐标，优先用 Mermaid；如果需要"精排"或"自定义配色布局"，用 `create-notes`。
+| 图表类型 | 路径 | 理由 |
+|----------|------|------|
+| 思维导图 | **Mermaid** | 辐射结构自动布局 |
+| 时序图 | **Mermaid** | 参与方+消息自动排列 |
+| 类图 | **Mermaid** | 类关系自动布局 |
+| 饼图 | **Mermaid** | Mermaid 原生支持 |
+| 流程图 | **Mermaid** | 自动排版稳定 |
+| 架构图 | **OpenAPI JSON** | 需要精确分层布局和配色 |
+| 组织架构图 | **OpenAPI JSON** | 树形结构需精确坐标控制 |
+| 对比图/矩阵 | **OpenAPI JSON** | 网格对齐需绝对定位 |
+| 鱼骨图 | **OpenAPI JSON** | 自定义角度和分支 |
+| 柱状图/折线图 | **OpenAPI JSON** | 需要坐标轴计算 |
+| 其他自定义图表 | **OpenAPI JSON** | 精确控制样式和布局 |
 
-## 精排绘图工作流（create-notes）
+**路由规则**：
+1. 思维导图、时序图、类图、饼图、流程图 → 默认走 Mermaid（`board import`）
+2. 用户输入包含 Mermaid 语法 → 走 Mermaid
+3. 其他所有类型 → 走 OpenAPI JSON（`board create-notes`）
 
-这是画板的核心能力，通过 JSON 精确控制每个节点的位置、大小、颜色和连线。
+### Step 2: 生成节点 JSON / Mermaid
 
-### 标准四步流程
+**JSON 路径**（大多数场景）：
+
+1. 按 `references/content.md` 规划信息量和分组
+2. 按 `references/layout.md` 选择布局模式，计算每个节点的 x/y 坐标
+3. 按 `references/style.md` 上色（未指定时用经典色板）
+4. 按 `references/schema.md` 语法输出完整 JSON
+5. 连线参考 `references/connectors.md`，排版参考 `references/typography.md`
+
+**Mermaid 路径**：
 
 ```bash
-# 1. 创建文档（或使用已有文档）
-feishu-cli doc create --title "架构图" -o json
-# → document_id
+# 从内容导入
+feishu-cli board import <whiteboard_id> --source-type content \
+  -c "graph TD; A-->B-->C" --syntax mermaid
 
-# 2. 在文档中添加画板
-feishu-cli doc add-board <document_id> -o json
-# → whiteboard_id
-
-# 3. 创建节点（先形状，再连接线）
-feishu-cli board create-notes <whiteboard_id> shapes.json -o json
-# → node_ids（用于连接线引用）
-feishu-cli board create-notes <whiteboard_id> connectors.json -o json
-
-# 4. 截图验证
-feishu-cli board image <whiteboard_id> output.png
+# 从文件导入
+feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid
 ```
 
-**关键原则**：先创建所有形状节点获取 ID，再创建连接线引用这些 ID。
-
-### 最小示例：2 个节点 + 1 条连线
-
-在深入 JSON 格式细节之前，先看一个最小的完整示例——两个矩形节点通过一条箭头连接：
-
-```bash
-# shapes.json — 两个形状节点
-cat > /tmp/minimal_shapes.json << 'EOF'
-[
-  {"type":"composite_shape","x":100,"y":100,"width":160,"height":40,
-   "composite_shape":{"type":"round_rect"},
-   "text":{"text":"服务 A","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#3399ff","fill_opacity":100,"border_style":"none"},
-   "z_index":10},
-  {"type":"composite_shape","x":400,"y":100,"width":160,"height":40,
-   "composite_shape":{"type":"round_rect"},
-   "text":{"text":"服务 B","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#509863","fill_opacity":100,"border_style":"none"},
-   "z_index":10}
-]
-EOF
-feishu-cli board create-notes $BOARD_ID /tmp/minimal_shapes.json -o json
-# → 返回 node_ids: ["o1:1", "o1:2"]
-
-# connector.json — 一条从服务 A 指向服务 B 的连线
-cat > /tmp/minimal_connector.json << 'EOF'
-[
-  {"type":"connector","width":1,"height":1,"z_index":50,
-   "connector":{"shape":"polyline",
-     "start":{"arrow_style":"none","attached_object":{"id":"o1:1","position":{"x":1,"y":0.5},"snap_to":"right"}},
-     "end":{"arrow_style":"triangle_arrow","attached_object":{"id":"o1:2","position":{"x":0,"y":0.5},"snap_to":"left"}}},
-   "style":{"border_color":"#646a73","border_opacity":100,"border_style":"solid","border_width":"narrow"}}
-]
-EOF
-feishu-cli board create-notes $BOARD_ID /tmp/minimal_connector.json -o json
-```
-
-这就是 create-notes 的基本模式：**形状定义位置和样式 → 连接线通过 ID 引用形状**。下面是各字段的详细说明。
-
-### 节点 JSON 格式
-
-#### 形状节点（composite_shape）
-
-最常用的节点类型，支持矩形、圆角矩形等：
-
-```json
-{
-  "type": "composite_shape",
-  "x": 100, "y": 100, "width": 200, "height": 50,
-  "composite_shape": {"type": "round_rect"},
-  "text": {
-    "text": "节点文本",
-    "font_size": 14,
-    "font_weight": "regular",
-    "horizontal_align": "center",
-    "vertical_align": "mid"
-  },
-  "style": {
-    "fill_color": "#8569cb",
-    "fill_opacity": 100,
-    "border_style": "none"
-  },
-  "z_index": 10
-}
-```
-
-**注意**：多余字段会导致 `2890002 invalid arg` 错误，保持最小格式。
-
-#### 连接线（connector）
-
-连接两个已创建的形状节点：
-
-```json
-{
-  "type": "connector",
-  "width": 1, "height": 1, "z_index": 50,
-  "connector": {
-    "shape": "polyline",
-    "start": {
-      "arrow_style": "none",
-      "attached_object": {
-        "id": "<source_node_id>",
-        "position": {"x": 1, "y": 0.5},
-        "snap_to": "right"
-      }
-    },
-    "end": {
-      "arrow_style": "triangle_arrow",
-      "attached_object": {
-        "id": "<target_node_id>",
-        "position": {"x": 0, "y": 0.5},
-        "snap_to": "left"
-      }
-    }
-  },
-  "style": {
-    "border_color": "#646a73",
-    "border_opacity": 100,
-    "border_style": "solid",
-    "border_width": "narrow"
-  }
-}
-```
-
-#### 连接方向速查
-
-| 方向 | start position | start snap_to | end position | end snap_to |
-|------|---------------|---------------|-------------|-------------|
-| → 左到右 | `{x:1, y:0.5}` | `right` | `{x:0, y:0.5}` | `left` |
-| ↓ 上到下 | `{x:0.5, y:1}` | `bottom` | `{x:0.5, y:0}` | `top` |
-| ← 右到左 | `{x:0, y:0.5}` | `left` | `{x:1, y:0.5}` | `right` |
-| ↑ 下到上 | `{x:0.5, y:0}` | `top` | `{x:0.5, y:1}` | `bottom` |
-
-position 是归一化坐标（0-1），表示节点边缘上的连接点位置。一个节点连多条线时，调整 position 避免重叠（如扇出：`x:0.25`、`x:0.5`、`x:0.75`）。
-
-### 配色方案
-
-为不同实体类型使用不同颜色，让图表一目了然：
-
-| 用途 | 填充色 | 边框色 | 适用对象 |
-|------|--------|--------|---------|
-| 强调/标题 | `#8569cb` | — | 核心服务、标题栏 |
-| 紫色辅助 | `#eae2fe` | `#8569cb` | API、中间层 |
-| 绿色正向 | `#509863` | — | 成功、输出、完成 |
-| 绿色辅助 | `#d5e8d4` | `#509863` | 处理步骤 |
-| 蓝色服务 | `#3399ff` | — | 主服务、入口 |
-| 蓝色辅助 | `#cce5ff` | `#3399ff` | 子服务、组件 |
-| 橙色并发 | `#ffc285` | — | 并发处理、Worker |
-| 橙色辅助 | `#fff0e3` | `#ffc285` | 并发子任务 |
-| 红色告警 | `#ef4444` | — | 错误、降级、告警 |
-| 红色辅助 | `#ffe0e0` | `#ef4444` | 容错处理 |
-| 灰色输入 | `#f5f5f5` | `#616161` | 用户、外部输入 |
-| 连接线 | — | `#646a73` | 普通连线 |
-
-### z_index 与透明度规则
-
-| z_index | 用途 | fill_opacity |
-|---------|------|-------------|
-| 0-1 | 背景色带（分区底色） | ≤25% |
-| 2-3 | 次级区域 | ≤60% |
-| 10 | 常规形状节点 | 100% |
-| 50 | 连接线 | border_opacity=100 |
-
-背景色带 `fill_opacity` 必须 ≤60%，否则遮挡上层节点。
-
-### 布局设计建议
-
-绘制复杂图表时的布局规划方法：
-
-1. **确定画布尺寸** — 宽 800px 左右，高度按行数估算（每行 ~80px 间距）
-2. **按行分区** — 标题行、输入行、处理行、输出行，每行 y 坐标递增
-3. **对齐网格** — 同层节点 y 坐标相同，节点间 x 间距 ≥30px
-4. **背景色带** — 用低透明度矩形作为分区视觉标记（z_index=0）
-5. **先画再连** — 所有形状一个批次创建，拿到 ID 后再创建连接线
-
-### 传参方式
-
-```bash
-# 从 JSON 文件（推荐，复杂图表）
-feishu-cli board create-notes <whiteboard_id> nodes.json -o json
-
-# 内联 JSON（简单场景）
-feishu-cli board create-notes <whiteboard_id> '<json_array>' --source-type content -o json
-```
-
-## Mermaid / PlantUML 图表导入
-
-将 Mermaid 或 PlantUML 代码自动渲染为飞书画板（服务端排版）：
-
-```bash
-# 从内容导入 Mermaid
-feishu-cli board import <whiteboard_id> \
-  --source-type content \
-  -c "graph TD; A-->B-->C" \
-  --syntax mermaid
-
-# 从文件导入 PlantUML
-feishu-cli board import <whiteboard_id> diagram.puml --syntax plantuml
-
-# 指定图表类型（通常 auto 即可）
-feishu-cli board import <whiteboard_id> diagram.mmd --syntax mermaid --diagram-type 6
-```
-
-### 支持的 Mermaid 类型（8 种，全部验证通过）
-
-| 类型 | 声明 | diagram-type |
-|------|------|-------------|
-| 流程图 | `flowchart TD` | 6 |
-| 时序图 | `sequenceDiagram` | 2 |
-| 类图 | `classDiagram` | 4 |
-| 状态图 | `stateDiagram-v2` | 0 (auto) |
-| ER 图 | `erDiagram` | 5 |
-| 甘特图 | `gantt` | 0 (auto) |
-| 饼图 | `pie` | 0 (auto) |
-| 思维导图 | `mindmap` | 1 |
-
-### Mermaid 限制
-
-- 禁止花括号 `{text}`（被识别为菱形节点）
-- 禁止 `par...and...end`（飞书不支持）
-- 参与者建议 ≤8（过多会渲染失败）
-- 复杂图表失败时会降级为代码块
-
-## 其他画板命令
-
-```bash
-# 下载画板为 PNG 图片
-feishu-cli board image <whiteboard_id> output.png
-
-# 获取画板所有节点（JSON）
-feishu-cli board nodes <whiteboard_id>
-
-# 在文档中添加空画板
-feishu-cli doc add-board <document_id> -o json
-```
-
-## 复制/修改画板（Redraw 模式）
-
-画板 API 不支持修改或删除已有节点，修改需要重建：
-
-1. `board nodes` 导出原始节点
-2. 清洗数据 — 移除只读字段（`id`、`locked`、`children`、`text_color_type`、`fill_color_type`、`border_color_type`、`start_object`/`end_object`）
-3. 分离形状和连接线
-4. 新画板中先创建形状 → 映射旧 ID 到新 ID → 再创建连接线
-
-详细的清洗字段列表和 Redraw 流程见 `references/node-api.md`。
-
-## 权限要求
-
-| 权限 | 说明 |
-|------|------|
-| `board:whiteboard` | 画板读写 |
-| `docx:document` | 文档中添加画板 |
-
-## 错误排障
-
-### 错误码速查
-
-| 错误码 | 含义 | 常见原因 |
-|--------|------|---------|
-| 2890001 | invalid format | JSON 格式错误 |
-| 2890002 | invalid arg | 包含未公开字段（如 `sticky_note` 类型）或格式不对 |
-| 2890003 | record missing | whiteboard_id 不存在 |
-| 2890006 | rate limited | 超过 50 req/s |
-
-### 排障指引
-
-**2890002 invalid arg（最常见）**：
-
-JSON 中包含了 API 不支持的字段。只使用以下安全字段：
-
-- `composite_shape` 节点：`type`, `x`, `y`, `width`, `height`, `composite_shape`, `text`, `style`, `z_index`
-- `connector` 节点：`type`, `width`, `height`, `z_index`, `connector`, `style`
-- `text` 对象：`text`, `font_size`, `font_weight`, `horizontal_align`, `vertical_align`
-- `style` 对象：`fill_color`, `fill_opacity`, `border_style`, `border_color`, `border_width`, `border_opacity`
-
-排查步骤：逐步删减 JSON 字段，定位导致错误的多余字段。常见陷阱包括 `id`、`locked`、`children`、`text_color_type` 等只读字段。
-
-**画板创建失败**：
-
-- 检查应用是否已开通 `board:whiteboard` 权限
-- 确认 `whiteboard_id` 来自 `doc add-board` 的返回值，而非 `document_id`
-- 运行 `feishu-cli auth status` 确认 Token 有效
-
-**Mermaid 导入降级为代码块**：
-
-- 飞书服务端解析失败时会自动降级，属于预期行为
-- 使用 `--verbose` 查看具体的服务端错误信息
-- 常见原因：花括号 `{text}`、`par...and...end` 语法、参与者过多（>8）
-- 解决方案：简化图表语法，或拆分为多个小图表
-
-## 完整示例：绘制简单架构图
+### Step 3: 创建/更新并验证
 
 ```bash
 # 1. 创建文档和画板
 DOC_ID=$(feishu-cli doc create --title "架构图" -o json | python3 -c "import sys,json;print(json.load(sys.stdin)['document_id'])")
 BOARD_ID=$(feishu-cli doc add-board $DOC_ID -o json | python3 -c "import sys,json;print(json.load(sys.stdin)['whiteboard_id'])")
 
-# 2. 创建形状节点
-cat > /tmp/shapes.json << 'EOF'
-[
-  {"type":"composite_shape","x":50,"y":50,"width":150,"height":40,
-   "composite_shape":{"type":"round_rect"},
-   "text":{"text":"客户端","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#f5f5f5","fill_opacity":100,"border_style":"solid","border_color":"#616161","border_width":"narrow"},
-   "z_index":10},
-  {"type":"composite_shape","x":300,"y":50,"width":150,"height":40,
-   "composite_shape":{"type":"round_rect"},
-   "text":{"text":"API 网关","font_size":14,"font_weight":"bold","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#3399ff","fill_opacity":100,"border_style":"none"},
-   "z_index":10},
-  {"type":"composite_shape","x":550,"y":50,"width":150,"height":40,
-   "composite_shape":{"type":"round_rect"},
-   "text":{"text":"数据库","font_size":14,"font_weight":"regular","horizontal_align":"center","vertical_align":"mid"},
-   "style":{"fill_color":"#509863","fill_opacity":100,"border_style":"none"},
-   "z_index":10}
-]
-EOF
-feishu-cli board create-notes $BOARD_ID /tmp/shapes.json -o json
-# → 返回 node_ids: ["o1:1", "o1:2", "o1:3"]
+# 2. 创建形状节点（先形状）
+feishu-cli board create-notes $BOARD_ID shapes.json -o json
+# → 返回 node_ids: ["o1:1", "o1:2", ...]
 
-# 3. 创建连接线（引用上面返回的 ID）
-cat > /tmp/connectors.json << 'EOF'
-[
-  {"type":"connector","width":1,"height":1,"z_index":50,
-   "connector":{"shape":"polyline",
-     "start":{"arrow_style":"none","attached_object":{"id":"o1:1","position":{"x":1,"y":0.5},"snap_to":"right"}},
-     "end":{"arrow_style":"triangle_arrow","attached_object":{"id":"o1:2","position":{"x":0,"y":0.5},"snap_to":"left"}}},
-   "style":{"border_color":"#646a73","border_opacity":100,"border_style":"solid","border_width":"narrow"}},
-  {"type":"connector","width":1,"height":1,"z_index":50,
-   "connector":{"shape":"polyline",
-     "start":{"arrow_style":"none","attached_object":{"id":"o1:2","position":{"x":1,"y":0.5},"snap_to":"right"}},
-     "end":{"arrow_style":"triangle_arrow","attached_object":{"id":"o1:3","position":{"x":0,"y":0.5},"snap_to":"left"}}},
-   "style":{"border_color":"#646a73","border_opacity":100,"border_style":"solid","border_width":"narrow"}}
-]
-EOF
-feishu-cli board create-notes $BOARD_ID /tmp/connectors.json -o json
+# 3. 创建连接线（引用上面的 ID）
+feishu-cli board create-notes $BOARD_ID connectors.json -o json
 
 # 4. 截图验证
-feishu-cli board image $BOARD_ID /tmp/architecture.png
+feishu-cli board image $BOARD_ID output.png
 ```
 
-## 详细 API 参考
+**视觉审查**：检查信息完整、布局合理、配色协调、文字无截断、连线无交叉。有问题按症状表修复后重新创建。
 
-节点类型完整字段、connector 高级参数、Redraw 清洗字段等详细信息见 `references/node-api.md`。
+## 命令速查
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `board create-notes` | 批量创建节点（形状+连线） | `feishu-cli board create-notes <id> nodes.json -o json` |
+| `board import` | 导入 Mermaid/PlantUML | `feishu-cli board import <id> diagram.mmd --syntax mermaid` |
+| `board image` | 下载画板为 PNG | `feishu-cli board image <id> output.png` |
+| `board nodes` | 获取画板所有节点 | `feishu-cli board nodes <id>` |
+| `doc add-board` | 在文档中添加空画板 | `feishu-cli doc add-board <doc_id> -o json` |
+
+**传参方式**：
+
+```bash
+# 从 JSON 文件（推荐）
+feishu-cli board create-notes <id> nodes.json -o json
+
+# 内联 JSON（简单场景）
+feishu-cli board create-notes <id> '<json_array>' --source-type content -o json
+```
+
+## 关键约束速查表
+
+1. **先形状后连线** -- 连接线通过 ID 引用形状节点，必须在形状创建后再创建连线
+2. **最小字段集** -- 多余字段导致 `2890002 invalid arg`，只用 schema.md 列出的安全字段
+3. **背景色块 fill_opacity <= 60** -- 否则完全遮挡上层节点
+4. **z_index 分层** -- 背景 0-1、次级 2-3、常规节点 10、连线 50
+5. **坐标系为绝对坐标** -- 没有自动布局引擎，每个节点必须手算 x/y/width/height
+6. **节点文字保持简短** -- 标题 + 简短说明（12 字以内），不写长段落
+7. **同组节点视觉一致** -- 同一分组内所有节点使用相同的 fillColor/borderColor
+
+## 症状 → 修复表
+
+| 看到的问题 | 改什么 |
+|-----------|--------|
+| 文字被截断/溢出 | 增大 width 或 height，或缩短文字 |
+| 节点重叠粘连 | 增大节点间距（同层 >= 30px，有连线 >= 60px） |
+| 背景色块遮挡节点 | 降低 fill_opacity（<= 25），确认 z_index 分层正确 |
+| 连线穿过节点 | 调整 snap_to 方向或增大间距 |
+| 布局整体偏左/偏右 | 调整 x 坐标使内容居中 |
+| 大面积空白 | 缩小画布宽度，减小节点间距 |
+| 文字和背景色太接近 | 调整 fill_color 或 text.font_color，确保对比度 |
+| 分组看不出来 | 为每个分组使用不同颜色（见 style.md 色板） |
+| 连线箭头挤在缝里 | 有连线的节点间距 >= 60px |
+| 2890002 invalid arg | 检查是否包含多余字段（id/locked/children 等只读字段） |
+
+## 渲染前自查
+
+生成 JSON 后、创建节点前，快速检查：
+
+- [ ] 不同分组用了不同颜色？同组节点样式完全一致？
+- [ ] 外层浅色背景（低 opacity）、内层节点实心填充？
+- [ ] 所有节点有边框（border_style=solid, border_width=medium）？
+- [ ] 连线用灰色（#BBBFC4 或 #646A73），不用彩色？
+- [ ] 背景色块 z_index=0-1 且 fill_opacity <= 25？
+- [ ] 节点间距充足（同层 >= 30px，有连线 >= 60px）？
+- [ ] JSON 中没有多余字段（id/locked/children 等）？
+
+## board update — 更新画板内容
+
+更新画板节点内容，支持从文件或 stdin 读取节点 JSON。
+
+```bash
+feishu-cli board update <whiteboard_id> [nodes_json_file] [--overwrite] [--dry-run] [--stdin]
+```
+
+### 参数说明
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<whiteboard_id>` | 画板 ID | 必填 |
+| `[nodes_json_file]` | 节点 JSON 文件路径 | 与 `--stdin` 二选一 |
+| `--stdin` | 从标准输入读取节点 JSON | 否 |
+| `--overwrite` | 覆盖模式（先写后删，保证不会出现空画板） | 否 |
+| `--dry-run` | 仅预览，输出将要删除的节点数量，不实际执行（需配合 `--overwrite`） | 否 |
+| `-o json` | JSON 格式输出 | 否 |
+
+### 使用示例
+
+```bash
+# 从文件更新（追加模式，保留旧节点）
+feishu-cli board update BOARD_ID nodes.json
+
+# 覆盖模式：先创建新节点，再删除旧节点
+feishu-cli board update BOARD_ID nodes.json --overwrite
+
+# 从 stdin 管道更新（覆盖模式）
+cat nodes.json | feishu-cli board update BOARD_ID --stdin --overwrite
+
+# 预览覆盖操作（不实际执行）
+feishu-cli board update BOARD_ID nodes.json --overwrite --dry-run
+
+# JSON 格式输出（返回新节点 ID 列表）
+feishu-cli board update BOARD_ID nodes.json --overwrite -o json
+```
+
+### 覆盖模式流程
+
+1. 获取当前画板所有旧节点 ID
+2. 创建新节点
+3. 删除不在新节点中的旧节点（先写后删，避免空画板）
+
+## board delete — 删除画板节点
+
+批量删除画板中的节点，支持指定节点 ID 或清空整个画板。
+
+```bash
+feishu-cli board delete <whiteboard_id> [--node-ids id1,id2] [--all]
+```
+
+### 参数说明
+
+| 参数 | 说明 | 默认值 |
+|------|------|--------|
+| `<whiteboard_id>` | 画板 ID | 必填 |
+| `--node-ids` | 要删除的节点 ID（逗号分隔） | 与 `--all` 二选一 |
+| `--all` | 删除所有节点（清空画板） | 否 |
+| `-o json` | JSON 格式输出 | 否 |
+
+### 使用示例
+
+```bash
+# 删除指定节点
+feishu-cli board delete BOARD_ID --node-ids o1:1,o1:2,o1:3
+
+# 删除所有节点（清空画板）
+feishu-cli board delete BOARD_ID --all
+
+# JSON 格式输出
+feishu-cli board delete BOARD_ID --all -o json
+```
+
+## 参考文档索引
+
+| 文件 | 说明 | 何时读 |
+|------|------|--------|
+| `references/schema.md` | 节点类型、属性、JSON 格式 | JSON 路径必读 |
+| `references/layout.md` | 布局策略、坐标计算、间距规则 | JSON 路径必读 |
+| `references/style.md` | 5 套预设色板、上色步骤 | JSON 路径必读 |
+| `references/connectors.md` | 连线策略、方向、形状选择 | 有连线时读 |
+| `references/typography.md` | 字号层级、对齐规则 | 需要排版时读 |
+| `references/content.md` | 信息量规划、分组规则 | 规划阶段读 |
+| `references/node-api.md` | API 端点、错误码、Redraw 流程 | 排障/高级操作时读 |
