@@ -346,7 +346,7 @@ feishu-cli chat link <chat_id> [--validity-period week|year|permanently]
 
 ## 5. 审批查询
 
-查询审批定义详情（审批模板/流程定义），以及当前登录用户的审批待办、已办、已发起或抄送任务。`approval task query` 依赖 `auth login` 的当前登录态，也支持 `--output raw-json` 查看飞书 API 原始响应。
+查询审批定义详情（审批模板/流程定义），以及当前登录用户的审批待办、已办、已发起或抄送任务。`approval get` 和 `approval task query` 都支持 `--output raw-json` 查看飞书 API 原始响应；其中 `approval task query` 依赖 `auth login` 的当前登录态。
 
 ### 常用命令
 
@@ -354,6 +354,7 @@ feishu-cli chat link <chat_id> [--validity-period week|year|permanently]
 # 查询审批定义详情（审批模板/流程定义）
 feishu-cli approval get <approval_code>
 feishu-cli approval get <approval_code> --output json
+feishu-cli approval get <approval_code> --output raw-json
 
 # 查询当前登录用户审批任务
 feishu-cli approval task query --topic todo

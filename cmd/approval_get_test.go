@@ -1,6 +1,9 @@
 package cmd
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestValidateApprovalCode(t *testing.T) {
 	tests := []struct {
@@ -37,5 +40,24 @@ func TestValidateApprovalCode(t *testing.T) {
 				t.Fatalf("validateApprovalCode(%q) error = %v, wantErr %v", tt.code, err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestApprovalGetOutputFlagSupportsRawJSON(t *testing.T) {
+	flag := approvalGetCmd.Flags().Lookup("output")
+	if flag == nil {
+		t.Fatal("approvalGetCmd should register --output")
+	}
+	if got := flag.Usage; got != "输出格式（json/raw-json）" {
+		t.Fatalf("--output usage = %q, want %q", got, "输出格式（json/raw-json）")
+	}
+}
+
+func TestApprovalGetLongHelpMentionsRawJSONAndAlignedExamples(t *testing.T) {
+	if !strings.Contains(approvalGetCmd.Long, "--output raw-json") {
+		t.Fatalf("approvalGetCmd.Long should mention raw-json, got %q", approvalGetCmd.Long)
+	}
+	if !strings.Contains(approvalGetCmd.Long, "\n示例:\n") {
+		t.Fatalf("approvalGetCmd.Long should align 示例 header with other commands, got %q", approvalGetCmd.Long)
 	}
 }

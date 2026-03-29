@@ -127,7 +127,7 @@ app_secret: "xxx"
   4. `config.yaml` 中的 `user_access_token` 静态配置
 - **审批任务查询**：`approval task query` 会先通过 `resolveRequiredUserToken` 获取当前用户 Token，再调用 `/authen/v1/user_info` 推断当前登录用户的 `open_id`；用户资料会缓存到 `~/.feishu-cli/user_profile.json`，登录态变化或 `auth logout` 时自动清理
 
-**审批任务查询输出模式**：
+**审批相关输出模式**：
 - 不传 `--output`：输出便于阅读的文本摘要
 - `--output json`：输出 CLI 归一化后的 JSON，部分字段会做拍平和字符串化处理
 - `--output raw-json`：输出飞书 API 原始响应，便于排查字段差异
@@ -205,6 +205,7 @@ feishu-cli auth logout                             # 退出登录
 # === 审批 ===
 feishu-cli approval get <approval_code>            # 查询审批模板/流程定义
 feishu-cli approval get <approval_code> --output json
+feishu-cli approval get <approval_code> --output raw-json
 feishu-cli approval task query --topic todo
 feishu-cli approval task query --topic started --output json
 feishu-cli approval task query --topic started --output raw-json

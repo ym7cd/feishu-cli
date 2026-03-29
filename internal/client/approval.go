@@ -175,57 +175,95 @@ type approvalTaskURLs struct {
 	Pc       approvalTaskString `json:"pc,omitempty"`
 }
 
-// GetApprovalDefinition retrieves approval definition details by approval code.
-func GetApprovalDefinition(approvalCode string, opts GetApprovalOptions) (*ApprovalDefinition, error) {
+type approvalGetAPIResp struct {
+	Code int                               `json:"code"`
+	Msg  string                            `json:"msg"`
+	Data *larkapproval.GetApprovalRespData `json:"data"`
+}
+
+func getApprovalDefinitionRawBody(approvalCode string, opts GetApprovalOptions) ([]byte, error) {
 	client, err := GetClient()
 	if err != nil {
 		return nil, err
 	}
 
-	reqBuilder := larkapproval.NewGetApprovalReqBuilder().
-		ApprovalCode(approvalCode)
-
+	req := &larkcore.ApiReq{
+		HttpMethod:                http.MethodGet,
+		ApiPath:                   "/open-apis/approval/v4/approvals/:approval_code",
+		PathParams:                larkcore.PathParams{},
+		QueryParams:               larkcore.QueryParams{},
+		SupportedAccessTokenTypes: []larkcore.AccessTokenType{larkcore.AccessTokenTypeTenant},
+	}
+	req.PathParams.Set("approval_code", approvalCode)
 	if opts.Locale != "" {
-		reqBuilder.Locale(opts.Locale)
+		req.QueryParams.Set("locale", opts.Locale)
 	}
 	if opts.WithAdminID {
-		reqBuilder.WithAdminId(true)
+		req.QueryParams.Set("with_admin_id", "true")
 	}
 	if opts.UserIDType != "" {
-		reqBuilder.UserIdType(opts.UserIDType)
+		req.QueryParams.Set("user_id_type", opts.UserIDType)
 	}
 	if opts.WithOption {
-		reqBuilder.WithOption(true)
+		req.QueryParams.Set("with_option", "true")
 	}
 	if opts.UserID != "" {
-		reqBuilder.UserId(opts.UserID)
+		req.QueryParams.Set("user_id", opts.UserID)
 	}
 
-	resp, err := client.Approval.V4.Approval.Get(Context(), reqBuilder.Build())
+	resp, err := client.Do(Context(), req)
 	if err != nil {
 		return nil, fmt.Errorf("获取审批定义失败: %w", err)
 	}
 
-	if !resp.Success() {
-		return nil, fmt.Errorf("获取审批定义失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("获取审批定义失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
 	}
 
-	if resp.Data == nil {
+	return resp.RawBody, nil
+}
+
+// GetApprovalDefinitionRaw retrieves the raw approval definition response body from the API.
+func GetApprovalDefinitionRaw(approvalCode string, opts GetApprovalOptions) ([]byte, error) {
+	return getApprovalDefinitionRawBody(approvalCode, opts)
+}
+
+// GetApprovalDefinition retrieves approval definition details by approval code.
+func GetApprovalDefinition(approvalCode string, opts GetApprovalOptions) (*ApprovalDefinition, error) {
+	body, err := getApprovalDefinitionRawBody(approvalCode, opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return parseApprovalDefinitionResponse(body, approvalCode)
+}
+
+func parseApprovalDefinitionResponse(body []byte, approvalCode string) (*ApprovalDefinition, error) {
+	var apiResp approvalGetAPIResp
+	if err := json.Unmarshal(body, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析审批定义响应失败: %w", err)
+	}
+
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("获取审批定义失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	if apiResp.Data == nil {
 		return nil, fmt.Errorf("获取审批定义返回数据为空")
 	}
 
 	result := &ApprovalDefinition{
 		ApprovalCode:       approvalCode,
-		ApprovalName:       StringVal(resp.Data.ApprovalName),
-		Status:             StringVal(resp.Data.Status),
-		Form:               parseEmbeddedJSON(StringVal(resp.Data.Form)),
-		ApprovalAdminIDs:   resp.Data.ApprovalAdminIds,
-		FormWidgetRelation: parseEmbeddedJSON(StringVal(resp.Data.FormWidgetRelation)),
+		ApprovalName:       StringVal(apiResp.Data.ApprovalName),
+		Status:             StringVal(apiResp.Data.Status),
+		Form:               parseEmbeddedJSON(StringVal(apiResp.Data.Form)),
+		ApprovalAdminIDs:   apiResp.Data.ApprovalAdminIds,
+		FormWidgetRelation: parseEmbeddedJSON(StringVal(apiResp.Data.FormWidgetRelation)),
 	}
 
-	if len(resp.Data.NodeList) > 0 {
-		result.NodeList = make([]*ApprovalNode, 0, len(resp.Data.NodeList))
-		for _, node := range resp.Data.NodeList {
+	if len(apiResp.Data.NodeList) > 0 {
+		result.NodeList = make([]*ApprovalNode, 0, len(apiResp.Data.NodeList))
+		for _, node := range apiResp.Data.NodeList {
 			if node == nil {
 				continue
 			}
@@ -241,9 +279,9 @@ func GetApprovalDefinition(approvalCode string, opts GetApprovalOptions) (*Appro
 		}
 	}
 
-	if len(resp.Data.Viewers) > 0 {
-		result.Viewers = make([]*ApprovalViewer, 0, len(resp.Data.Viewers))
-		for _, viewer := range resp.Data.Viewers {
+	if len(apiResp.Data.Viewers) > 0 {
+		result.Viewers = make([]*ApprovalViewer, 0, len(apiResp.Data.Viewers))
+		for _, viewer := range apiResp.Data.Viewers {
 			if viewer == nil {
 				continue
 			}
@@ -322,36 +360,6 @@ func parseEmbeddedJSON(raw string) any {
 	}
 
 	return raw
-}
-
-func approvalTaskToInfo(task *larkapproval.Task) *ApprovalTaskInfo {
-	info := &ApprovalTaskInfo{
-		Topic:               StringVal(task.Topic),
-		UserID:              StringVal(task.UserId),
-		Title:               StringVal(task.Title),
-		ProcessExternalID:   StringVal(task.ProcessExternalId),
-		TaskExternalID:      StringVal(task.TaskExternalId),
-		Status:              StringVal(task.Status),
-		ProcessStatus:       StringVal(task.ProcessStatus),
-		DefinitionCode:      StringVal(task.DefinitionCode),
-		DefinitionName:      StringVal(task.DefinitionName),
-		DefinitionID:        StringVal(task.DefinitionId),
-		DefinitionGroupID:   StringVal(task.DefinitionGroupId),
-		DefinitionGroupName: StringVal(task.DefinitionGroupName),
-		Initiators:          task.Initiators,
-		InitiatorNames:      task.InitiatorNames,
-		TaskID:              StringVal(task.TaskId),
-		ProcessID:           StringVal(task.ProcessId),
-		ProcessCode:         StringVal(task.ProcessCode),
-	}
-
-	if task.Urls != nil {
-		info.HelpdeskURL = StringVal(task.Urls.Helpdesk)
-		info.MobileURL = StringVal(task.Urls.Mobile)
-		info.PCURL = StringVal(task.Urls.Pc)
-	}
-
-	return info
 }
 
 func parseApprovalTaskQueryResponse(body []byte) (*ApprovalTaskQueryResult, error) {
