@@ -60,11 +60,11 @@ var boardUpdateCmd = &cobra.Command{
 
 		// 2. dry-run 模式：只统计旧节点数
 		if dryRun && overwrite {
-			nodeCount, err := countBoardNodes(whiteboardID)
+			ids, err := extractBoardNodeIDs(whiteboardID)
 			if err != nil {
 				return fmt.Errorf("获取画板节点失败: %w", err)
 			}
-			fmt.Fprintf(os.Stderr, "当前画板有 %d 个节点\n", nodeCount)
+			fmt.Fprintf(os.Stderr, "当前画板有 %d 个节点\n", len(ids))
 			fmt.Fprintf(os.Stderr, "覆盖模式将删除这些节点并写入新内容\n")
 			return nil
 		}
@@ -138,15 +138,6 @@ var boardUpdateCmd = &cobra.Command{
 
 		return nil
 	},
-}
-
-// countBoardNodes 统计画板节点数量
-func countBoardNodes(whiteboardID string) (int, error) {
-	ids, err := extractBoardNodeIDs(whiteboardID)
-	if err != nil {
-		return 0, err
-	}
-	return len(ids), nil
 }
 
 // extractBoardNodeIDs 从画板获取所有节点 ID

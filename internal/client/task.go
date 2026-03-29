@@ -962,14 +962,9 @@ func ListTasklistTasks(tasklistGuid string, pageSize int, pageToken string, comp
 	return tasks, nextPageToken, hasMore, nil
 }
 
-// AddTasklistMembers 添加任务清单成员
-func AddTasklistMembers(tasklistGuid string, memberIDs []string, memberRole string, userAccessToken string) (*TasklistInfo, error) {
-	client, err := GetClient()
-	if err != nil {
-		return nil, err
-	}
-
-	var members []*larktask.Member
+// buildTasklistMembers 构建任务清单成员列表
+func buildTasklistMembers(memberIDs []string, memberRole string) []*larktask.Member {
+	members := make([]*larktask.Member, 0, len(memberIDs))
 	for _, id := range memberIDs {
 		member := larktask.NewMemberBuilder().
 			Id(id).
@@ -978,9 +973,18 @@ func AddTasklistMembers(tasklistGuid string, memberIDs []string, memberRole stri
 			Build()
 		members = append(members, member)
 	}
+	return members
+}
+
+// AddTasklistMembers 添加任务清单成员
+func AddTasklistMembers(tasklistGuid string, memberIDs []string, memberRole string, userAccessToken string) (*TasklistInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
 
 	body := larktask.NewAddMembersTasklistReqBodyBuilder().
-		Members(members).
+		Members(buildTasklistMembers(memberIDs, memberRole)).
 		Build()
 
 	req := larktask.NewAddMembersTasklistReqBuilder().
@@ -1012,18 +1016,8 @@ func RemoveTasklistMembers(tasklistGuid string, memberIDs []string, memberRole s
 		return nil, err
 	}
 
-	var members []*larktask.Member
-	for _, id := range memberIDs {
-		member := larktask.NewMemberBuilder().
-			Id(id).
-			Type("user").
-			Role(memberRole).
-			Build()
-		members = append(members, member)
-	}
-
 	body := larktask.NewRemoveMembersTasklistReqBodyBuilder().
-		Members(members).
+		Members(buildTasklistMembers(memberIDs, memberRole)).
 		Build()
 
 	req := larktask.NewRemoveMembersTasklistReqBuilder().

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -53,13 +52,7 @@ var tasklistMemberAddCmd = &cobra.Command{
 			return fmt.Errorf("无效的角色: %s（仅支持 editor 或 viewer）", role)
 		}
 
-		var memberIDs []string
-		for _, id := range strings.Split(membersStr, ",") {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				memberIDs = append(memberIDs, id)
-			}
-		}
+		memberIDs := splitAndTrim(membersStr)
 
 		if len(memberIDs) == 0 {
 			return fmt.Errorf("成员列表不能为空")
@@ -109,13 +102,7 @@ var tasklistMemberRemoveCmd = &cobra.Command{
 			return fmt.Errorf("无效的角色: %s（仅支持 editor 或 viewer）", role)
 		}
 
-		var memberIDs []string
-		for _, id := range strings.Split(membersStr, ",") {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				memberIDs = append(memberIDs, id)
-			}
-		}
+		memberIDs := splitAndTrim(membersStr)
 
 		if len(memberIDs) == 0 {
 			return fmt.Errorf("成员列表不能为空")

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -222,13 +221,7 @@ var tasklistTaskAddCmd = &cobra.Command{
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
 		output, _ := cmd.Flags().GetString("output")
 
-		var taskIDs []string
-		for _, id := range strings.Split(taskIDsStr, ",") {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				taskIDs = append(taskIDs, id)
-			}
-		}
+		taskIDs := splitAndTrim(taskIDsStr)
 
 		if len(taskIDs) == 0 {
 			return fmt.Errorf("任务 ID 列表不能为空")
@@ -276,13 +269,7 @@ var tasklistTaskRemoveCmd = &cobra.Command{
 		taskIDsStr, _ := cmd.Flags().GetString("task-ids")
 		output, _ := cmd.Flags().GetString("output")
 
-		var taskIDs []string
-		for _, id := range strings.Split(taskIDsStr, ",") {
-			id = strings.TrimSpace(id)
-			if id != "" {
-				taskIDs = append(taskIDs, id)
-			}
-		}
+		taskIDs := splitAndTrim(taskIDsStr)
 
 		if len(taskIDs) == 0 {
 			return fmt.Errorf("任务 ID 列表不能为空")

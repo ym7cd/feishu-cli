@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"encoding/json"
-	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -55,57 +54,8 @@ var minutesGetCmd = &cobra.Command{
 			return printJSON(json.RawMessage(data))
 		}
 
-		// 格式化输出
-		var minute struct {
-			Minute struct {
-				Token      string `json:"token"`
-				Title      string `json:"title"`
-				URL        string `json:"url"`
-				CreateTime string `json:"create_time"`
-				Owner      *struct {
-					UserID string `json:"user_id"`
-					Name   string `json:"name"`
-				} `json:"owner"`
-				Duration string `json:"duration"`
-			} `json:"minute"`
-		}
-
-		if err := json.Unmarshal(data, &minute); err != nil {
-			// 解析失败，直接打印原始 JSON
-			fmt.Println(string(data))
-			return nil
-		}
-
-		m := minute.Minute
-		title := m.Title
-		if title == "" {
-			title = "(无标题)"
-		}
-
-		fmt.Printf("妙记信息:\n\n")
-		fmt.Printf("  标题:      %s\n", title)
-		fmt.Printf("  Token:     %s\n", m.Token)
-		if m.URL != "" {
-			fmt.Printf("  链接:      %s\n", m.URL)
-		}
-		if m.CreateTime != "" {
-			fmt.Printf("  创建时间:  %s\n", formatMinuteTime(m.CreateTime))
-		}
-		if m.Owner != nil && m.Owner.Name != "" {
-			fmt.Printf("  创建者:    %s\n", m.Owner.Name)
-		}
-		if m.Duration != "" {
-			fmt.Printf("  时长:      %s\n", m.Duration)
-		}
-
-		return nil
+		return printMinuteInfo(data)
 	},
-}
-
-// formatMinuteTime 尝试将 Unix 秒字符串转为可读时间
-func formatMinuteTime(ts string) string {
-	// 复用 vc_search.go 中的 formatVCTime
-	return formatVCTime(ts)
 }
 
 func init() {

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -82,11 +81,7 @@ var bitableRecordUploadAttachmentCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return fmt.Errorf("JSON 序列化失败: %w", err)
-			}
-			fmt.Println(string(data))
+			return printJSON(result)
 		} else {
 			fmt.Printf("上传成功！\n")
 			fmt.Printf("  多维表格: %s\n", appToken)

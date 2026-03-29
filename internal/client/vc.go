@@ -7,27 +7,6 @@ import (
 	"strconv"
 )
 
-// ==================== VC 数据结构 ====================
-
-// VCMeeting 会议信息
-type VCMeeting struct {
-	MeetingID   string `json:"meeting_id"`
-	MeetingNo   string `json:"meeting_no"`
-	Topic       string `json:"topic"`
-	HostUser    any    `json:"host_user,omitempty"`
-	Status      int    `json:"status,omitempty"`
-	StartTime   string `json:"start_time,omitempty"`
-	EndTime     string `json:"end_time,omitempty"`
-	ParticipantCount string `json:"participant_count,omitempty"`
-	URL         string `json:"url,omitempty"`
-}
-
-// VCMeetingDetail 会议详情
-type VCMeetingDetail struct {
-	Meeting      json.RawMessage `json:"meeting,omitempty"`
-	MeetingRecord json.RawMessage `json:"meeting_record,omitempty"`
-}
-
 const vcBase = "/open-apis/vc/v1"
 
 // ==================== 会议列表 ====================

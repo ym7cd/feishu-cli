@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"encoding/json"
 	"fmt"
 	"path/filepath"
 
@@ -196,8 +195,7 @@ var docMediaInsertCmd = &cobra.Command{
 		}
 
 		if output == "json" {
-			data, _ := json.MarshalIndent(result, "", "  ")
-			fmt.Println(string(data))
+			return printJSON(result)
 		} else {
 			fmt.Printf("插入成功！\n")
 			fmt.Printf("  文档 ID:   %s\n", documentID)

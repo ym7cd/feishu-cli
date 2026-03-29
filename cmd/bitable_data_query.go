@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -35,17 +34,9 @@ var bitableDataQueryCmd = &cobra.Command{
 		output, _ := cmd.Flags().GetString("output")
 		userToken := resolveOptionalUserToken(cmd)
 
-		// 加载请求体
-		jsonStr := dataJSON
-		if dataFile != "" {
-			data, err := os.ReadFile(dataFile)
-			if err != nil {
-				return fmt.Errorf("读取数据文件失败: %w", err)
-			}
-			jsonStr = string(data)
-		}
-		if jsonStr == "" {
-			return fmt.Errorf("请通过 --data 或 --data-file 提供查询参数 JSON")
+		jsonStr, err := loadJSONInput(dataJSON, dataFile, "data", "data-file", "查询参数 JSON")
+		if err != nil {
+			return err
 		}
 
 		var reqBody map[string]any

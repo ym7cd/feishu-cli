@@ -869,18 +869,6 @@ func CreateBitableDashboard(appToken string, reqBody map[string]any, userAccessT
 	return parseBitableRawResponse(resp, "复制仪表盘")
 }
 
-// UpdateBitableDashboard 更新仪表盘
-// 注意：飞书 API 不支持更新仪表盘，此函数保留签名兼容但返回错误提示
-func UpdateBitableDashboard(appToken string, dashboardID string, reqBody map[string]any, userAccessToken string) (map[string]any, error) {
-	return nil, fmt.Errorf("飞书 API 不支持更新仪表盘（仅支持 list 和 copy 操作）")
-}
-
-// DeleteBitableDashboard 删除仪表盘
-// 注意：飞书 API 不支持删除仪表盘，此函数保留签名兼容但返回错误提示
-func DeleteBitableDashboard(appToken string, dashboardID string, userAccessToken string) error {
-	return fmt.Errorf("飞书 API 不支持删除仪表盘（仅支持 list 和 copy 操作）")
-}
-
 // ==================== 仪表盘 Block 操作（飞书 API 不支持） ====================
 // 注意：飞书开放 API 不提供仪表盘 Block 的 CRUD 接口，以下函数保留签名兼容但返回错误提示
 
@@ -1090,50 +1078,44 @@ func GetBitableWorkflow(appToken string, workflowID string, userAccessToken stri
 	return parseBitableRawResponse(resp, "获取工作流")
 }
 
-// EnableBitableWorkflow 启用工作流
-// 正确 API：PUT /workflows/:workflow_id，请求体 {"status": "Enable"}
-func EnableBitableWorkflow(appToken string, workflowID string, userAccessToken string) error {
+// SetBitableWorkflowStatus 设置工作流状态（启用/禁用）
+// API：PUT /workflows/:workflow_id，请求体 {"status": "Enable"/"Disable"}
+func SetBitableWorkflowStatus(appToken string, workflowID string, enabled bool, userAccessToken string) error {
 	client, err := GetClient()
 	if err != nil {
 		return err
 	}
 
+	status := "Disable"
+	action := "禁用"
+	if enabled {
+		status = "Enable"
+		action = "启用"
+	}
+
 	tokenType, opts := resolveTokenOpts(userAccessToken)
 
 	reqBody := map[string]any{
-		"status": "Enable",
+		"status": status,
 	}
 
 	apiPath := fmt.Sprintf("%s/apps/%s/workflows/%s", bitableBase, appToken, workflowID)
 	resp, err := client.Put(Context(), apiPath, reqBody, tokenType, opts...)
 	if err != nil {
-		return fmt.Errorf("启用工作流失败: %w", err)
+		return fmt.Errorf("%s工作流失败: %w", action, err)
 	}
 
-	return checkBitableError(resp, "启用工作流")
+	return checkBitableError(resp, action+"工作流")
+}
+
+// EnableBitableWorkflow 启用工作流
+func EnableBitableWorkflow(appToken string, workflowID string, userAccessToken string) error {
+	return SetBitableWorkflowStatus(appToken, workflowID, true, userAccessToken)
 }
 
 // DisableBitableWorkflow 禁用工作流
-// 正确 API：PUT /workflows/:workflow_id，请求体 {"status": "Disable"}
 func DisableBitableWorkflow(appToken string, workflowID string, userAccessToken string) error {
-	client, err := GetClient()
-	if err != nil {
-		return err
-	}
-
-	tokenType, opts := resolveTokenOpts(userAccessToken)
-
-	reqBody := map[string]any{
-		"status": "Disable",
-	}
-
-	apiPath := fmt.Sprintf("%s/apps/%s/workflows/%s", bitableBase, appToken, workflowID)
-	resp, err := client.Put(Context(), apiPath, reqBody, tokenType, opts...)
-	if err != nil {
-		return fmt.Errorf("禁用工作流失败: %w", err)
-	}
-
-	return checkBitableError(resp, "禁用工作流")
+	return SetBitableWorkflowStatus(appToken, workflowID, false, userAccessToken)
 }
 
 // ==================== 表单（Form）操作 ====================
@@ -1142,7 +1124,10 @@ func DisableBitableWorkflow(appToken string, workflowID string, userAccessToken 
 // 注意：飞书 API 没有独立的 list forms 接口，通过 list views 过滤 form 类型实现
 func ListBitableForms(appToken string, tableID string, pageSize int, pageToken string, userAccessToken string) ([]map[string]any, string, error) {
 	// 通过列出视图接口获取所有视图，然后过滤出 form 类型的
-	views, nextToken, err := ListBitableViews(appToken, tableID, 100, pageToken, userAccessToken)
+	if pageSize <= 0 {
+		pageSize = 100
+	}
+	views, nextToken, err := ListBitableViews(appToken, tableID, pageSize, pageToken, userAccessToken)
 	if err != nil {
 		return nil, "", fmt.Errorf("列出表单失败: %w", err)
 	}
@@ -1346,13 +1331,9 @@ func parseBitableRawPagedListResponse(resp *larkcore.ApiResp, action string, ite
 	}
 
 	var apiResp struct {
-		Code int    `json:"code"`
-		Msg  string `json:"msg"`
-		Data struct {
-			Items     json.RawMessage `json:"items"`
-			PageToken string          `json:"page_token"`
-			HasMore   bool            `json:"has_more"`
-		} `json:"data"`
+		Code int                        `json:"code"`
+		Msg  string                     `json:"msg"`
+		Data map[string]json.RawMessage `json:"data"`
 	}
 
 	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
@@ -1363,34 +1344,32 @@ func parseBitableRawPagedListResponse(resp *larkcore.ApiResp, action string, ite
 		return nil, "", fmt.Errorf("%s失败: code=%d, msg=%s", action, apiResp.Code, apiResp.Msg)
 	}
 
-	// 优先尝试从指定 key 获取列表
-	var rawData map[string]json.RawMessage
-	if err := json.Unmarshal(resp.RawBody, &struct {
-		Data *map[string]json.RawMessage `json:"data"`
-	}{Data: &rawData}); err == nil {
-		if raw, ok := rawData[itemsKey]; ok {
-			var items []map[string]any
-			if err := json.Unmarshal(raw, &items); err == nil {
-				nextPageToken := ""
-				if apiResp.Data.HasMore {
-					nextPageToken = apiResp.Data.PageToken
-				}
-				return items, nextPageToken, nil
-			}
-		}
+	// 优先从指定 key 获取列表，回退到 "items"
+	raw, ok := apiResp.Data[itemsKey]
+	if !ok {
+		raw, ok = apiResp.Data["items"]
 	}
 
-	// 回退到 items 字段
 	var items []map[string]any
-	if apiResp.Data.Items != nil {
-		if err := json.Unmarshal(apiResp.Data.Items, &items); err != nil {
+	if ok && raw != nil {
+		if err := json.Unmarshal(raw, &items); err != nil {
 			return nil, "", fmt.Errorf("解析列表数据失败: %w", err)
 		}
 	}
 
+	// 解析分页信息
+	var hasMore bool
+	var pageToken string
+	if raw, ok := apiResp.Data["has_more"]; ok {
+		_ = json.Unmarshal(raw, &hasMore)
+	}
+	if raw, ok := apiResp.Data["page_token"]; ok {
+		_ = json.Unmarshal(raw, &pageToken)
+	}
+
 	nextPageToken := ""
-	if apiResp.Data.HasMore {
-		nextPageToken = apiResp.Data.PageToken
+	if hasMore {
+		nextPageToken = pageToken
 	}
 
 	return items, nextPageToken, nil

@@ -263,16 +263,6 @@ func ReplaceImage(documentID, imageBlockID, fileToken string) error {
 	})
 }
 
-// ReplaceFile replaces the file token of a File block.
-// 用于文件三步法上传的���三步：将上传后的 fileToken 设置到 File Block。
-func ReplaceFile(documentID, fileBlockID, fileToken string) error {
-	return UpdateBlock(documentID, fileBlockID, map[string]any{
-		"replace_file": map[string]any{
-			"token": fileToken,
-		},
-	})
-}
-
 // DeleteBlocks deletes child blocks from a parent block by index range
 // startIndex is the starting index (0-based), endIndex is exclusive
 func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int) error {

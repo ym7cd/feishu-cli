@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -113,28 +112,18 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 		return doInsertAfter(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output)
 	case "delete_range":
 		return doDeleteRange(documentID, selByTitle, selWithEllipsis, output)
-	default:
-		return fmt.Errorf("不支持的模式: %s（可选: append/overwrite/replace_range/replace_all/insert_before/insert_after/delete_range）", mode)
 	}
+	return nil // validateContentUpdateParams 已确保 mode 合法
 }
 
 // resolveMarkdownContent 从 --markdown 或 --markdown-file 获取内容
 func resolveMarkdownContent(markdownStr, markdownFile string) (string, error) {
-	if markdownStr != "" && markdownFile != "" {
-		return "", fmt.Errorf("--markdown 和 --markdown-file 不能同时使用")
+	content, err := loadJSONInput(markdownStr, markdownFile, "markdown", "markdown-file", "Markdown 内容")
+	if err != nil {
+		return "", err
 	}
-	if markdownFile != "" {
-		data, err := os.ReadFile(markdownFile)
-		if err != nil {
-			return "", fmt.Errorf("读取 Markdown 文件失败: %w", err)
-		}
-		return string(data), nil
-	}
-	if markdownStr != "" {
-		// 处理命令行中的 \n 转义
-		return strings.ReplaceAll(markdownStr, "\\n", "\n"), nil
-	}
-	return "", fmt.Errorf("必须指定 --markdown 或 --markdown-file")
+	// 处理命令行中的 \n 转义（仅内联输入时有意义，文件读取不受影响）
+	return strings.ReplaceAll(content, "\\n", "\n"), nil
 }
 
 // validateContentUpdateParams 验证参数组合是否合法
@@ -410,15 +399,15 @@ func doAppend(documentID, markdown string, uploadImages bool, output string) err
 
 // doOverwrite 完全覆盖文档内容
 func doOverwrite(documentID, markdown string, uploadImages bool, output string) error {
-	// 1. 获取现有子块
-	children, err := getPageChildren(documentID)
+	// 1. 获取根块，仅需子块 ID 列表（避免获取所有子块的完整内容）
+	rootBlock, err := client.GetBlock(documentID, documentID)
 	if err != nil {
 		return fmt.Errorf("获取文档内容失败: %w", err)
 	}
 
 	// 2. 删除所有现有子块
-	if len(children) > 0 {
-		if err := client.DeleteBlocks(documentID, documentID, 0, len(children)); err != nil {
+	if rootBlock.Children != nil && len(rootBlock.Children) > 0 {
+		if err := client.DeleteBlocks(documentID, documentID, 0, len(rootBlock.Children)); err != nil {
 			return fmt.Errorf("删除现有内容失败: %w", err)
 		}
 	}

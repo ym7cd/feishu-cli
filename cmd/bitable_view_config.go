@@ -3,7 +3,6 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
@@ -209,20 +208,9 @@ func loadViewConfigInput(cmd *cobra.Command) (any, error) {
 	configJSON, _ := cmd.Flags().GetString("config")
 	configFile, _ := cmd.Flags().GetString("config-file")
 
-	if configJSON == "" && configFile == "" {
-		return nil, fmt.Errorf("请通过 --config 或 --config-file 提供配置 JSON")
-	}
-	if configJSON != "" && configFile != "" {
-		return nil, fmt.Errorf("--config 和 --config-file 不能同时使用")
-	}
-
-	jsonStr := configJSON
-	if configFile != "" {
-		data, err := os.ReadFile(configFile)
-		if err != nil {
-			return nil, fmt.Errorf("读取配置文件失败: %w", err)
-		}
-		jsonStr = string(data)
+	jsonStr, err := loadJSONInput(configJSON, configFile, "config", "config-file", "配置 JSON")
+	if err != nil {
+		return nil, err
 	}
 
 	var body any

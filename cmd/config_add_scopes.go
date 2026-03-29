@@ -193,17 +193,12 @@ var configAddScopesCmd = &cobra.Command{
 		fmt.Fprintf(os.Stderr, "  一键申请: %s\n\n", scopeApplyURL)
 
 		// 尝试自动打开浏览器
-		if err := openBrowserURL(authURL); err == nil {
+		if err := auth.TryOpenBrowser(authURL); err == nil {
 			fmt.Fprintln(os.Stderr, "已自动打开浏览器")
 		}
 
 		return nil
 	},
-}
-
-// openBrowserURL 尝试打开浏览器
-func openBrowserURL(u string) error {
-	return auth.TryOpenBrowser(u)
 }
 
 func init() {
