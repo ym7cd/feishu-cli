@@ -340,6 +340,11 @@ feishu-cli msg reply <message_id> --text "回复内容"
 # 合并转发
 feishu-cli msg merge-forward --receive-id user@example.com --receive-id-type email --message-ids id1,id2
 
+# 消息加急
+feishu-cli msg urgent <message_id> --user-id-type open_id --user-ids ou_xxx,ou_yyy
+feishu-cli msg urgent <message_id> --urgent-type phone --user-id-type user_id --user-ids u_123,u_456
+feishu-cli msg urgent <message_id> --urgent-type sms --user-id-type union_id --user-ids on_xxx,on_yyy
+
 # 表情回复
 feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP
 feishu-cli msg reaction remove <message_id> --reaction-id REACTION_ID
@@ -635,6 +640,7 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 | 权限管理 | `docs:permission.member:create` | 添加协作者 |
 | 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
 | 消息增强 | `im:message.pins`, `im:message.reactions` | Pin/Reaction/转发 |
+| 消息加急 | `im:message.urgent`, `im:message.urgent:phone`, `im:message.urgent:sms`, `im:message.urgent.status:write` | 消息加急（应用内/电话/短信） |
 | 群聊管理 | `im:chat` | 群聊 CRUD |
 | 群成员管理 | `im:chat.members` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |
@@ -784,6 +790,10 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
       "im:message.pins:write_only",
       "im:message.reactions:read",
       "im:message.reactions:write_only",
+      "im:message.urgent",
+      "im:message.urgent.status:write",
+      "im:message.urgent:phone",
+      "im:message.urgent:sms",
       "im:message:readonly",
       "im:message:send_as_bot",
       "sheets:spreadsheet.meta:read",

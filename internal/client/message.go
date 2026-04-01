@@ -676,6 +676,88 @@ type ListReactionsResult struct {
 	HasMore   bool                      `json:"has_more"`
 }
 
+// UrgentMessageResult 消息加急结果
+type UrgentMessageResult struct {
+	InvalidUserIDList []string `json:"invalid_user_id_list,omitempty"`
+}
+
+// UrgentMessage 对指定消息发送加急提醒（应用内/电话/短信）。
+func UrgentMessage(messageID, urgentType, userIDType string, userIDs []string) (*UrgentMessageResult, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	receivers := larkim.NewUrgentReceiversBuilder().
+		UserIdList(userIDs).
+		Build()
+
+	switch urgentType {
+	case "app":
+		req := larkim.NewUrgentAppMessageReqBuilder().
+			MessageId(messageID).
+			UserIdType(userIDType).
+			UrgentReceivers(receivers).
+			Build()
+
+		resp, err := client.Im.Message.UrgentApp(Context(), req)
+		if err != nil {
+			return nil, fmt.Errorf("发送应用内加急失败: %w", err)
+		}
+		if !resp.Success() {
+			return nil, fmt.Errorf("发送应用内加急失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		}
+		result := &UrgentMessageResult{}
+		if resp.Data != nil {
+			result.InvalidUserIDList = resp.Data.InvalidUserIdList
+		}
+		return result, nil
+
+	case "phone":
+		req := larkim.NewUrgentPhoneMessageReqBuilder().
+			MessageId(messageID).
+			UserIdType(userIDType).
+			UrgentReceivers(receivers).
+			Build()
+
+		resp, err := client.Im.Message.UrgentPhone(Context(), req)
+		if err != nil {
+			return nil, fmt.Errorf("发送电话加急失败: %w", err)
+		}
+		if !resp.Success() {
+			return nil, fmt.Errorf("发送电话加急失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		}
+		result := &UrgentMessageResult{}
+		if resp.Data != nil {
+			result.InvalidUserIDList = resp.Data.InvalidUserIdList
+		}
+		return result, nil
+
+	case "sms":
+		req := larkim.NewUrgentSmsMessageReqBuilder().
+			MessageId(messageID).
+			UserIdType(userIDType).
+			UrgentReceivers(receivers).
+			Build()
+
+		resp, err := client.Im.Message.UrgentSms(Context(), req)
+		if err != nil {
+			return nil, fmt.Errorf("发送短信加急失败: %w", err)
+		}
+		if !resp.Success() {
+			return nil, fmt.Errorf("发送短信加急失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		}
+		result := &UrgentMessageResult{}
+		if resp.Data != nil {
+			result.InvalidUserIDList = resp.Data.InvalidUserIdList
+		}
+		return result, nil
+
+	default:
+		return nil, fmt.Errorf("不支持的加急类型: %s", urgentType)
+	}
+}
+
 // ListReactions 获取消息的表情回复列表
 func ListReactions(messageID, emojiType string, pageSize int, pageToken string, userAccessToken string) (*ListReactionsResult, error) {
 	client, err := GetClient()

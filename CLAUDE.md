@@ -313,6 +313,9 @@ feishu-cli msg reply <message_id> --text "回复内容"
 feishu-cli msg merge-forward --receive-id user@example.com --receive-id-type email --message-ids id1,id2
 feishu-cli msg reaction add <message_id> --emoji-type THUMBSUP
 feishu-cli msg reaction remove <message_id> --reaction-id REACTION_ID
+feishu-cli msg urgent <message_id> --user-id-type open_id --user-ids ou_xxx,ou_yyy
+feishu-cli msg urgent <message_id> --urgent-type phone --user-id-type user_id --user-ids u_xxx,u_yyy
+feishu-cli msg urgent <message_id> --urgent-type sms --user-id-type union_id --user-ids on_xxx,on_yyy
 feishu-cli msg pin <message_id>
 feishu-cli msg unpin <message_id>
 feishu-cli msg pins --chat-id CHAT_ID
@@ -519,6 +522,7 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 | 权限管理 | `docs:permission.member:create` | 添加协作者 |
 | 消息 | `im:message`, `im:message:send_as_bot` | 发送消息 |
 | 消息增强 | `im:message.pins`, `im:message.reactions` | Pin/Reaction/转发 |
+| 消息加急 | `im:message.urgent`, `im:message.urgent:phone`, `im:message.urgent:sms`, `im:message.urgent.status:write` | 消息加急（应用内/电话/短信，需审批） |
 | 群聊管理 | `im:chat` | 群聊 CRUD |
 | 群成员管理 | `im:chat.members` | 群成员操作 |
 | 会话历史 | `im:message:readonly` | 获取历史消息 |

@@ -11,6 +11,7 @@ var msgCmd = &cobra.Command{
 
 子命令:
   send               发送消息
+  urgent             发送加急消息
   reply              回复消息
   delete             删除消息
   list               获取消息列表
@@ -61,6 +62,9 @@ var msgCmd = &cobra.Command{
 
   # 回复消息
   feishu-cli msg reply om_xxx --text "收到！"
+
+  # 发送应用内加急（默认 app）
+  feishu-cli msg urgent om_xxx --user-id-type open_id --user-ids ou_xxx,ou_yyy
 
   # 获取消息详情
   feishu-cli msg get om_xxx
