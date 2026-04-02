@@ -3,6 +3,7 @@ package client
 import (
 	"fmt"
 
+	larkauthen "github.com/larksuite/oapi-sdk-go/v3/service/authen/v1"
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 )
 
@@ -100,6 +101,47 @@ func GetUserInfo(userID string, opts GetUserInfoOptions) (*UserInfo, error) {
 	}
 
 	return info, nil
+}
+
+// GetCurrentUserInfo retrieves the currently authorized user's profile.
+func GetCurrentUserInfo(userAccessToken string) (*UserInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.Authen.V1.UserInfo.Get(Context(), UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("获取当前登录用户信息失败: %w", err)
+	}
+
+	if !resp.Success() {
+		return nil, fmt.Errorf("获取当前登录用户信息失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	if resp.Data == nil {
+		return nil, fmt.Errorf("当前登录用户信息为空")
+	}
+
+	return currentUserInfoFromAuthen(resp.Data), nil
+}
+
+func currentUserInfoFromAuthen(data *larkauthen.GetUserInfoRespData) *UserInfo {
+	if data == nil {
+		return &UserInfo{}
+	}
+
+	return &UserInfo{
+		UserID:     StringVal(data.UserId),
+		OpenID:     StringVal(data.OpenId),
+		UnionID:    StringVal(data.UnionId),
+		Name:       StringVal(data.Name),
+		EnName:     StringVal(data.EnName),
+		Email:      StringVal(data.Email),
+		Mobile:     StringVal(data.Mobile),
+		Avatar:     StringVal(data.AvatarUrl),
+		EmployeeNo: StringVal(data.EmployeeNo),
+	}
 }
 
 // batchUserLimit 飞书 Batch API 单次最多查询 50 个用户

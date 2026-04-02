@@ -78,6 +78,7 @@ func SaveToken(t *TokenStore) error {
 		return fmt.Errorf("写入 token 文件失败: %w", err)
 	}
 
+	clearCurrentUserCacheBestEffort()
 	return nil
 }
 
@@ -89,13 +90,19 @@ func DeleteToken() error {
 	}
 
 	if err := os.Remove(path); err != nil {
-		if os.IsNotExist(err) {
-			return nil
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("删除 token 文件失败: %w", err)
 		}
-		return fmt.Errorf("删除 token 文件失败: %w", err)
 	}
 
+	clearCurrentUserCacheBestEffort()
 	return nil
+}
+
+// clearCurrentUserCacheBestEffort clears derived user cache without failing the
+// primary token persistence flow.
+func clearCurrentUserCacheBestEffort() {
+	_ = DeleteCurrentUserCache()
 }
 
 // IsAccessTokenValid 检查 access_token 是否有效（预留 60s 缓冲）
