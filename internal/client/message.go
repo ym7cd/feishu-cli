@@ -681,6 +681,9 @@ type UrgentMessageResult struct {
 	InvalidUserIDList []string `json:"invalid_user_id_list,omitempty"`
 }
 
+// urgentCall 封装加急 API 调用，返回 (invalidUserIDs, error)
+type urgentCall func() ([]string, error)
+
 // UrgentMessage 对指定消息发送加急提醒（应用内/电话/短信）。
 func UrgentMessage(messageID, urgentType, userIDType string, userIDs []string) (*UrgentMessageResult, error) {
 	client, err := GetClient()
@@ -692,70 +695,72 @@ func UrgentMessage(messageID, urgentType, userIDType string, userIDs []string) (
 		UserIdList(userIDs).
 		Build()
 
+	// 根据加急类型构建对应的调用闭包
+	var call urgentCall
+	var label string
+
 	switch urgentType {
 	case "app":
-		req := larkim.NewUrgentAppMessageReqBuilder().
-			MessageId(messageID).
-			UserIdType(userIDType).
-			UrgentReceivers(receivers).
-			Build()
-
-		resp, err := client.Im.Message.UrgentApp(Context(), req)
-		if err != nil {
-			return nil, fmt.Errorf("发送应用内加急失败: %w", err)
+		label = "应用内"
+		call = func() ([]string, error) {
+			req := larkim.NewUrgentAppMessageReqBuilder().
+				MessageId(messageID).UserIdType(userIDType).UrgentReceivers(receivers).Build()
+			resp, err := client.Im.Message.UrgentApp(Context(), req)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success() {
+				return nil, fmt.Errorf("code=%d, msg=%s", resp.Code, resp.Msg)
+			}
+			if resp.Data != nil {
+				return resp.Data.InvalidUserIdList, nil
+			}
+			return nil, nil
 		}
-		if !resp.Success() {
-			return nil, fmt.Errorf("发送应用内加急失败: code=%d, msg=%s", resp.Code, resp.Msg)
-		}
-		result := &UrgentMessageResult{}
-		if resp.Data != nil {
-			result.InvalidUserIDList = resp.Data.InvalidUserIdList
-		}
-		return result, nil
-
 	case "phone":
-		req := larkim.NewUrgentPhoneMessageReqBuilder().
-			MessageId(messageID).
-			UserIdType(userIDType).
-			UrgentReceivers(receivers).
-			Build()
-
-		resp, err := client.Im.Message.UrgentPhone(Context(), req)
-		if err != nil {
-			return nil, fmt.Errorf("发送电话加急失败: %w", err)
+		label = "电话"
+		call = func() ([]string, error) {
+			req := larkim.NewUrgentPhoneMessageReqBuilder().
+				MessageId(messageID).UserIdType(userIDType).UrgentReceivers(receivers).Build()
+			resp, err := client.Im.Message.UrgentPhone(Context(), req)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success() {
+				return nil, fmt.Errorf("code=%d, msg=%s", resp.Code, resp.Msg)
+			}
+			if resp.Data != nil {
+				return resp.Data.InvalidUserIdList, nil
+			}
+			return nil, nil
 		}
-		if !resp.Success() {
-			return nil, fmt.Errorf("发送电话加急失败: code=%d, msg=%s", resp.Code, resp.Msg)
-		}
-		result := &UrgentMessageResult{}
-		if resp.Data != nil {
-			result.InvalidUserIDList = resp.Data.InvalidUserIdList
-		}
-		return result, nil
-
 	case "sms":
-		req := larkim.NewUrgentSmsMessageReqBuilder().
-			MessageId(messageID).
-			UserIdType(userIDType).
-			UrgentReceivers(receivers).
-			Build()
-
-		resp, err := client.Im.Message.UrgentSms(Context(), req)
-		if err != nil {
-			return nil, fmt.Errorf("发送短信加急失败: %w", err)
+		label = "短信"
+		call = func() ([]string, error) {
+			req := larkim.NewUrgentSmsMessageReqBuilder().
+				MessageId(messageID).UserIdType(userIDType).UrgentReceivers(receivers).Build()
+			resp, err := client.Im.Message.UrgentSms(Context(), req)
+			if err != nil {
+				return nil, err
+			}
+			if !resp.Success() {
+				return nil, fmt.Errorf("code=%d, msg=%s", resp.Code, resp.Msg)
+			}
+			if resp.Data != nil {
+				return resp.Data.InvalidUserIdList, nil
+			}
+			return nil, nil
 		}
-		if !resp.Success() {
-			return nil, fmt.Errorf("发送短信加急失败: code=%d, msg=%s", resp.Code, resp.Msg)
-		}
-		result := &UrgentMessageResult{}
-		if resp.Data != nil {
-			result.InvalidUserIDList = resp.Data.InvalidUserIdList
-		}
-		return result, nil
-
 	default:
-		return nil, fmt.Errorf("不支持的加急类型: %s", urgentType)
+		return nil, fmt.Errorf("不支持的加急类型: %s，可选值: app, phone, sms", urgentType)
 	}
+
+	invalidIDs, err := call()
+	if err != nil {
+		return nil, fmt.Errorf("发送%s加急失败: %w", label, err)
+	}
+
+	return &UrgentMessageResult{InvalidUserIDList: invalidIDs}, nil
 }
 
 // ListReactions 获取消息的表情回复列表

@@ -548,12 +548,15 @@ func (c *MarkdownToBlock) collectNestedChildren(node *ast.ListItem) ([]*BlockNod
 }
 
 // extractListItemDirectElements 提取 ListItem 直接子节点的文本元素，
-// 跳过嵌套的 ast.List 节点（嵌套列表作为 Children 单独处理）
+// 跳过嵌套的 ast.List 和 ast.FencedCodeBlock（它们作为 Children 单独处理）
 func (c *MarkdownToBlock) extractListItemDirectElements(node *ast.ListItem) []*larkdocx.TextElement {
 	var elements []*larkdocx.TextElement
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
-		// 跳过嵌套列表——它们会成为 BlockNode.Children
+		// 跳过嵌套列表和代码块——它们会成为 BlockNode.Children
 		if _, ok := child.(*ast.List); ok {
+			continue
+		}
+		if _, ok := child.(*ast.FencedCodeBlock); ok {
 			continue
 		}
 		childElements := c.extractTextElements(child)

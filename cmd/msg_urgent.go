@@ -95,7 +95,7 @@ func validateUrgentType(urgentType string) error {
 	case "app", "phone", "sms":
 		return nil
 	default:
-		return fmt.Errorf("不支持的加急类型: %s，可选值: app, phone, sms", urgentType)
+		return fmt.Errorf("不支持的加急类型 %q，可选值: app, phone, sms", urgentType)
 	}
 }
 
@@ -104,7 +104,7 @@ func validateUrgentUserIDType(userIDType string) error {
 	case "open_id", "user_id", "union_id":
 		return nil
 	default:
-		return fmt.Errorf("不支持的用户 ID 类型: %s，可选值: open_id, user_id, union_id", userIDType)
+		return fmt.Errorf("不支持的用户 ID 类型 %q，可选值: open_id, user_id, union_id", userIDType)
 	}
 }
 
