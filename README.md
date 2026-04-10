@@ -184,12 +184,7 @@ feishu-cli config create-app --save
 
 执行后终端会输出一个授权链接，用飞书扫码确认即可。CLI 自动获取 App ID 和 App Secret 并写入配置文件，后续命令直接可用。
 
-然后为应用开通权限：
-
-```bash
-# 一次性申请所有常用权限（在浏览器中点击「开通」即可）
-feishu-cli config add-scopes --domain all
-```
+然后在飞书开放平台的**应用权限管理**页面为新创建的应用开通所需 scope。最快的方式是复制 [权限要求](#权限要求) 章节的 JSON，在权限管理页面的 **导入权限** 入口粘贴即可一次性申请全部。
 
 <details>
 <summary>手动配置（不推荐）</summary>
@@ -697,23 +692,21 @@ npx skills add riba2534/feishu-cli --global --yes --agent claude-code --copy
 
 ## 权限要求
 
-> **💡 推荐做法：无需手动配置权限**
+> **💡 推荐做法：一键创建机器人**
 >
-> 新用户不需要手动去飞书开放平台后台创建应用、一个个勾选权限。feishu-cli 自带**一键创建机器人**和**一键申请权限**的工作流，在终端扫码确认即可完成全部配置：
+> 新用户不需要手动去飞书开放平台后台创建应用，feishu-cli 自带 Device Flow 协议的**一键创建机器人**工作流，在终端扫码确认即可自动注册「个人代理应用」：
 >
 > ```bash
-> # 1. 一键创建飞书应用（通过 Device Flow 协议自动注册「个人代理应用」，
-> #    扫码确认后自动把 App ID / App Secret 写入 ~/.feishu-cli/config.yaml）
+> # 1. 一键创建飞书应用（扫码确认后自动把 App ID / App Secret 写入 ~/.feishu-cli/config.yaml）
 > feishu-cli config create-app --save
 >
-> # 2. 一键申请所有常用权限（生成开放平台链接，浏览器点击"开通"即可）
-> feishu-cli config add-scopes --domain all
->
-> # 3. OAuth 用户授权（搜索、审批等需要用户身份的功能）
+> # 2. OAuth 用户授权（搜索、审批等需要用户身份的功能）
 > feishu-cli auth login
 > ```
 >
-> 这是最省事的上手方式，全程无需访问飞书开放平台网页后台。下面的完整权限清单仅供**手动在已有企业应用上配置**或**精细控制权限范围**的用户参考。
+> **关于权限**：创建应用后，你需要在飞书开放平台的**应用权限管理**页面为应用开通所需 scope。下面的完整权限清单可以**直接在权限管理页面粘贴 JSON 导入**，一次性开通全部功能。
+>
+> 权限的开通是你自己的责任（飞书开放平台一般需要 tenant 管理员审批），feishu-cli 不做自动化。
 
 ### 完整权限清单
 

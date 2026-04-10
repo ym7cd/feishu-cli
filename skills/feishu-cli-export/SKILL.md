@@ -22,7 +22,7 @@ allowed-tools: Bash, Read
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - 需要已配置飞书应用凭证（`FEISHU_APP_ID` / `FEISHU_APP_SECRET`），通过环境变量或 `~/.feishu-cli/config.yaml` 设置
 - App 权限：需要 `docx:document` 或 `docx:document:readonly`（文档导出）、`wiki:wiki:readonly`（知识库导出）
-- User Token 权限：若 App 无权访问他人文档，先通过 `feishu-cli config add-scopes --scopes "docx:document:readonly"` 给应用申请权限，然后 `feishu-cli auth login` 授权，`doc export` 会自动读取保存的 User Token
+- User Token 权限：若 App 无权访问他人文档，先去飞书开放平台的应用权限管理页面开通 `docx:document:readonly`，然后 `feishu-cli auth login` 授权，`doc export` 会自动读取保存的 User Token
 - 使用 `--expand-mentions` 展开 @用户时，还需 `contact:user.base:readonly` 权限
 
 ## 核心概念
@@ -187,8 +187,8 @@ ls -la /tmp/doc_assets/
 
 | 错误 | 原因 | 解决 |
 |------|------|------|
-| `code=1770032, msg=forBidden` | App Token 无权限访问该文档 | 先 `config add-scopes --scopes "docx:document:readonly"`，再 `auth login` 授权 User Token |
-| `code=99991679, msg=Unauthorized` | User Token 缺少 `docx:document:readonly` scope | 先 `config add-scopes --scopes "docx:document:readonly"`，再重新 `auth login` |
+| `code=1770032, msg=forBidden` | App Token 无权限访问该文档 | 在飞书开放平台应用权限管理页面开通 `docx:document:readonly`，再 `auth login` 授权 User Token |
+| `code=99991679, msg=Unauthorized` | User Token 缺少 `docx:document:readonly` scope | 在飞书开放平台应用权限管理页面开通 `docx:document:readonly`，再重新 `auth login` |
 | `code=131002, param err` | 参数错误 | 检查 token 格式 |
 | `code=131001, node not found` | 节点不存在 | 检查 token 是否正确 |
 | `code=131003, no permission` | 无权限访问 | 确认应用有 docx:document 或 wiki:wiki:readonly 权限 |

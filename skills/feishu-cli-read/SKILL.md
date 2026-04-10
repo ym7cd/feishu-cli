@@ -19,7 +19,7 @@ allowed-tools: Bash, Read, Grep
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 - 已完成认证（`feishu-cli auth login`）
 - App 权限：需要 `docx:document` 或 `docx:document:readonly`（普通文档）、`wiki:wiki:readonly`（知识库）
-- User Token 权限：若 App 无权访问他人文档，先通过 `feishu-cli config add-scopes --scopes "docx:document:readonly"` 给应用申请权限，然后 `feishu-cli auth login` 授权，`doc export` 会自动读取保存的 User Token
+- User Token 权限：若 App 无权访问他人文档，先去飞书开放平台的应用权限管理页面开通 `docx:document:readonly`，然后 `feishu-cli auth login` 授权，`doc export` 会自动读取保存的 User Token
 
 ## 核心概念
 
@@ -59,10 +59,11 @@ allowed-tools: Bash, Read, Grep
 
    找到 User Token 时使用用户身份访问，未找到时回退为 App Access Token（租户身份）。
 
-   若遇到 `code=1770032 forBidden`（App 无权限且未登录）或 `code=99991679 Unauthorized`（User Token 缺少 scope），需先给应用申请权限再完成 User Token 授权：
+   若遇到 `code=1770032 forBidden`（App 无权限且未登录）或 `code=99991679 Unauthorized`（User Token 缺少 scope），需先在飞书开放平台为应用开通 `docx:document:readonly`，然后完成 User Token 授权：
 
    ```bash
-   feishu-cli config add-scopes --scopes "docx:document:readonly"
+   # 第一步：在飞书开放平台 → 你的应用 → 权限管理 → 搜索 docx:document:readonly → 开通
+   # （或复制 README 的完整权限 JSON 一次性导入）
    feishu-cli auth login
    ```
 
@@ -204,8 +205,8 @@ feishu-cli wiki export <child_node_token_2> -o /tmp/child2.md
 
 | 错误                              | 原因                                           | 解决                                                                                                        |
 | --------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `code=1770032, msg=forBidden`     | App Token 无权限访问该文档                     | 先 `config add-scopes --scopes "docx:document:readonly"`，再 `auth login` 授权 User Token                   |
-| `code=99991679, msg=Unauthorized` | User Token 缺少 `docx:document:readonly` scope | 先 `config add-scopes --scopes "docx:document:readonly"`，再重新 `auth login`                               |
+| `code=1770032, msg=forBidden`     | App Token 无权限访问该文档                     | 在飞书开放平台应用权限管理页面开通 `docx:document:readonly`，再 `auth login` 授权 User Token                 |
+| `code=99991679, msg=Unauthorized` | User Token 缺少 `docx:document:readonly` scope | 在飞书开放平台应用权限管理页面开通 `docx:document:readonly`，再重新 `auth login`                             |
 | `code=131002, param err`          | 参数错误                                       | 检查 token 格式                                                                                             |
 | `code=131001, node not found`     | 节点不存在                                     | 检查 token 是否正确                                                                                         |
 | `code=131003, no permission`      | 无权限访问                                     | 确认应用有 wiki:wiki:readonly 权限                                                                          |
@@ -261,11 +262,9 @@ sleep 5 && feishu-cli wiki export <token>
 
 - 确认应用已获得 `docx:document:readonly`（普通文档）或 `wiki:wiki:readonly`（知识库）权限
 - 如果是他人文档且 App 没有被添加为协作者，需要使用 User Token：
-  ```bash
-  feishu-cli config add-scopes --scopes "docx:document:readonly"
-  feishu-cli auth login
-  ```
-  授权后 `doc export` 会自动读取，无需额外参数
+  1. 在飞书开放平台 → 你的应用 → 权限管理 → 开通 `docx:document:readonly`
+  2. 执行 `feishu-cli auth login`
+  3. 授权后 `doc export` 会自动读取，无需额外参数
 
 **Q: 文档不存在 / `node not found`**
 
