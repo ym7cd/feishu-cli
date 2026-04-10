@@ -298,7 +298,7 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 
 | 现象 | 原因 | 解决方式 |
 |------|------|----------|
-| 认证失败 / Token 过期 | 未登录或 Token 已失效 | 执行 `feishu-cli auth login --scopes "offline_access"` 重新认证 |
+| 认证失败 / Token 过期 | 未登录或 Token 已失效 | 执行 `feishu-cli auth login` 重新认证（Device Flow，自动注入 offline_access） |
 | 图表降级为代码块 | Mermaid/PlantUML 语法不兼容飞书渲染引擎 | 参考 feishu-cli-doc-guide 规范调整语法（禁花括号、禁 par 等） |
 | 表格被拆分为多个 | 飞书 API 限制单表最多 9 行 / 9 列 | 属于正常行为，自动拆分并保留表头/首列 |
 | 图片上传失败 | 网络不通或图片 URL 不可访问 | 检查网络连通性；失败的图片会自动创建占位块，不影响整体导入 |
