@@ -19,46 +19,38 @@ allowed-tools: Bash
 
 每次执行搜索前，按以下流程操作：
 
-### 1. 检查 Token 状态
+### 1. 预检 scope（推荐 AI Agent 使用）
 
 ```bash
-feishu-cli auth status -o json
+feishu-cli auth check --scope "search:docs:read"
+# 或同时检查多个
+feishu-cli auth check --scope "search:docs:read search:message"
 ```
 
 根据返回结果判断：
-- `logged_in=false` → 需要登录（步骤 2）
-- `access_token_valid=true` + scope 包含所需权限 → 直接搜索（步骤 3）
-- `access_token_valid=false` + `refresh_token_valid=true` → 无需操作，下次搜索时自动刷新
-- `access_token_valid=false` + `refresh_token_valid=false` → 需要重新登录（步骤 2）
-- scope 缺少所需权限 → 需要重新登录并补充 scope（步骤 2）
+- `ok=true` → 直接执行搜索（步骤 3）
+- `error=not_logged_in` 或 `error=token_expired` → 登录（步骤 2）
+- `missing=[...]` 非空 → 需要先给应用加权限再重新登录（步骤 2，注意先 `config add-scopes`）
 
 ### 2. 登录获取 Token（如需要）
 
-使用两步式非交互登录，**始终使用最大 scope 范围**（覆盖搜索 + wiki + 日历 + 任务等全部功能）：
+**本项目使用 Device Flow（RFC 8628）授权**，无需任何 redirect URL 配置。AI Agent 推荐用后台阻塞模式：
 
 ```bash
-# 步骤 A：生成授权 URL（最大 scope）
-feishu-cli auth login --print-url --scopes \
-  "offline_access \
-   search:docs:read search:message drive:drive.search:readonly \
-   wiki:wiki:readonly \
-   calendar:calendar:read calendar:calendar.event:read \
-   calendar:calendar.event:create calendar:calendar.event:update \
-   calendar:calendar.event:reply calendar:calendar.free_busy:read \
-   task:task:read task:task:write \
-   task:tasklist:read task:tasklist:write \
-   im:message:readonly im:message.group_msg:get_as_user im:chat:read im:chat.members:read contact:user.base:readonly \
-   drive:drive.metadata:readonly"
+# 后台启动（Claude Code 的 run_in_background=true）
+feishu-cli auth login --json
 ```
 
-> **scope 命名说明**：飞书 OAuth scope 命名不完全统一，`search:docs:read` 带 `:read` 后缀，而 `search:message` 不带。这是飞书平台定义，非笔误。
+首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_success",...}`。
 
-将输出的 `auth_url` 展示给用户，请用户在浏览器中完成授权。授权后浏览器跳转到无法访问的页面，让用户复制地址栏完整 URL。
+如果 `auth check` 返回 `missing=[...]`，说明应用还没开通所需权限，需要先申请权限再登录：
 
 ```bash
-# 步骤 B：用回调 URL 换 Token
-feishu-cli auth callback "<用户提供的回调URL>" --state "<步骤A输出的state>"
+feishu-cli config add-scopes --scopes "search:docs:read search:message"  # 或 --domain search
+feishu-cli auth login --json
 ```
+
+> 详细的 AI Agent 授权约定见 `feishu-cli-auth` 技能。
 
 ### 3. 执行搜索
 

@@ -6,12 +6,14 @@
 
 按优先级从高到低：
 
-1. **`feishu-cli auth login`（推荐）**：一键 OAuth 登录，Token 自动保存并支持过期自动刷新，无需每次手动传 Token
-2. **非交互两步式（AI Agent 推荐）**：`auth login --print-url` 输出 JSON → 用户浏览器授权 → `auth callback "<回调URL>" --state "<state>"`，全程无 stdin 阻塞
+1. **`feishu-cli auth login`（推荐）**：Device Flow 登录（RFC 8628），无需配置任何重定向 URL，Token 自动保存并支持过期自动刷新
+2. **AI Agent 模式**：`feishu-cli auth login --json` + `run_in_background=true`，从 stdout 读取 `verification_uri_complete` 展示给用户，等待后台完成；或两步模式 `auth login --no-wait --json` + `auth login --device-code <code> --json`
 3. **命令行参数**：`--user-access-token <token>`
 4. **环境变量**：`FEISHU_USER_ACCESS_TOKEN=<token>`
 
-Token 有效期约 2 小时，Refresh Token 有效期 30 天（需 `offline_access` scope）。搜索命令通过 `resolveRequiredUserToken` 自动从 `token.json` 加载 Token；wiki、日历、任务等命令默认使用 App Token，仅在显式传 `--user-access-token` 时使用用户身份。详见 `feishu-cli-auth` 技能。
+Token 有效期约 2 小时，Refresh Token 有效期 30 天（Device Flow 自动注入 `offline_access`）。搜索命令通过 `resolveRequiredUserToken` 自动从 `token.json` 加载 Token；wiki、日历、任务等命令默认使用 App Token，仅在显式传 `--user-access-token` 时使用用户身份。详见 `feishu-cli-auth` 技能。
+
+**AI Agent 预检**：执行搜索前先用 `feishu-cli auth check --scope "search:docs:read search:message"` 判断 Token 是否满足需求。
 
 ## 搜索消息
 

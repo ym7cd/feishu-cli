@@ -439,7 +439,7 @@ feishu-cli doc media-insert <document_id> \
 |------|--------------|
 | Mermaid 图表导入失败 | 图表会自动降级为代码块展示，不会丢失内容。检查是否使用了 `{}` 花括号、`par...and...end` 等不支持的语法 |
 | 权限添加失败 | 检查飞书开放平台中 App 是否已配置 `docs:permission.member:create` 权限，且应用已发布 |
-| 认证过期（401 错误） | 重新执行 `feishu-cli auth login`，建议包含 `offline_access` scope 以获取 30 天 Refresh Token |
+| 认证过期（401 错误） | 重新执行 `feishu-cli auth login`（Device Flow 会自动注入 `offline_access` 获取 30 天 Refresh Token） |
 | 文档创建成功但无法访问 | 确认已执行 `perm add` 授予 `full_access` 权限并 `perm transfer-owner` 转移所有权 |
 | 表格内容显示不全 | 飞书 API 单个表格限制 9 行 9 列，超出部分会自动拆分为多个表格，属于正常行为 |
 
