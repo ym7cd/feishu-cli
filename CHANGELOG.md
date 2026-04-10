@@ -4,6 +4,39 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## 未发布
+
+### Breaking Changes — 移除 `config add-scopes` 命令
+
+`feishu-cli config add-scopes` 子命令及其 `--domain` / `--scopes` / `--print-only` flag 全部删除。
+
+**删除理由**：
+
+1. **命令几乎不可用** — 硬编码的 `scopeDomains` 字典里多数 scope 名已过时（`docx:document` / `sheets:spreadsheet` / `bitable:app` / `im:chat:readonly` / `drive:export:readonly` / `vc:room:readonly` 等都是飞书不支持的粗粒度名称），生成的申请链接里多数 scope 会被后台拒绝
+2. **权限开通不适合自动化** — 飞书开放平台的权限申请通常需要 tenant 管理员审批，scope 选择也是业务决策而非技术"默认值"。CLI 自动化只会造成"看起来装好了但后台还没批"的幻觉
+3. **有更简单的替代** — 飞书开放平台的应用权限管理页面支持"导入权限 JSON"入口，复制 [README 权限要求](../README.md#权限要求) 章节里的完整权限清单一次性粘贴即可开通 400+ 个 scope
+
+**迁移指引**：
+
+旧：
+```bash
+feishu-cli config add-scopes --domain all
+```
+
+新：
+1. 打开飞书开放平台 → 你的应用 → 权限管理页面
+2. 复制 README 的完整权限 JSON（tenant + user 两套 400+ scope）
+3. 粘贴到"导入权限"入口，一键开通全部
+4. 等待 tenant 管理员审批（如果需要）
+
+**代码影响范围**：
+- 删除 `cmd/config_add_scopes.go` 整个文件
+- `cmd/auth_check.go` 的 `suggestion` 文案改为引导用户去开放平台开通（不再推荐 `config add-scopes`）
+- README / CLAUDE.md / AGENTS.md / 6 个 skill 的 `config add-scopes` 引用全部更新为"去开放平台开通"
+- 保留 `config create-app --save`（Device Flow 创建应用）不变
+
+---
+
 ## [v1.18.0] - 未发布
 
 ### Breaking Changes — OAuth 认证全面对齐官方 lark-cli
@@ -84,7 +117,7 @@ feishu-cli auth check --scope "search:docs:read im:message:readonly"
 
 - **Token 存储格式**：`~/.feishu-cli/token.json` 仍是明文 JSON，数据结构完全兼容。升级后**不需要重新登录**
 - **Token 自动刷新**：`ResolveUserAccessToken()` 路径和 `RefreshAccessToken()` 逻辑保持不动，access_token 过期时用 refresh_token 自动刷新
-- **`config create-app`** 和 **`config add-scopes`** 命令完全不变（它们本来就用 Device Flow）
+- **`config create-app`** 命令完全不变（它本来就用 Device Flow）
 - **`auth status`** / **`auth logout`** 行为不变
 - **所有业务命令**（doc/msg/search/wiki/task/calendar/...）行为不变
 

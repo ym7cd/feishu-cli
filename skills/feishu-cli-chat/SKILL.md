@@ -304,7 +304,7 @@ feishu-cli chat member list oc_xxx --member-id-type user_id
 feishu-cli chat member list oc_xxx --page-size 100 --page-token "xxx"
 ```
 
-> **Scope 要求**：使用 User Token 时需要 `im:chat:read` 或 `im:chat.members:read` scope。若报 99991679 错误，用 `auth check --scope "im:chat:read"` 定位缺失，然后 `config add-scopes --scopes "im:chat:read"` 补权限，最后重新 `auth login`。
+> **Scope 要求**：使用 User Token 时需要 `im:chat:read` 或 `im:chat.members:read` scope。若报 99991679 错误，用 `auth check --scope "im:chat:read"` 定位缺失，然后去飞书开放平台的应用权限管理页面开通 `im:chat:read`，最后重新 `auth login`。
 
 ### 修改群信息
 

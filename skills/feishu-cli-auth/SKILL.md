@@ -2,11 +2,11 @@
 name: feishu-cli-auth
 description: >-
   飞书 OAuth 认证和 User Access Token 管理（Device Flow，RFC 8628）。
-  支持一键创建飞书应用（config create-app）、批量申请权限（config add-scopes）、
-  auth check 预检 scope、auth login 登录、Token 自动刷新。无需配置任何重定向 URL 白名单。
+  支持一键创建飞书应用（config create-app）、auth check 预检 scope、
+  auth login 登录、Token 自动刷新。无需配置任何重定向 URL 白名单。
   当用户请求"登录飞书"、"获取 Token"、"OAuth 授权"、"auth login"、"认证"、
   "搜索需要什么权限"、"Token 过期了"、"刷新 Token"、"创建应用"、"create-app"、
-  "申请权限"、"开通权限"、"add-scopes"、"缺少权限"、"99991672"、"99991679"时使用。
+  "缺少权限"、"99991672"、"99991679"时使用。
   当其他飞书技能（toolkit/msg/read 等）遇到 User Access Token 相关问题时，也应参考此技能。
 user-invocable: true
 allowed-tools: Bash, Read
@@ -22,28 +22,29 @@ feishu-cli 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Tok
 
 ---
 
-## 首次使用：从零开始的三步配置
+## 首次使用：从零开始的初始化
 
-如果用户从未使用过 feishu-cli，按以下顺序完成初始化。整个过程不需要手动访问飞书开放平台后台：
+如果用户从未使用过 feishu-cli，按以下顺序完成初始化：
 
 ```bash
-# 第一步：一键创建飞书应用（CLI 自动完成，无需打开浏览器后台）
+# 第一步：一键创建飞书应用（Device Flow 自注册「个人代理应用」，
+#         扫码确认后自动把 App ID / App Secret 写入 ~/.feishu-cli/config.yaml）
 feishu-cli config create-app --save
 
-# 第二步：为应用开通权限（生成链接，浏览器点击即可）
-feishu-cli config add-scopes --domain all
+# 第二步：在飞书开放平台的"应用权限管理"页面为新应用开通所需 scope
+#         （复制 README 的完整 JSON 粘贴到"导入权限"入口即可一次性开通）
+#         feishu-cli 不做权限申请自动化，这一步由用户/管理员自行操作。
 
-# 第三步：验证配置是否成功
+# 第三步：OAuth 用户授权（搜索、审批等需要用户身份的功能才需要这一步）
+feishu-cli auth login
+
+# 第四步：验证配置是否成功
 feishu-cli doc create --title "Hello Feishu"
 ```
 
-第一步通过 Device Flow 协议自动注册「个人代理应用」，`--save` 会把凭证写入配置文件。如果还需要搜索、审批等用户身份功能，额外执行：
+第一步通过 Device Flow 协议自动注册「个人代理应用」，`--save` 会把凭证写入配置文件。
 
-```bash
-feishu-cli auth login
-```
-
-> 下文各章节有每一步的详细说明。已有应用凭证的用户可跳过第一步。
+> **关于权限申请**：v1.18+ 版本**移除了** `config add-scopes` 命令。理由是权限申请涉及 tenant 管理员审批、scope 选择是业务决策，不应由 CLI 做自动化。用户在飞书开放平台的权限管理页面一次性粘贴 README 的 JSON 最快捷。
 
 ---
 
@@ -63,7 +64,7 @@ feishu-cli auth login
 **Scope 由飞书应用配置决定，不由 CLI 请求**：
 - CLI 在 `auth login` 时不传任何 scope 请求参数
 - 飞书 token v2 端点**忽略**客户端声明的 scope，始终返回应用在开放平台已开通的**全部** scope
-- 要增减 Token 权限范围，只需通过 `feishu-cli config add-scopes` 调整应用配置，然后重新 `auth login`
+- 要增减 Token 权限范围，直接在飞书开放平台的"应用权限管理"页面调整应用的 scope 配置，然后重新 `auth login`。feishu-cli 不做权限申请自动化。
 
 ---
 
@@ -103,16 +104,23 @@ feishu-cli auth check --scope "REQ_SCOPES" -o json   (exit 0 = 全部满足)
 case ok=true:                         继续执行业务命令
 case error=not_logged_in:             → 启动登录流程
 case error=token_expired:             → 启动登录流程
-case missing=[...]:                   → 启动登录流程（顺便提示可能需要 config add-scopes）
+case missing=[...]:                   → 提示用户去飞书开放平台的应用权限管理页面开通缺失的 scope，然后重新 auth login
 ```
 
 AI **永远不应该**：
 - 传 `--scopes` flag（已删除）
 - 调 `auth callback` 命令（已删除）
 - 使用 `--print-url` flag（已删除）
+- 调 `config add-scopes` 命令（已删除，权限申请是用户/管理员的责任，不做自动化）
 - 维护硬编码的 scope 列表
 - 自己生成或管理 device_code
 - **要求用户从浏览器地址栏复制回调 URL 回传给 AI**——这是 v1.18 前 Authorization Code Flow 的流程，已彻底删除。Device Flow 下用户只需**点击链接完成授权**，无需复制任何东西。如果 AI 引导用户"把地址栏的 URL 粘贴给我"，那是在回忆错误的旧流程
+
+**当用户缺少某个 scope 时 AI 应如何引导**：不要自己尝试跑任何"申请权限"的命令。直接告诉用户：
+1. 打开飞书开放平台 → 你的应用 → 权限管理页面
+2. 搜索并开通缺失的 scope（具体 scope 名可从 auth check 的 `missing` 字段读到）
+3. 或者复制 README 的完整权限 JSON 一次性导入
+4. 重新 `feishu-cli auth login`
 
 ### 方案 A：run_in_background 后台阻塞（推荐）
 
@@ -227,7 +235,7 @@ feishu-cli auth check --scope "search:docs:read im:message:readonly"
 # exit 1
 
 # 部分缺失
-{"ok":false,"granted":["search:docs:read"],"missing":["im:message:readonly"],"suggestion":"feishu-cli config add-scopes --scopes \"im:message:readonly\" && feishu-cli auth login"}
+{"ok":false,"granted":["search:docs:read"],"missing":["im:message:readonly"],"suggestion":"在飞书开放平台为应用开通以下 scope 后执行 feishu-cli auth login 重新授权: im:message:readonly"}
 # exit 1
 ```
 
@@ -348,8 +356,8 @@ feishu-cli auth logout
 |------|------|------|
 | `"缺少 User Access Token"` | 从未登录 | `feishu-cli auth login` |
 | `"User Access Token 已过期"` | token.json 中 access + refresh 都过期 | 重新 `auth login` |
-| 搜索报 `99991679 Unauthorized` | Token scope 不满足 | `auth check --scope "..."` 定位缺失，`config add-scopes` 补权限后重新 `auth login` |
-| 搜索报 `99991672 Access denied` | 应用未开通所需权限 | `feishu-cli config add-scopes --domain <域>` 申请 |
+| 搜索报 `99991679 Unauthorized` | Token scope 不满足 | `auth check --scope "..."` 定位缺失；在飞书开放平台应用权限管理页面补权限后重新 `auth login` |
+| 搜索报 `99991672 Access denied` | 应用未开通所需权限 | 在飞书开放平台应用权限管理页面开通对应 scope，然后重新 `auth login` |
 | Refresh Token 为空 | 罕见：服务端未返回 refresh_token | 重新 `auth login`（CLI 强制注入 `offline_access`） |
 | `"授权码已过期"` | 设备码 240 秒内未完成授权 | 重新 `auth login`，尽快完成浏览器授权 |
 | `"用户拒绝了授权"` | 用户在飞书授权页点了拒绝 | 重新 `auth login`，这次点「允许」 |
@@ -485,53 +493,38 @@ feishu-cli config create-app --save --brand lark
 ### 创建成功后的下一步
 
 ```bash
-# 1. 为应用开通权限
-feishu-cli config add-scopes --domain all
+# 1. 在飞书开放平台的"应用权限管理"页面为新应用开通所需 scope
+#    复制 README 的完整权限 JSON（tenant + user 两套 400+ 个 scope）
+#    粘贴到"导入权限"入口即可一次性开通全部
+#    feishu-cli 不做权限申请自动化（需要 tenant 管理员审批，是业务决策）
 
-# 2. 验证配置
+# 2. 验证配置（App Token 身份，不需要 auth login）
 feishu-cli doc create --title "Hello Feishu"
 
-# 3. 可选：OAuth 用户授权
+# 3. 可选：OAuth 用户授权（搜索、审批等需要用户身份的功能）
 feishu-cli auth login
 ```
 
 ---
 
-## 为应用申请开通权限
+## 权限申请说明
 
-当命令返回 `99991672 Access denied` 或 `99991679 Unauthorized` 时，说明应用缺少对应权限。使用 `config add-scopes` 批量申请：
+**feishu-cli 不提供权限申请自动化**。v1.18+ 移除了 `config add-scopes` 命令，理由：
+
+1. **权限开通是 tenant 管理员的职责**，自动化容易造成"看起来装好了但飞书后台还没批"的幻觉
+2. **scope 选择是业务决策**，不是一个 CLI 能替用户决定的"默认值"
+3. 最快的方式是一次性导入完整 JSON：打开飞书开放平台 → 你的应用 → 权限管理 → 导入权限 → 粘贴 README 的 JSON → 提交审批
+
+**当命令返回 `99991672 Access denied` 或 `99991679 Unauthorized` 时**，说明应用缺少对应 scope。排查步骤：
 
 ```bash
-# 按域批量申请（推荐）
-feishu-cli config add-scopes --domain calendar,task,vc
+# 1. 用 auth check 精准定位缺失的 scope
+feishu-cli auth check --scope "im:message:readonly search:docs:read"
+# 输出 missing=[...] 告诉你差哪些
 
-# 申请所有常用权限
-feishu-cli config add-scopes --domain all
+# 2. 去飞书开放平台 → 你的应用 → 权限管理 → 搜索上一步 missing 里的 scope 逐个开通
+#    或粘贴 README 的完整权限 JSON 一次性开通全部
 
-# 指定具体 scope
-feishu-cli config add-scopes --scopes "vc:meeting:readonly minutes:minutes:readonly"
-
-# 只输出链接（不打开浏览器）
-feishu-cli config add-scopes --domain doc,im --print-only
+# 3. 管理员审批通过后，重新 auth login
+feishu-cli auth login
 ```
-
-> 注意：`config add-scopes --scopes` 是**配置应用权限**的 flag（给应用添加权限到开放平台的权限列表），和已删除的 `auth login --scopes`（登录时请求 scope）**完全不同**——前者仍然保留。
-
-### 可用的域名
-
-| 域名 | 包含的权限 |
-|------|-----------|
-| `calendar` | 日历读写 |
-| `task` | 任务读写 |
-| `vc` | 视频会议 |
-| `minutes` | 妙记 |
-| `doc` | 文档/知识库/云空间 |
-| `im` | 消息/群聊 |
-| `bitable` | 多维表格 |
-| `sheet` | 电子表格 |
-| `contact` | 通讯录 |
-| `search` | 搜索 |
-| `export` | 导出 |
-| `all` | 以上全部 |
-
-申请完成后，需要重新 `auth login` 才能让新 scope 出现在 Token 中。

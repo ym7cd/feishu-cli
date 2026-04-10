@@ -142,7 +142,7 @@ app_secret: "xxx"
 - `auth login --no-wait --json`：只请求 device_code 并立即输出，不启动轮询（两步模式第一步）
 - `auth login --device-code <code> --json`：用已有 device_code 继续轮询（两步模式第二步）
 
-**scope 策略**：CLI 在登录时不声明 scope，飞书 token 端点返回应用在开放平台预配置的**全部**已开通权限。要增减权限范围请用 `feishu-cli config add-scopes` 调整应用配置，然后重新 `auth login`。`offline_access` 由 `device_flow.go` 强制注入，所有 Token 都带 Refresh Token（30 天）。
+**scope 策略**：CLI 在登录时不声明 scope，飞书 token 端点返回应用在开放平台预配置的**全部**已开通权限。要增减权限范围请直接在飞书开放平台的应用权限管理页面调整（粘贴 README 的完整 JSON 一次性开通最全），然后重新 `auth login`。`offline_access` 由 `device_flow.go` 强制注入，所有 Token 都带 Refresh Token（30 天）。
 
 **scope 预检**：AI Agent 在执行业务命令前应先调 `feishu-cli auth check --scope "REQ_SCOPES"` 判断 Token 是否满足，避免中途报错。
 
@@ -535,15 +535,15 @@ feishu-cli search docs "产品需求" --user-access-token <token>
 
 ## 权限要求
 
-**推荐做法**：新用户无需手动配置权限，直接用 CLI 自带的工作流：
+**推荐做法**：
 
 ```bash
-feishu-cli config create-app --save          # 一键创建飞书应用
-feishu-cli config add-scopes --domain all    # 一键申请所有常用权限
-feishu-cli auth login                        # OAuth 用户授权（搜索/审批等）
+feishu-cli config create-app --save   # 一键创建飞书应用（Device Flow 自注册）
+# 然后在飞书开放平台的应用权限管理页面粘贴 README 的 JSON 一次性开通全部 scope
+feishu-cli auth login                 # OAuth 用户授权（搜索/审批等需要用户身份的功能）
 ```
 
-完整权限清单（tenant + user 两套共 350+ 个 scope）见 [README.md 权限要求](README.md#权限要求) — 直接复制 JSON 在飞书开放平台应用权限管理页面导入即可。
+权限开通是用户的责任（飞书开放平台一般需要 tenant 管理员审批），feishu-cli 不做自动化。完整权限清单（tenant + user 共 400+ 个 scope）见 [README.md 权限要求](README.md#权限要求) — 直接复制 JSON 在飞书开放平台应用权限管理页面导入即可。
 
 **常见命令的核心权限**：
 

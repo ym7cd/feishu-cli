@@ -30,7 +30,7 @@ feishu-cli auth check --scope "search:docs:read search:message"
 根据返回结果判断：
 - `ok=true` → 直接执行搜索（步骤 3）
 - `error=not_logged_in` 或 `error=token_expired` → 登录（步骤 2）
-- `missing=[...]` 非空 → 需要先给应用加权限再重新登录（步骤 2，注意先 `config add-scopes`）
+- `missing=[...]` 非空 → 先在飞书开放平台为应用开通缺失的 scope（见步骤 2），然后重新登录
 
 ### 2. 登录获取 Token（如需要）
 
@@ -43,12 +43,12 @@ feishu-cli auth login --json
 
 首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_success",...}`。
 
-如果 `auth check` 返回 `missing=[...]`，说明应用还没开通所需权限，需要先申请权限再登录：
+如果 `auth check` 返回 `missing=[...]`，说明应用还没开通所需权限。**feishu-cli 不做权限申请自动化**——引导用户自己去飞书开放平台：
 
-```bash
-feishu-cli config add-scopes --scopes "search:docs:read search:message"  # 或 --domain search
-feishu-cli auth login --json
-```
+1. 打开飞书开放平台 → 你的应用 → 权限管理页面
+2. 搜索并开通缺失的 scope（例如 `search:docs:read`、`search:message`），或复制 README 的完整 JSON 一次性导入
+3. 等待 tenant 管理员审批（如果需要）
+4. 审批通过后再执行 `feishu-cli auth login --json`
 
 > 详细的 AI Agent 授权约定见 `feishu-cli-auth` 技能。
 

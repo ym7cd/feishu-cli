@@ -69,7 +69,7 @@ func performAuthCheck(required []string) (result map[string]any, ok bool) {
 	}
 	if len(missing) > 0 {
 		out["suggestion"] = fmt.Sprintf(
-			"feishu-cli config add-scopes --scopes %q && feishu-cli auth login",
+			"在飞书开放平台为应用开通以下 scope 后执行 feishu-cli auth login 重新授权: %s",
 			strings.Join(missing, " "),
 		)
 	}
