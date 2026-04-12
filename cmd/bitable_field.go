@@ -5,210 +5,231 @@ import (
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
+	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
-// 字段类型映射
-var fieldTypeNames = map[int]string{
-	1:    "多行文本",
-	2:    "数字",
-	3:    "单选",
-	4:    "多选",
-	5:    "日期",
-	7:    "复选框",
-	11:   "人员",
-	15:   "超链接",
-	18:   "单向关联",
-	20:   "公式",
-	21:   "双向关联",
-	22:   "地理位置",
-	23:   "群组",
-	1001: "创建时间",
-	1002: "修改时间",
-	1003: "创建人",
-	1004: "修改人",
-	1005: "自动编号",
+// field 子命令组
+var bitableFieldCmd = &cobra.Command{
+	Use:   "field",
+	Short: "字段管理（list/get/create/update/delete/search-options）",
 }
 
-var bitableFieldsCmd = &cobra.Command{
-	Use:   "fields <app_token> <table_id>",
+// ------- 通用 helper -------
+
+func bitableFieldPath(baseToken, tableID string, extra ...string) string {
+	parts := []string{"bases", baseToken, "tables", tableID, "fields"}
+	parts = append(parts, extra...)
+	return client.BaseV3Path(parts...)
+}
+
+// ------- 子命令 -------
+
+var bitableFieldListCmd = &cobra.Command{
+	Use:   "list",
 	Short: "列出字段",
-	Long:  "列出数据表的所有字段",
-	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		fields, err := client.ListBitableFields(appToken, tableID, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			return printJSON(fields)
-		}
-
-		if len(fields) == 0 {
-			fmt.Println("暂无字段")
-			return nil
-		}
-
-		fmt.Printf("共 %d 个字段：\n", len(fields))
-		for i, f := range fields {
-			typeName := fieldTypeNames[f.Type]
-			if typeName == "" {
-				typeName = fmt.Sprintf("type=%d", f.Type)
-			}
-			primary := ""
-			if f.IsPrimary {
-				primary = " [主索引]"
-			}
-			fmt.Printf("  %d. %s (%s, ID: %s)%s\n", i+1, f.FieldName, typeName, f.FieldID, primary)
-		}
-		return nil
+		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
+			tableID, _ := cmd.Flags().GetString("table-id")
+			return bitableFieldPath(baseToken, tableID)
+		}, nil)
 	},
 }
 
-var bitableCreateFieldCmd = &cobra.Command{
-	Use:   "create-field <app_token> <table_id>",
+var bitableFieldGetCmd = &cobra.Command{
+	Use:   "get",
+	Short: "获取字段",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fieldID, _ := cmd.Flags().GetString("field-id")
+		if fieldID == "" {
+			return fmt.Errorf("--field-id 必填")
+		}
+		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
+			tableID, _ := cmd.Flags().GetString("table-id")
+			return bitableFieldPath(baseToken, tableID, fieldID)
+		}, nil)
+	},
+}
+
+var bitableFieldCreateCmd = &cobra.Command{
+	Use:   "create",
 	Short: "创建字段",
-	Long: `创建数据表字段。
-
-字段定义 JSON 格式:
-  {"field_name": "名称", "type": 1}                              # 多行文本
-  {"field_name": "金额", "type": 2}                              # 数字
-  {"field_name": "状态", "type": 3, "property": {"options": [{"name": "进行中"}, {"name": "已完成"}]}}  # 单选
-
-字段类型: 1=文本 2=数字 3=单选 4=多选 5=日期 7=复选框 11=人员 15=超链接 18=单向关联`,
-	Args: cobra.ExactArgs(2),
+	Long:  `创建字段。通过 --config/--config-file 传入 JSON 请求体。参考 base/v3 官方文档。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		fieldJSON, _ := cmd.Flags().GetString("field")
-		fieldFile, _ := cmd.Flags().GetString("field-file")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		fieldJSON, err := loadJSONInput(fieldJSON, fieldFile, "field", "field-file", "字段定义 JSON")
-		if err != nil {
-			return err
-		}
-
-		var fieldDef map[string]any
-		if err := json.Unmarshal([]byte(fieldJSON), &fieldDef); err != nil {
-			return fmt.Errorf("解析字段定义 JSON 失败: %w", err)
-		}
-
-		field, err := client.CreateBitableField(appToken, tableID, fieldDef, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			return printJSON(field)
-		}
-
-		fmt.Printf("创建成功！\n")
-		fmt.Printf("  Field ID: %s\n", field.FieldID)
-		fmt.Printf("  名称: %s\n", field.FieldName)
-		fmt.Printf("  类型: %d\n", field.Type)
-		return nil
+		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
+			tableID, _ := cmd.Flags().GetString("table-id")
+			return bitableFieldPath(baseToken, tableID)
+		})
 	},
 }
 
-var bitableUpdateFieldCmd = &cobra.Command{
-	Use:   "update-field <app_token> <table_id> <field_id>",
+var bitableFieldUpdateCmd = &cobra.Command{
+	Use:   "update",
 	Short: "更新字段",
-	Long: `更新数据表字段。
-
-⚠️ 重要：更新单选（type=3）字段时，必须带上完整的 property（含 options），否则选项被清空。
-⚠️ 重要：更新主索引列（is_primary=true）时，必须带 type 字段。
-
-建议先用 fields 命令获取当前字段定义，修改后再更新。`,
-	Args: cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		fieldID := args[2]
-		fieldJSON, _ := cmd.Flags().GetString("field")
-		fieldFile, _ := cmd.Flags().GetString("field-file")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		fieldJSON, err := loadJSONInput(fieldJSON, fieldFile, "field", "field-file", "字段定义 JSON")
-		if err != nil {
-			return err
+		fieldID, _ := cmd.Flags().GetString("field-id")
+		if fieldID == "" {
+			return fmt.Errorf("--field-id 必填")
 		}
-
-		var fieldDef map[string]any
-		if err := json.Unmarshal([]byte(fieldJSON), &fieldDef); err != nil {
-			return fmt.Errorf("解析字段定义 JSON 失败: %w", err)
-		}
-
-		field, err := client.UpdateBitableField(appToken, tableID, fieldID, fieldDef, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			return printJSON(field)
-		}
-
-		fmt.Printf("更新成功！\n")
-		fmt.Printf("  Field ID: %s\n", field.FieldID)
-		fmt.Printf("  名称: %s\n", field.FieldName)
-		return nil
+		// 官方 base/v3 字段更新是 PUT（全量替换），不是 PATCH
+		return runBaseV3WithJSON(cmd, "PUT", func(baseToken string) string {
+			tableID, _ := cmd.Flags().GetString("table-id")
+			return bitableFieldPath(baseToken, tableID, fieldID)
+		})
 	},
 }
 
-var bitableDeleteFieldCmd = &cobra.Command{
-	Use:   "delete-field <app_token> <table_id> <field_id>",
+var bitableFieldDeleteCmd = &cobra.Command{
+	Use:   "delete",
 	Short: "删除字段",
-	Long:  "删除数据表的指定字段",
-	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		fieldID := args[2]
-		userToken := resolveOptionalUserToken(cmd)
-
-		if err := client.DeleteBitableField(appToken, tableID, fieldID, userToken); err != nil {
-			return err
+		fieldID, _ := cmd.Flags().GetString("field-id")
+		if fieldID == "" {
+			return fmt.Errorf("--field-id 必填")
 		}
-
-		fmt.Println("删除成功")
-		return nil
+		return runBaseV3Simple(cmd, "DELETE", func(baseToken string) string {
+			tableID, _ := cmd.Flags().GetString("table-id")
+			return bitableFieldPath(baseToken, tableID, fieldID)
+		}, nil)
 	},
+}
+
+var bitableFieldSearchOptionsCmd = &cobra.Command{
+	Use:   "search-options",
+	Short: "搜索字段选项（单选/多选字段的候选值）",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fieldID, _ := cmd.Flags().GetString("field-id")
+		if fieldID == "" {
+			return fmt.Errorf("--field-id 必填")
+		}
+		query, _ := cmd.Flags().GetString("query")
+		offset, _ := cmd.Flags().GetInt("offset")
+		limit, _ := cmd.Flags().GetInt("limit")
+		params := map[string]any{}
+		if query != "" {
+			params["query"] = query
+		}
+		if offset > 0 {
+			params["offset"] = offset
+		}
+		if limit > 0 {
+			params["limit"] = limit
+		}
+		// 官方 base/v3 路径段是 "options" 而非 "search_options"
+		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
+			tableID, _ := cmd.Flags().GetString("table-id")
+			return bitableFieldPath(baseToken, tableID, fieldID, "options")
+		}, params)
+	},
+}
+
+// ------- Generic runner helpers -------
+
+// runBaseV3Simple 运行一个简单的 GET/DELETE 请求（无 body）
+func runBaseV3Simple(cmd *cobra.Command, method string, pathFn func(baseToken string) string, params map[string]any) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	token, err := resolveRequiredUserToken(cmd)
+	if err != nil {
+		return err
+	}
+	baseToken, err := resolveBaseToken(cmd)
+	if err != nil {
+		return err
+	}
+	path := pathFn(baseToken)
+	data, err := client.BaseV3Call(method, path, params, nil, token)
+	if err != nil {
+		return err
+	}
+	return printJSON(data)
+}
+
+// runBaseV3WithJSON 运行一个带 JSON body 的 POST/PUT/PATCH 请求
+// 从 --config / --config-file 读取 JSON 请求体
+func runBaseV3WithJSON(cmd *cobra.Command, method string, pathFn func(baseToken string) string) error {
+	configJSON, _ := cmd.Flags().GetString("config")
+	configFile, _ := cmd.Flags().GetString("config-file")
+	raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "请求体")
+	if err != nil {
+		return err
+	}
+	var body any
+	if err := json.Unmarshal([]byte(raw), &body); err != nil {
+		return fmt.Errorf("解析 --config 失败: %w", err)
+	}
+	return runBaseV3WithBody(cmd, method, pathFn, body)
+}
+
+// runBaseV3WithBody 运行一个带明确 body 的 POST/PUT/PATCH 请求
+// 用于命令层自己构造 body 的场景（如 view create/rename 的快捷方式）
+func runBaseV3WithBody(cmd *cobra.Command, method string, pathFn func(baseToken string) string, body any) error {
+	if err := config.Validate(); err != nil {
+		return err
+	}
+	token, err := resolveRequiredUserToken(cmd)
+	if err != nil {
+		return err
+	}
+	baseToken, err := resolveBaseToken(cmd)
+	if err != nil {
+		return err
+	}
+	data, err := client.BaseV3Call(method, pathFn(baseToken), nil, body, token)
+	if err != nil {
+		return err
+	}
+	return printJSON(data)
 }
 
 func init() {
-	bitableCmd.AddCommand(bitableFieldsCmd)
-	bitableCmd.AddCommand(bitableCreateFieldCmd)
-	bitableCmd.AddCommand(bitableUpdateFieldCmd)
-	bitableCmd.AddCommand(bitableDeleteFieldCmd)
+	bitableCmd.AddCommand(bitableFieldCmd)
 
-	// fields
-	bitableFieldsCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableFieldsCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	bitableFieldCmd.AddCommand(bitableFieldListCmd)
+	addBaseTokenFlag(bitableFieldListCmd)
+	bitableFieldListCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFieldListCmd.Flags().String("user-access-token", "", "User Access Token")
+	mustMarkFlagRequired(bitableFieldListCmd, "table-id")
 
-	// create-field
-	bitableCreateFieldCmd.Flags().String("field", "", "字段定义 JSON")
-	bitableCreateFieldCmd.Flags().String("field-file", "", "字段定义 JSON 文件")
-	bitableCreateFieldCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableCreateFieldCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	bitableCreateFieldCmd.MarkFlagsOneRequired("field", "field-file")
-	bitableCreateFieldCmd.MarkFlagsMutuallyExclusive("field", "field-file")
+	bitableFieldCmd.AddCommand(bitableFieldGetCmd)
+	addBaseTokenFlag(bitableFieldGetCmd)
+	bitableFieldGetCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFieldGetCmd.Flags().String("field-id", "", "field_id（必填）")
+	bitableFieldGetCmd.Flags().String("user-access-token", "", "User Access Token")
+	mustMarkFlagRequired(bitableFieldGetCmd, "table-id")
 
-	// update-field
-	bitableUpdateFieldCmd.Flags().String("field", "", "字段定义 JSON")
-	bitableUpdateFieldCmd.Flags().String("field-file", "", "字段定义 JSON 文件")
-	bitableUpdateFieldCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableUpdateFieldCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	bitableUpdateFieldCmd.MarkFlagsOneRequired("field", "field-file")
-	bitableUpdateFieldCmd.MarkFlagsMutuallyExclusive("field", "field-file")
+	bitableFieldCmd.AddCommand(bitableFieldCreateCmd)
+	addBaseTokenFlag(bitableFieldCreateCmd)
+	bitableFieldCreateCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFieldCreateCmd.Flags().String("config", "", "JSON 请求体（字段定义）")
+	bitableFieldCreateCmd.Flags().String("config-file", "", "JSON 请求体文件")
+	bitableFieldCreateCmd.Flags().String("user-access-token", "", "User Access Token")
+	mustMarkFlagRequired(bitableFieldCreateCmd, "table-id")
 
-	// delete-field
-	bitableDeleteFieldCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	bitableFieldCmd.AddCommand(bitableFieldUpdateCmd)
+	addBaseTokenFlag(bitableFieldUpdateCmd)
+	bitableFieldUpdateCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFieldUpdateCmd.Flags().String("field-id", "", "field_id（必填）")
+	bitableFieldUpdateCmd.Flags().String("config", "", "JSON 请求体")
+	bitableFieldUpdateCmd.Flags().String("config-file", "", "JSON 请求体文件")
+	bitableFieldUpdateCmd.Flags().String("user-access-token", "", "User Access Token")
+	mustMarkFlagRequired(bitableFieldUpdateCmd, "table-id")
+
+	bitableFieldCmd.AddCommand(bitableFieldDeleteCmd)
+	addBaseTokenFlag(bitableFieldDeleteCmd)
+	bitableFieldDeleteCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFieldDeleteCmd.Flags().String("field-id", "", "field_id（必填）")
+	bitableFieldDeleteCmd.Flags().String("user-access-token", "", "User Access Token")
+	mustMarkFlagRequired(bitableFieldDeleteCmd, "table-id")
+
+	bitableFieldCmd.AddCommand(bitableFieldSearchOptionsCmd)
+	addBaseTokenFlag(bitableFieldSearchOptionsCmd)
+	bitableFieldSearchOptionsCmd.Flags().String("table-id", "", "table_id（必填）")
+	bitableFieldSearchOptionsCmd.Flags().String("field-id", "", "field_id（必填）")
+	bitableFieldSearchOptionsCmd.Flags().String("query", "", "搜索关键词")
+	bitableFieldSearchOptionsCmd.Flags().Int("offset", 0, "分页 offset")
+	bitableFieldSearchOptionsCmd.Flags().Int("limit", 0, "分页 limit（默认 30）")
+	bitableFieldSearchOptionsCmd.Flags().String("user-access-token", "", "User Access Token")
+	mustMarkFlagRequired(bitableFieldSearchOptionsCmd, "table-id", "field-id")
 }

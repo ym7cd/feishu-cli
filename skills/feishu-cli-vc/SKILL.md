@@ -1,131 +1,200 @@
 ---
 name: feishu-cli-vc
 description: >-
-  飞书视频会议与妙记操作。搜索历史会议记录、获取会议纪要和逐字稿、查看妙记信息。
-  当用户请求"搜索会议"、"会议记录"、"会议纪要"、"逐字稿"、"妙记"、"meeting"、
-  "vc search"、"minutes"、"查看最近的会议"时使用。
-  也适用于：用户想了解某次会议的内容、获取会议总结、下载会议逐字稿等场景。
+  飞书视频会议与妙记操作。多维搜索历史会议、获取会议纪要/AI 产物/逐字稿、
+  查询会议录制、下载妙记媒体文件。支持 meeting-ids / minute-tokens / calendar-event-ids
+  三路径入口。当用户请求"搜索会议"、"会议记录"、"会议纪要"、"逐字稿"、"妙记"、"meeting"、
+  "vc search"、"vc recording"、"minutes"、"下载妙记"、"妙记视频"、"会议录制"、
+  "从日程找会议"时使用。
 user-invocable: true
 allowed-tools: Bash, Read
 ---
 
 # 飞书视频会议与妙记
 
-搜索历史会议记录、获取会议纪要和逐字稿、查看妙记基础信息。
+搜索历史会议、获取纪要/AI 产物/逐字稿、查询会议录制、下载妙记媒体。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 
 ## 前置条件
 
-- **认证**：需要有效的 App Access Token（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET`，或 `~/.feishu-cli/config.yaml`）
-- **权限**：应用需开通 `vc:room:readonly`（会议室只读）、`vc:meeting:readonly`（会议记录只读）、`minutes:minutes:readonly`（妙记只读）
-- **验证**：`feishu-cli auth status` 确认认证状态正常
+- **认证**：所有 vc / minutes 命令都需要 **User Access Token**（推荐先 `auth check --scope "..."`，再执行 `feishu-cli auth login --scope "..."` 或 `--domain vc --domain minutes --recommend`）
+- **App 凭证**：应用 App ID + App Secret（环境变量 `FEISHU_APP_ID` + `FEISHU_APP_SECRET` 或 `~/.feishu-cli/config.yaml`）
+- **预检**：`feishu-cli auth status` 查看登录状态；`feishu-cli auth check --scope "vc:meeting.search:read"` 预检 scope
 
 ## 命令速查
 
-### 搜索历史会议
-
-搜索飞书视频会议的历史记录，支持按时间范围、会议号、会议状态过滤。
+### 1. 搜索历史会议（多维过滤）
 
 ```bash
-feishu-cli vc search [选项]
+feishu-cli vc search [过滤条件]
 ```
+
+底层走 `POST /open-apis/vc/v1/meetings/search`。**至少指定一个过滤条件**。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `--start` | string | 起始时间（Unix 秒级时间戳） |
-| `--end` | string | 结束时间（Unix 秒级时间戳） |
-| `--meeting-no` | string | 会议号精确匹配 |
-| `--meeting-status` | int | 会议状态（1=进行中，2=已结束） |
-| `--page-size` | int | 每页数量（默认 20） |
-| `--page-token` | string | 分页 token（上一页返回） |
-| `-o json` | string | JSON 格式输出 |
+| `--query` | string | 关键词（1-50 字符） |
+| `--start` | string | 起始时间（YYYY-MM-DD 或 RFC3339） |
+| `--end` | string | 结束时间（YYYY-MM-DD 或 RFC3339，纯日期自动对齐 23:59:59） |
+| `--organizer-ids` | string | 主持人 open_id 列表，逗号分隔 |
+| `--participant-ids` | string | 参会者 open_id 列表，逗号分隔 |
+| `--room-ids` | string | 会议室 ID 列表，逗号分隔 |
+| `--page-size` | int | 每页数量（1-30，默认 15） |
+| `--page-token` | string | 分页标记 |
+| `-o, --output` | string | `json` 格式化输出 |
 
-### 获取会议纪要
-
-获取指定会议的纪要内容（包含结构化摘要和逐字稿）。`--meeting-id` 和 `--minute-token` 二选一，互斥。
+### 2. 获取会议纪要（三路径）
 
 ```bash
-feishu-cli vc notes [选项]
+feishu-cli vc notes (--meeting-ids | --minute-tokens | --calendar-event-ids) [选项]
 ```
+
+三入口**互斥**，均支持逗号分隔批量（最多 50 条）。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `--meeting-id` | string | 通过会议 ID 获取纪要（与 `--minute-token` 互斥） |
-| `--minute-token` | string | 通过妙记 token 获取纪要（与 `--meeting-id` 互斥） |
-| `-o json` | string | JSON 格式输出 |
+| `--meeting-ids` | CSV | 会议 ID 列表 |
+| `--minute-tokens` | CSV | 妙记 token 列表 |
+| `--calendar-event-ids` | CSV | 日历事件实例 ID 列表（自动反查 meeting_ids + meeting_notes） |
+| `--with-artifacts` | bool | 额外获取 AI 产物（summary / todos / chapters） |
+| `--download-transcript` | bool | 下载逐字稿到 `{output-dir}/artifact-{sanitized_title}-{token}/transcript.txt`（已存在时需加 `--overwrite`） |
+| `--output-dir` | string | 逐字稿落盘目录（默认当前目录） |
+| `--overwrite` | bool | 覆盖已存在的逐字稿文件 |
+| `-o, --output` | string | `json` 格式化输出 |
 
-### 获取妙记基础信息
+输出字段：`source / meeting_id / minute_token / title / minute_url / create_time / note_doc / verbatim_doc / shared_docs / artifacts / transcript_path`
 
-获取妙记的元数据（标题、创建时间、时长、参与者等）。
+### 3. 查询会议录制 → minute_token
 
 ```bash
-feishu-cli minutes get <minute_token> [选项]
+feishu-cli vc recording (--meeting-ids | --calendar-event-ids)
 ```
+
+从会议录制 URL 中提取 `minute_token`，用于后续下载媒体或获取妙记。互斥入口，批量最多 50 条。
 
 | 参数 | 类型 | 说明 |
 |------|------|------|
-| `<minute_token>` | string | 妙记 token（必填，位置参数） |
-| `-o json` | string | JSON 格式输出 |
+| `--meeting-ids` | CSV | 会议 ID 列表 |
+| `--calendar-event-ids` | CSV | 日历事件实例 ID 列表 |
+| `-o, --output` | string | `json` 格式化输出 |
+
+### 4. 获取妙记基础信息（可合并 AI 产物）
+
+```bash
+feishu-cli minutes get <minute_token> [--with-artifacts] [-o json]
+```
+
+| 参数 | 说明 |
+|------|------|
+| `<minute_token>` | 位置参数，必填 |
+| `--with-artifacts` | 额外调用 artifacts API 合并输出（summary / todos / chapters） |
+| `-o, --output json` | JSON 格式输出 |
+
+### 5. 下载妙记媒体文件（批量）
+
+```bash
+feishu-cli minutes download --minute-tokens <t1,t2,...> [--output <path>] [--overwrite] [--url-only]
+```
+
+先调 `GET /open-apis/minutes/v1/minutes/{token}/media` 拿预签名 URL，再走 HTTP 流式下载。内置 SSRF 防护（拒绝 localhost/回环/内网段）、重定向校验（最多 5 次、禁止 HTTPS→HTTP 降级）、文件名解析（Content-Disposition / RFC 5987 `filename*` / Content-Type 推导扩展名）、批量文件名冲突去重（加 `{token}-` 前缀）、5 req/s 速率限制（`time.Ticker`）。
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| `--minute-tokens` | CSV | **必填**，最多 50 条 |
+| `--output` | string | 输出路径：单 token 为文件或目录；批量必须是目录；默认当前目录 |
+| `--overwrite` | bool | 覆盖已存在文件 |
+| `--url-only` | bool | 只打印下载 URL，不实际下载 |
 
 ## 使用示例
 
 ```bash
-# 搜索最近一周的会议（假设当前时间戳为 1711584000）
-feishu-cli vc search --start 1710979200 --end 1711584000
+# 关键词 + 时间范围搜索
+feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-04-11
 
-# 搜索已结束的会议
-feishu-cli vc search --meeting-status 2
+# 按主持人过滤 + JSON 输出
+feishu-cli vc search --organizer-ids ou_xxx,ou_yyy -o json
 
-# 按会议号精确查找
-feishu-cli vc search --meeting-no "123456789"
+# 通过会议 ID 批量查纪要
+feishu-cli vc notes --meeting-ids 6900001,6900002
 
-# 分页获取更多会议记录
-feishu-cli vc search --page-size 50
+# 通过妙记 token 查 + 获取 AI 产物 + 下载逐字稿
+feishu-cli vc notes --minute-tokens obcnxxxx \
+  --with-artifacts --download-transcript --output-dir ./notes
 
-# 通过会议 ID 获取会议纪要
-feishu-cli vc notes --meeting-id "6911xxxxx"
+# 从日历事件反查并下载全部逐字稿
+feishu-cli vc notes --calendar-event-ids <event_id> --download-transcript --output-dir ./notes
 
-# 通过妙记 token 获取纪要
-feishu-cli vc notes --minute-token "obcnxxxxx"
+# 从会议 ID 反查 minute_token
+feishu-cli vc recording --meeting-ids 6900001 -o json
 
-# 获取妙记基础信息
-feishu-cli minutes get obcnxxxxx
+# 单条妙记下载到当前目录（自动解析文件名）
+feishu-cli minutes download --minute-tokens obcnxxxx
 
-# JSON 格式输出（便于程序解析）
-feishu-cli vc search --meeting-status 2 -o json
-feishu-cli minutes get obcnxxxxx -o json
+# 批量下载到指定目录
+feishu-cli minutes download --minute-tokens t1,t2,t3 --output ./media --overwrite
+
+# 只取下载链接不下载
+feishu-cli minutes download --minute-tokens obcnxxxx --url-only
+
+# 获取妙记信息并展示 AI 摘要
+feishu-cli minutes get obcnxxxx --with-artifacts
 ```
 
 ## 典型工作流
 
-### 查找某次会议并获取纪要
+### 工作流 A：会议搜索 → 录制 → 妙记媒体
 
 ```bash
-# 1. 搜索时间范围内的会议
-feishu-cli vc search --start 1710979200 --end 1711584000 -o json
-# → 找到目标会议的 meeting_id
+# 1. 搜索目标会议
+feishu-cli vc search --query "架构评审" --start 2026-03-01 -o json
+# → 记录 meeting_id
 
-# 2. 获取会议纪要
-feishu-cli vc notes --meeting-id "<meeting_id>"
-# → 输出会议摘要和逐字稿
+# 2. 查会议录制，拿 minute_token
+feishu-cli vc recording --meeting-ids <meeting_id> -o json
+# → 记录 minute_token
 
-# 3. 如果有妙记 token，也可以查看妙记详情
-feishu-cli minutes get <minute_token>
+# 3. 下载媒体文件
+feishu-cli minutes download --minute-tokens <minute_token> --output ./media
+```
+
+### 工作流 B：日历事件直达妙记下载
+
+```bash
+# 1. 从日历事件一次性拿到纪要、AI 产物、逐字稿
+feishu-cli vc notes --calendar-event-ids <event_id> \
+  --with-artifacts --download-transcript --output-dir ./notes -o json
+
+# 2. 若要下载音视频，配合 recording 命令
+feishu-cli vc recording --calendar-event-ids <event_id> -o json
+# → 取得 minute_token
+feishu-cli minutes download --minute-tokens <minute_token> --output ./media
 ```
 
 ## 权限要求
 
-| 功能 | 所需权限 |
+| 命令 / 功能 | 必需 scope |
 |------|---------|
-| 搜索会议记录 | `vc:meeting:readonly` |
-| 会议室信息 | `vc:room:readonly` |
-| 获取妙记信息 | `minutes:minutes:readonly` |
+| `vc search` | `vc:meeting.search:read` |
+| `vc notes`（meeting-ids 路径） | `vc:meeting.meetingevent:read`、`vc:note:read` |
+| `vc notes`（minute-tokens 路径） | `minutes:minutes:readonly`、`vc:note:read` |
+| `vc notes --with-artifacts` | + `minutes:minutes.artifacts:read` |
+| `vc notes --download-transcript` | + `minutes:minutes.transcript:export` |
+| `vc notes`（calendar-event-ids 路径） | + `calendar:calendar:read`、`calendar:calendar.event:read` |
+| `vc recording` | `vc:record:readonly`（calendar 路径同上追加日历权限） |
+| `minutes get` | `minutes:minutes:readonly`（`--with-artifacts` 额外需 `minutes:minutes.artifacts:read`） |
+| `minutes download` | `minutes:minutes.media:export` |
+
+权限在飞书开放平台的应用权限管理页面开通；开通后执行 `feishu-cli auth login --scope "所需 scope..."` 或 `feishu-cli auth login --domain vc --domain minutes --recommend` 重新授权即可。
 
 ## 注意事项
 
-- **时间参数**：`--start` 和 `--end` 使用 **Unix 秒级时间戳**（非毫秒），可通过 `date +%s` 获取当前时间戳
-- **meeting-id vs minute-token**：`vc notes` 的两个参数互斥，不能同时使用；meeting-id 来自 `vc search` 的结果，minute-token 来自妙记 URL 或 `minutes get` 返回
-- **妙记 token 来源**：飞书妙记 URL 格式为 `https://xxx.feishu.cn/minutes/<minute_token>`，从 URL 中提取即可
-- **数据时效**：会议记录和妙记需要会议结束后一段时间才能查询到，实时会议无法获取纪要
-- **权限申请**：`vc:meeting:readonly` 和 `minutes:minutes:readonly` 需要在飞书开放平台单独申请开通
+- **Token 必需**：所有命令都走 User Access Token。未登录时会中文错误提示并引导 `feishu-cli auth login`。可通过 `--user-access-token` 或 `FEISHU_USER_ACCESS_TOKEN` 环境变量覆盖。
+- **时间格式**：`vc search --start/--end` 接受 `YYYY-MM-DD` / `YYYY-MM-DD HH:MM:SS` / RFC3339，均按本地时区解析；纯日期的 `--end` 自动对齐到 23:59:59。
+- **批量上限**：所有 CSV 类入参统一 50 条上限，超出直接报错。
+- **minute_token 格式**：字母数字组合，长度≥5；命令会前置校验。
+- **calendar-event-id**：指"日历事件实例 ID"，不是日程 event_id 本身；可从 `feishu-cli calendar agenda` 或日程视图 API 获取。
+- **文件名解析**：`minutes download` 按 Content-Disposition > Content-Type 扩展 > `{token}.media` 的优先级决定文件名；批量模式冲突时自动加 `{token}-` 前缀。
+- **SSRF 防护**：下载 URL 会被校验，拒绝指向内网段 / localhost / 非 http(s) scheme；重定向最多 5 次且禁止 HTTPS → HTTP 降级。
+- **数据时效**：会议结束后一段时间才能查到纪要/妙记；实时会议无法获取。
+- **逐字稿去重**：同一 `vc notes` 调用中同一 `minute_token` 的逐字稿只下载一次。

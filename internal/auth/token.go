@@ -127,6 +127,20 @@ func (t *TokenStore) IsRefreshTokenValid() bool {
 	return time.Now().Add(tokenRefreshAhead).Before(t.RefreshExpiresAt)
 }
 
+// TokenStatus returns valid / needs_refresh / expired, aligned with auth status semantics.
+func (t *TokenStore) TokenStatus() string {
+	switch {
+	case t == nil:
+		return "expired"
+	case t.IsAccessTokenValid():
+		return "valid"
+	case t.IsRefreshTokenValid():
+		return "needs_refresh"
+	default:
+		return "expired"
+	}
+}
+
 // MaskToken 对 token 脱敏显示（前 6 + 后 6）
 func MaskToken(token string) string {
 	if len(token) <= 12 {

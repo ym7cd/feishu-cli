@@ -51,7 +51,7 @@ URL 格式示例:
 			return err
 		}
 
-		node, err := client.GetWikiNode(nodeToken, resolveOptionalUserToken(cmd))
+		node, err := client.GetWikiNode(nodeToken, resolveOptionalUserTokenWithFallback(cmd))
 		if err != nil {
 			return err
 		}
@@ -103,5 +103,5 @@ func extractWikiToken(input string) (string, error) {
 func init() {
 	wikiCmd.AddCommand(getWikiNodeCmd)
 	getWikiNodeCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	getWikiNodeCmd.Flags().String("user-access-token", "", "User Access Token（可选，用于访问个人知识库）")
+	getWikiNodeCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")
 }

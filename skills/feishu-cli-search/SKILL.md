@@ -38,17 +38,17 @@ feishu-cli auth check --scope "search:docs:read search:message"
 
 ```bash
 # 后台启动（Claude Code 的 run_in_background=true）
-feishu-cli auth login --json
+feishu-cli auth login --scope "search:docs:read search:message" --json
 ```
 
-首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_success",...}`。
+首行 stdout 输出 `{"event":"device_authorization","verification_uri_complete":"...","user_code":"...","expires_in":240,...}`。将 `verification_uri_complete` 展示给用户，等用户在浏览器完成授权后后台进程自动退出，第二行 stdout 输出 `{"event":"authorization_complete",...}`。
 
 如果 `auth check` 返回 `missing=[...]`，说明应用还没开通所需权限。**feishu-cli 不做权限申请自动化**——引导用户自己去飞书开放平台：
 
 1. 打开飞书开放平台 → 你的应用 → 权限管理页面
 2. 搜索并开通缺失的 scope（例如 `search:docs:read`、`search:message`），或复制 README 的完整 JSON 一次性导入
 3. 等待 tenant 管理员审批（如果需要）
-4. 审批通过后再执行 `feishu-cli auth login --json`
+4. 审批通过后再执行 `feishu-cli auth login --scope "search:docs:read search:message" --json`
 
 > 详细的 AI Agent 授权约定见 `feishu-cli-auth` 技能。
 

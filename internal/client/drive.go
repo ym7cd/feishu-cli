@@ -25,6 +25,63 @@ func UploadMedia(filePath string, parentType string, parentNode string, fileName
 	return UploadMediaWithExtra(filePath, parentType, parentNode, fileName, "")
 }
 
+// UploadMediaForImport 通过 medias/upload_all 上传临时媒体用于 drive import
+// parent_type 固定为 ccm_import_open，extra 携带 obj_type 和 file_extension
+// 官方实现：/open-apis/drive/v1/medias/upload_all，不会在用户云盘留下中间文件
+func UploadMediaForImport(filePath, fileName, objType, fileExtension, userAccessToken string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	file, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer file.Close()
+
+	stat, err := file.Stat()
+	if err != nil {
+		return "", fmt.Errorf("获取文件信息失败: %w", err)
+	}
+	fileSize := int(stat.Size())
+
+	if fileName == "" {
+		fileName = filepath.Base(filePath)
+	}
+
+	extraJSON, err := json.Marshal(map[string]string{
+		"obj_type":       objType,
+		"file_extension": fileExtension,
+	})
+	if err != nil {
+		return "", fmt.Errorf("构造 extra 字段失败: %w", err)
+	}
+
+	body := larkdrive.NewUploadAllMediaReqBodyBuilder().
+		FileName(fileName).
+		ParentType("ccm_import_open").
+		ParentNode("ccm_import_open").
+		Size(fileSize).
+		Extra(string(extraJSON)).
+		File(file).
+		Build()
+
+	req := larkdrive.NewUploadAllMediaReqBuilder().Body(body).Build()
+
+	resp, err := client.Drive.Media.UploadAll(ContextWithTimeout(downloadTimeout), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return "", fmt.Errorf("上传导入媒体失败: %w", err)
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("上传导入媒体失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || resp.Data.FileToken == nil {
+		return "", fmt.Errorf("上传导入媒体成功但未返回 file_token")
+	}
+	return *resp.Data.FileToken, nil
+}
+
 // UploadMediaWithExtra uploads a file to Feishu drive with extra parameter.
 // extra 为 JSON 字符串，用于指定扩展信息（如 {"drive_route_token":"documentID"}）。
 func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra string) (string, http.Header, error) {
@@ -328,6 +385,12 @@ func CreateFolder(name string, folderToken string) (string, string, error) {
 
 // MoveFile 移动文件或文件夹
 func MoveFile(fileToken string, targetFolderToken string, fileType string) (string, error) {
+	return MoveFileWithToken(fileToken, targetFolderToken, fileType, "")
+}
+
+// MoveFileWithToken 移动文件/文件夹，支持 User Access Token
+// 对于 folder 类型，返回的 task_id 需要通过 GetDriveTaskCheck 轮询
+func MoveFileWithToken(fileToken, targetFolderToken, fileType, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -341,7 +404,7 @@ func MoveFile(fileToken string, targetFolderToken string, fileType string) (stri
 		FileToken(fileToken).
 		Build()
 
-	resp, err := client.Drive.File.Move(Context(), req)
+	resp, err := client.Drive.File.Move(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return "", fmt.Errorf("移动文件失败: %w", err)
 	}
@@ -471,6 +534,11 @@ func CreateShortcut(parentToken string, targetFileToken string, targetType strin
 
 // DownloadFile 下载云空间文件
 func DownloadFile(fileToken string, outputPath string, timeout ...time.Duration) error {
+	return DownloadFileWithToken(fileToken, outputPath, "", timeout...)
+}
+
+// DownloadFileWithToken 下载云盘文件，支持 User Access Token
+func DownloadFileWithToken(fileToken, outputPath, userAccessToken string, timeout ...time.Duration) error {
 	if err := validatePath(outputPath); err != nil {
 		return err
 	}
@@ -484,7 +552,7 @@ func DownloadFile(fileToken string, outputPath string, timeout ...time.Duration)
 		FileToken(fileToken).
 		Build()
 
-	resp, err := client.Drive.File.Download(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), req)
+	resp, err := client.Drive.File.Download(ContextWithTimeout(resolveTimeout(downloadTimeout, timeout)), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return fmt.Errorf("下载文件失败: %w", err)
 	}
@@ -499,8 +567,14 @@ func DownloadFile(fileToken string, outputPath string, timeout ...time.Duration)
 // maxSingleUploadSize 单次上传的文件大小上限（20MB），超过此大小需使用分片上传
 const maxSingleUploadSize = 20 * 1024 * 1024
 
-// UploadFile 上传文件到飞书云空间，超过 20MB 自动使用分片上传
+// UploadFile 上传文件到飞书云空间，超过 20MB 自动使用分片上传（App Token）
 func UploadFile(filePath, parentToken, fileName string) (string, error) {
+	return UploadFileWithToken(filePath, parentToken, fileName, "")
+}
+
+// UploadFileWithToken 上传文件到飞书云空间，支持 User Access Token 覆盖
+// userAccessToken 为空时退回 App/Tenant Token
+func UploadFileWithToken(filePath, parentToken, fileName, userAccessToken string) (string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return "", fmt.Errorf("打开文件失败: %w", err)
@@ -518,13 +592,13 @@ func UploadFile(filePath, parentToken, fileName string) (string, error) {
 	}
 
 	if fileSize > maxSingleUploadSize {
-		return uploadFileMultipart(filePath, parentToken, fileName, fileSize)
+		return uploadFileMultipart(filePath, parentToken, fileName, fileSize, userAccessToken)
 	}
-	return uploadFileSingle(file, parentToken, fileName, fileSize)
+	return uploadFileSingle(file, parentToken, fileName, fileSize, userAccessToken)
 }
 
 // uploadFileSingle 单次上传文件（适用于 ≤ 20MB 的文件）
-func uploadFileSingle(file *os.File, parentToken, fileName string, fileSize int) (string, error) {
+func uploadFileSingle(file *os.File, parentToken, fileName string, fileSize int, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -540,7 +614,7 @@ func uploadFileSingle(file *os.File, parentToken, fileName string, fileSize int)
 			Build()).
 		Build()
 
-	resp, err := client.Drive.File.UploadAll(ContextWithTimeout(downloadTimeout), req)
+	resp, err := client.Drive.File.UploadAll(ContextWithTimeout(downloadTimeout), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return "", fmt.Errorf("上传文件失败: %w", err)
 	}
@@ -560,11 +634,12 @@ func uploadFileSingle(file *os.File, parentToken, fileName string, fileSize int)
 // 1. upload_prepare — 获取 upload_id、block_size、block_num
 // 2. upload_part   — 逐片上传（含重试机制）
 // 3. upload_finish — 完成上传并获取 file_token
-func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int) (string, error) {
+func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
 	}
+	tokenOpts := UserTokenOption(userAccessToken)
 
 	// 第一步：准备分片上传
 	prepareReq := larkdrive.NewUploadPrepareFileReqBuilder().
@@ -576,7 +651,7 @@ func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int) (
 			Build()).
 		Build()
 
-	prepareResp, err := client.Drive.File.UploadPrepare(Context(), prepareReq)
+	prepareResp, err := client.Drive.File.UploadPrepare(Context(), prepareReq, tokenOpts...)
 	if err != nil {
 		return "", fmt.Errorf("分片上传准备失败: %w", err)
 	}
@@ -595,6 +670,13 @@ func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int) (
 	fmt.Printf("分片上传: 文件大小 %s, 分片大小 %s, 共 %d 个分片\n",
 		formatSize(fileSize), formatSize(blockSize), blockNum)
 
+	// 打开一次文件，通过 io.SectionReader 为每个分片提供无状态视图，避免每次重试都重新 open/seek
+	srcFile, err := os.Open(filePath)
+	if err != nil {
+		return "", fmt.Errorf("打开文件失败: %w", err)
+	}
+	defer srcFile.Close()
+
 	// 第二步：逐片上传（每片最多重试 3 次）
 	const maxPartRetries = 3
 	for seq := 0; seq < blockNum; seq++ {
@@ -608,26 +690,16 @@ func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int) (
 		var lastErr error
 		uploaded := false
 		for attempt := 1; attempt <= maxPartRetries; attempt++ {
-			partFile, err := os.Open(filePath)
-			if err != nil {
-				return "", fmt.Errorf("打开文件失败: %w", err)
-			}
-			if _, err := partFile.Seek(offset, io.SeekStart); err != nil {
-				partFile.Close()
-				return "", fmt.Errorf("定位文件分片 %d 失败: %w", seq, err)
-			}
-
 			partReq := larkdrive.NewUploadPartFileReqBuilder().
 				Body(larkdrive.NewUploadPartFileReqBodyBuilder().
 					UploadId(uploadID).
 					Seq(seq).
 					Size(int(partSize)).
-					File(io.LimitReader(partFile, partSize)).
+					File(io.NewSectionReader(srcFile, offset, partSize)).
 					Build()).
 				Build()
 
-			partResp, err := client.Drive.File.UploadPart(ContextWithTimeout(downloadTimeout), partReq)
-			partFile.Close()
+			partResp, err := client.Drive.File.UploadPart(ContextWithTimeout(downloadTimeout), partReq, tokenOpts...)
 
 			if err == nil && partResp.Success() {
 				uploaded = true
@@ -662,7 +734,7 @@ func uploadFileMultipart(filePath, parentToken, fileName string, fileSize int) (
 			Build()).
 		Build()
 
-	finishResp, err := client.Drive.File.UploadFinish(Context(), finishReq)
+	finishResp, err := client.Drive.File.UploadFinish(Context(), finishReq, tokenOpts...)
 	if err != nil {
 		return "", fmt.Errorf("完成分片上传失败: %w", err)
 	}

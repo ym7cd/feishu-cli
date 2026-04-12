@@ -619,8 +619,8 @@ func TestConvertTextElements(t *testing.T) {
 			name: "MentionDoc有ObjType",
 			elements: []*larkdocx.TextElement{
 				{MentionDoc: &larkdocx.MentionDoc{
-					Title: strPtr("表格"),
-					Token: strPtr("sheetXXX"),
+					Title:   strPtr("表格"),
+					Token:   strPtr("sheetXXX"),
 					ObjType: intPtr(3),
 				}},
 			},

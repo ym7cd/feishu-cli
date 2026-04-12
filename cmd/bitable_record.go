@@ -3,420 +3,248 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
-var bitableRecordsCmd = &cobra.Command{
-	Use:   "records <app_token> <table_id>",
-	Short: "搜索/列出记录",
-	Long: `搜索或列出数据表中的记录。
+// record 子命令组
+var bitableRecordCmd = &cobra.Command{
+	Use:   "record",
+	Short: "记录管理（list/get/search/upsert/batch-create/batch-update/delete/history-list）",
+}
 
-支持过滤、排序和分页。不指定过滤条件时列出所有记录。
+func bitableRecordPath(baseToken, tableID string, extra ...string) string {
+	parts := []string{"bases", baseToken, "tables", tableID, "records"}
+	parts = append(parts, extra...)
+	return client.BaseV3Path(parts...)
+}
 
-过滤条件 JSON 格式:
-  {"conjunction":"and","conditions":[{"field_name":"状态","operator":"is","value":["进行中"]}]}
-
-排序 JSON 格式:
-  [{"field_name":"创建时间","desc":true}]
-
-运算符: is, isNot, contains, doesNotContain, isEmpty, isNotEmpty, isGreater, isLess`,
-	Args: cobra.ExactArgs(2),
+var bitableRecordListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "列出记录",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		output, _ := cmd.Flags().GetString("output")
-		pageSize, _ := cmd.Flags().GetInt("page-size")
-		pageToken, _ := cmd.Flags().GetString("page-token")
-		filterJSON, _ := cmd.Flags().GetString("filter")
-		sortJSON, _ := cmd.Flags().GetString("sort")
-		fieldNamesStr, _ := cmd.Flags().GetString("field-names")
-		userToken := resolveOptionalUserToken(cmd)
-
-		opts := client.BitableSearchOptions{
-			PageSize:  pageSize,
-			PageToken: pageToken,
+		tableID, _ := cmd.Flags().GetString("table-id")
+		viewID, _ := cmd.Flags().GetString("view-id")
+		offset, _ := cmd.Flags().GetInt("offset")
+		limit, _ := cmd.Flags().GetInt("limit")
+		params := map[string]any{}
+		if viewID != "" {
+			params["view_id"] = viewID
 		}
-
-		if filterJSON != "" {
-			var filter client.BitableFilter
-			if err := json.Unmarshal([]byte(filterJSON), &filter); err != nil {
-				return fmt.Errorf("解析过滤条件 JSON 失败: %w", err)
-			}
-			opts.Filter = &filter
+		if offset > 0 {
+			params["offset"] = offset
 		}
-
-		if sortJSON != "" {
-			var sort []client.BitableSortItem
-			if err := json.Unmarshal([]byte(sortJSON), &sort); err != nil {
-				return fmt.Errorf("解析排序条件 JSON 失败: %w", err)
-			}
-			opts.Sort = sort
+		if limit > 0 {
+			params["limit"] = limit
 		}
-
-		if fieldNamesStr != "" {
-			opts.FieldNames = splitAndTrim(fieldNamesStr)
-		}
-
-		records, nextPageToken, total, err := client.SearchBitableRecords(appToken, tableID, opts, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			result := map[string]any{
-				"total":   total,
-				"records": records,
-			}
-			if nextPageToken != "" {
-				result["page_token"] = nextPageToken
-				result["has_more"] = true
-			}
-			return printJSON(result)
-		}
-
-		fmt.Printf("共 %d 条记录", total)
-		if nextPageToken != "" {
-			fmt.Printf("（还有更多，page_token: %s）", nextPageToken)
-		}
-		fmt.Println()
-
-		for i, r := range records {
-			fmt.Printf("\n--- 记录 %d (ID: %s) ---\n", i+1, r.RecordID)
-			for k, v := range r.Fields {
-				fmt.Printf("  %s: %v\n", k, formatFieldValue(v))
-			}
-		}
-		return nil
+		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID)
+		}, params)
 	},
 }
 
-var bitableGetRecordCmd = &cobra.Command{
-	Use:   "get-record <app_token> <table_id> <record_id>",
+var bitableRecordGetCmd = &cobra.Command{
+	Use:   "get",
 	Short: "获取单条记录",
-	Long:  "获取数据表中的指定记录",
-	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		recordID := args[2]
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		record, err := client.GetBitableRecord(appToken, tableID, recordID, userToken)
-		if err != nil {
-			return err
+		tableID, _ := cmd.Flags().GetString("table-id")
+		recordID, _ := cmd.Flags().GetString("record-id")
+		if recordID == "" {
+			return fmt.Errorf("--record-id 必填")
 		}
-
-		if output == "json" {
-			return printJSON(record)
-		}
-
-		fmt.Printf("Record ID: %s\n", record.RecordID)
-		for k, v := range record.Fields {
-			fmt.Printf("  %s: %v\n", k, formatFieldValue(v))
-		}
-		return nil
+		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID, recordID)
+		}, nil)
 	},
 }
 
-var bitableAddRecordCmd = &cobra.Command{
-	Use:   "add-record <app_token> <table_id>",
-	Short: "创建记录",
-	Long: `创建单条记录。
-
-字段值 JSON 格式:
-  {"名称": "测试", "金额": 100, "状态": "进行中"}
-
-注意:
-  - 数值不要传字符串
-  - 日期使用 13 位毫秒时间戳
-  - 单选直接写选项文本（自动创建选项）
-  - 多选使用字符串数组 ["A","B"]
-  - 超链接使用对象 {"text":"名称","link":"https://..."}`,
-	Args: cobra.ExactArgs(2),
+var bitableRecordSearchCmd = &cobra.Command{
+	Use:   "search",
+	Short: "搜索记录（支持复杂过滤/排序）",
+	Long:  `POST /records/search，通过 --config 传入完整的搜索请求体（filter/sort/field_names 等）`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		fieldsJSON, _ := cmd.Flags().GetString("fields")
-		fieldsFile, _ := cmd.Flags().GetString("fields-file")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		fieldsJSON, err := loadJSONInput(fieldsJSON, fieldsFile, "fields", "fields-file", "字段值 JSON")
-		if err != nil {
-			return err
-		}
-
-		var fields map[string]any
-		if err := json.Unmarshal([]byte(fieldsJSON), &fields); err != nil {
-			return fmt.Errorf("解析字段值 JSON 失败: %w", err)
-		}
-
-		record, err := client.CreateBitableRecord(appToken, tableID, fields, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			return printJSON(record)
-		}
-
-		fmt.Printf("创建成功！Record ID: %s\n", record.RecordID)
-		return nil
+		tableID, _ := cmd.Flags().GetString("table-id")
+		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID, "search")
+		})
 	},
 }
 
-var bitableAddRecordsCmd = &cobra.Command{
-	Use:   "add-records <app_token> <table_id>",
-	Short: "批量创建记录",
-	Long: `批量创建记录（最多 500 条）。
+var bitableRecordUpsertCmd = &cobra.Command{
+	Use:   "upsert",
+	Short: "记录 upsert（传 --record-id 时 PATCH 更新，不传时 POST 创建）",
+	Long: `官方 base/v3 没有专用 upsert 端点。本命令根据 --record-id 是否存在自动选择：
+  - 不传 --record-id: POST /records 创建新记录
+  - 传 --record-id:   PATCH /records/{record_id} 更新已有记录
 
-数据格式为 JSON 数组，每个元素是字段值对象:
-  [{"名称":"A","金额":100},{"名称":"B","金额":200}]`,
-	Args: cobra.ExactArgs(2),
+必填:
+  --table-id  目标数据表
+  --config / --config-file  记录 body（形如 {"fields":{"字段名":"值"}}）
+
+v3 API 说明:
+  base/v3 的单条 POST/PATCH 端点要求字段映射放在 body 顶层（不带 "fields" 包装）。
+  本命令兼容 v1 格式：如果传入 {"fields":{...}}，会自动解包为 {...}。`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		dataJSON, _ := cmd.Flags().GetString("data")
-		dataFile, _ := cmd.Flags().GetString("data-file")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
+		tableID, _ := cmd.Flags().GetString("table-id")
+		recordID, _ := cmd.Flags().GetString("record-id")
 
-		dataJSON, err := loadJSONInput(dataJSON, dataFile, "data", "data-file", "记录数据 JSON")
+		// 读取用户输入的 JSON body，自动适配 v3 格式
+		body, err := loadRecordBody(cmd)
 		if err != nil {
 			return err
 		}
 
-		var records []map[string]any
-		if err := json.Unmarshal([]byte(dataJSON), &records); err != nil {
-			return fmt.Errorf("解析数据 JSON 失败: %w", err)
+		method := "POST"
+		pathFn := func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID)
 		}
-
-		results, err := client.BatchCreateBitableRecords(appToken, tableID, records, userToken)
-		if err != nil {
-			return err
+		if recordID != "" {
+			method = "PATCH"
+			pathFn = func(baseToken string) string {
+				return bitableRecordPath(baseToken, tableID, recordID)
+			}
 		}
-
-		if output == "json" {
-			return printJSON(results)
-		}
-
-		fmt.Printf("批量创建成功！共 %d 条记录\n", len(results))
-		for _, r := range results {
-			fmt.Printf("  Record ID: %s\n", r.RecordID)
-		}
-		return nil
+		return runBaseV3WithBody(cmd, method, pathFn, body)
 	},
 }
 
-var bitableUpdateRecordCmd = &cobra.Command{
-	Use:   "update-record <app_token> <table_id> <record_id>",
-	Short: "更新记录",
-	Long:  "更新单条记录的字段值",
-	Args:  cobra.ExactArgs(3),
+// loadRecordBody 读取 --config/--config-file 并适配 v3 格式。
+// v3 单条 POST/PATCH 要求字段映射在 body 顶层，不带 "fields" 包装。
+// 兼容用户传 v1 格式 {"fields":{"name":"value"}}，自动解包。
+func loadRecordBody(cmd *cobra.Command) (any, error) {
+	configJSON, _ := cmd.Flags().GetString("config")
+	configFile, _ := cmd.Flags().GetString("config-file")
+	raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "请求体")
+	if err != nil {
+		return nil, err
+	}
+	var parsed map[string]any
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return nil, fmt.Errorf("解析 --config 失败: %w", err)
+	}
+	// 如果用户传了 {"fields": {...}}，提取 fields 的值作为 body
+	if fields, ok := parsed["fields"]; ok {
+		if fm, ok := fields.(map[string]any); ok && len(parsed) == 1 {
+			return fm, nil
+		}
+	}
+	return parsed, nil
+}
+
+var bitableRecordBatchCreateCmd = &cobra.Command{
+	Use:   "batch-create",
+	Short: "批量创建记录（v3 格式：{\"fields\":[\"fld1\"],\"rows\":[[\"val1\"]]}）",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		recordID := args[2]
-		fieldsJSON, _ := cmd.Flags().GetString("fields")
-		fieldsFile, _ := cmd.Flags().GetString("fields-file")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		fieldsJSON, err := loadJSONInput(fieldsJSON, fieldsFile, "fields", "fields-file", "字段值 JSON")
-		if err != nil {
-			return err
-		}
-
-		var fields map[string]any
-		if err := json.Unmarshal([]byte(fieldsJSON), &fields); err != nil {
-			return fmt.Errorf("解析字段值 JSON 失败: %w", err)
-		}
-
-		record, err := client.UpdateBitableRecord(appToken, tableID, recordID, fields, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			return printJSON(record)
-		}
-
-		fmt.Printf("更新成功！Record ID: %s\n", record.RecordID)
-		return nil
+		tableID, _ := cmd.Flags().GetString("table-id")
+		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID, "batch_create")
+		})
 	},
 }
 
-var bitableUpdateRecordsCmd = &cobra.Command{
-	Use:   "update-records <app_token> <table_id>",
-	Short: "批量更新记录",
-	Long: `批量更新记录（最多 500 条）。
-
-数据格式为 JSON 数组，每个元素需包含 record_id 和 fields:
-  [{"record_id":"recxxx","fields":{"状态":"已完成"}},{"record_id":"recyyy","fields":{"金额":300}}]`,
-	Args: cobra.ExactArgs(2),
+var bitableRecordBatchUpdateCmd = &cobra.Command{
+	Use:   "batch-update",
+	Short: "批量更新记录（v3 格式：{\"record_id_list\":[\"rec1\"],\"patch\":{\"字段\":\"值\"}}）",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		dataJSON, _ := cmd.Flags().GetString("data")
-		dataFile, _ := cmd.Flags().GetString("data-file")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
-
-		dataJSON, err := loadJSONInput(dataJSON, dataFile, "data", "data-file", "记录数据 JSON")
-		if err != nil {
-			return err
-		}
-
-		var records []map[string]any
-		if err := json.Unmarshal([]byte(dataJSON), &records); err != nil {
-			return fmt.Errorf("解析数据 JSON 失败: %w", err)
-		}
-
-		results, err := client.BatchUpdateBitableRecords(appToken, tableID, records, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			return printJSON(results)
-		}
-
-		fmt.Printf("批量更新成功！共 %d 条记录\n", len(results))
-		for _, r := range results {
-			fmt.Printf("  Record ID: %s\n", r.RecordID)
-		}
-		return nil
+		tableID, _ := cmd.Flags().GetString("table-id")
+		return runBaseV3WithJSON(cmd, "POST", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID, "batch_update")
+		})
 	},
 }
 
-var bitableDeleteRecordsCmd = &cobra.Command{
-	Use:   "delete-records <app_token> <table_id>",
-	Short: "批量删除记录",
-	Long: `批量删除记录（最多 500 条）。
-
-通过 --record-ids 指定要删除的记录 ID（逗号分隔）。`,
-	Args: cobra.ExactArgs(2),
+var bitableRecordDeleteCmd = &cobra.Command{
+	Use:   "delete",
+	Short: "删除单条记录",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		recordIDsStr, _ := cmd.Flags().GetString("record-ids")
-		userToken := resolveOptionalUserToken(cmd)
-
-		recordIDs := splitAndTrim(recordIDsStr)
-		if len(recordIDs) == 0 {
-			return fmt.Errorf("请指定要删除的记录 ID（--record-ids）")
+		tableID, _ := cmd.Flags().GetString("table-id")
+		recordID, _ := cmd.Flags().GetString("record-id")
+		if recordID == "" {
+			return fmt.Errorf("--record-id 必填")
 		}
+		return runBaseV3Simple(cmd, "DELETE", func(baseToken string) string {
+			return bitableRecordPath(baseToken, tableID, recordID)
+		}, nil)
+	},
+}
 
-		if err := client.BatchDeleteBitableRecords(appToken, tableID, recordIDs, userToken); err != nil {
-			return err
+var bitableRecordHistoryListCmd = &cobra.Command{
+	Use:   "history-list",
+	Short: "记录修改历史",
+	Long: `查询单条记录的修改历史。
+
+必填:
+  --table-id    目标数据表
+  --record-id   目标记录
+
+可选:
+  --page-size    分页大小
+  --max-version  最大版本号`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tableID, _ := cmd.Flags().GetString("table-id")
+		recordID, _ := cmd.Flags().GetString("record-id")
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		maxVersion, _ := cmd.Flags().GetInt("max-version")
+		if recordID == "" {
+			return fmt.Errorf("--record-id 必填")
 		}
-
-		fmt.Printf("删除成功！共删除 %d 条记录\n", len(recordIDs))
-		return nil
+		params := map[string]any{
+			"table_id":  tableID,
+			"record_id": recordID,
+		}
+		if pageSize > 0 {
+			params["page_size"] = pageSize
+		}
+		if maxVersion > 0 {
+			params["max_version"] = maxVersion
+		}
+		return runBaseV3Simple(cmd, "GET", func(baseToken string) string {
+			return client.BaseV3Path("bases", baseToken, "record_history")
+		}, params)
 	},
 }
 
 func init() {
-	bitableCmd.AddCommand(bitableRecordsCmd)
-	bitableCmd.AddCommand(bitableGetRecordCmd)
-	bitableCmd.AddCommand(bitableAddRecordCmd)
-	bitableCmd.AddCommand(bitableAddRecordsCmd)
-	bitableCmd.AddCommand(bitableUpdateRecordCmd)
-	bitableCmd.AddCommand(bitableUpdateRecordsCmd)
-	bitableCmd.AddCommand(bitableDeleteRecordsCmd)
+	bitableCmd.AddCommand(bitableRecordCmd)
 
-	// records (search)
-	bitableRecordsCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableRecordsCmd.Flags().Int("page-size", 20, "每页记录数（最大 500）")
-	bitableRecordsCmd.Flags().String("page-token", "", "分页标记")
-	bitableRecordsCmd.Flags().String("filter", "", "过滤条件 JSON")
-	bitableRecordsCmd.Flags().String("sort", "", "排序条件 JSON")
-	bitableRecordsCmd.Flags().String("field-names", "", "指定返回的字段名（逗号分隔）")
-	bitableRecordsCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	recordSubs := []*cobra.Command{
+		bitableRecordListCmd, bitableRecordGetCmd, bitableRecordSearchCmd,
+		bitableRecordUpsertCmd, bitableRecordBatchCreateCmd, bitableRecordBatchUpdateCmd,
+		bitableRecordDeleteCmd, bitableRecordHistoryListCmd,
+	}
+	for _, c := range recordSubs {
+		bitableRecordCmd.AddCommand(c)
+		addBaseTokenFlag(c)
+		c.Flags().String("table-id", "", "table_id（必填）")
+		c.Flags().String("user-access-token", "", "User Access Token")
+		mustMarkFlagRequired(c, "table-id")
+	}
 
-	// get-record
-	bitableGetRecordCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableGetRecordCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	// list 额外参数
+	bitableRecordListCmd.Flags().String("view-id", "", "视图 ID 过滤")
+	bitableRecordListCmd.Flags().Int("offset", 0, "offset")
+	bitableRecordListCmd.Flags().Int("limit", 0, "limit")
 
-	// add-record
-	bitableAddRecordCmd.Flags().String("fields", "", "字段值 JSON")
-	bitableAddRecordCmd.Flags().String("fields-file", "", "字段值 JSON 文件")
-	bitableAddRecordCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableAddRecordCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	bitableAddRecordCmd.MarkFlagsOneRequired("fields", "fields-file")
-	bitableAddRecordCmd.MarkFlagsMutuallyExclusive("fields", "fields-file")
+	// get 需要 record-id
+	bitableRecordGetCmd.Flags().String("record-id", "", "record_id（必填）")
 
-	// add-records
-	bitableAddRecordsCmd.Flags().String("data", "", "记录数据 JSON 数组")
-	bitableAddRecordsCmd.Flags().String("data-file", "", "记录数据 JSON 文件")
-	bitableAddRecordsCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableAddRecordsCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	bitableAddRecordsCmd.MarkFlagsOneRequired("data", "data-file")
-	bitableAddRecordsCmd.MarkFlagsMutuallyExclusive("data", "data-file")
+	// delete 需要 record-id
+	bitableRecordDeleteCmd.Flags().String("record-id", "", "record_id（必填）")
 
-	// update-record
-	bitableUpdateRecordCmd.Flags().String("fields", "", "字段值 JSON")
-	bitableUpdateRecordCmd.Flags().String("fields-file", "", "字段值 JSON 文件")
-	bitableUpdateRecordCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableUpdateRecordCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	bitableUpdateRecordCmd.MarkFlagsOneRequired("fields", "fields-file")
-	bitableUpdateRecordCmd.MarkFlagsMutuallyExclusive("fields", "fields-file")
+	// upsert 可选 record-id（有则 PATCH 更新，无则 POST 创建）
+	bitableRecordUpsertCmd.Flags().String("record-id", "", "record_id（不传则创建新记录）")
 
-	// update-records
-	bitableUpdateRecordsCmd.Flags().String("data", "", "记录数据 JSON 数组")
-	bitableUpdateRecordsCmd.Flags().String("data-file", "", "记录数据 JSON 文件")
-	bitableUpdateRecordsCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableUpdateRecordsCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	bitableUpdateRecordsCmd.MarkFlagsOneRequired("data", "data-file")
-	bitableUpdateRecordsCmd.MarkFlagsMutuallyExclusive("data", "data-file")
+	// history-list 不用 --config，用 query params
+	bitableRecordHistoryListCmd.Flags().String("record-id", "", "record_id（必填）")
+	bitableRecordHistoryListCmd.Flags().Int("page-size", 0, "分页大小")
+	bitableRecordHistoryListCmd.Flags().Int("max-version", 0, "最大版本号")
+	mustMarkFlagRequired(bitableRecordHistoryListCmd, "record-id")
 
-	// delete-records
-	bitableDeleteRecordsCmd.Flags().String("record-ids", "", "记录 ID 列表（逗号分隔）")
-	bitableDeleteRecordsCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	mustMarkFlagRequired(bitableDeleteRecordsCmd, "record-ids")
-}
-
-// formatFieldValue 格式化字段值用于文本输出
-func formatFieldValue(v any) string {
-	switch val := v.(type) {
-	case string:
-		return val
-	case float64:
-		if val == float64(int64(val)) {
-			return fmt.Sprintf("%d", int64(val))
-		}
-		return fmt.Sprintf("%g", val)
-	case bool:
-		if val {
-			return "true"
-		}
-		return "false"
-	case []any:
-		parts := make([]string, len(val))
-		for i, item := range val {
-			parts[i] = formatFieldValue(item)
-		}
-		return "[" + strings.Join(parts, ", ") + "]"
-	case map[string]any:
-		// 超链接或人员等复合类型
-		if text, ok := val["text"]; ok {
-			if link, ok := val["link"]; ok {
-				return fmt.Sprintf("%v (%v)", text, link)
-			}
-			return fmt.Sprintf("%v", text)
-		}
-		if name, ok := val["name"]; ok {
-			return fmt.Sprintf("%v", name)
-		}
-		data, _ := json.Marshal(val)
-		return string(data)
-	case nil:
-		return "<空>"
-	default:
-		return fmt.Sprintf("%v", val)
+	// search / upsert / batch-create / batch-update 需要 --config
+	for _, c := range []*cobra.Command{bitableRecordSearchCmd, bitableRecordUpsertCmd,
+		bitableRecordBatchCreateCmd, bitableRecordBatchUpdateCmd} {
+		c.Flags().String("config", "", "JSON 请求体")
+		c.Flags().String("config-file", "", "JSON 请求体文件")
 	}
 }

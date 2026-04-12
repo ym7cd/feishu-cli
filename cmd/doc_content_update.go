@@ -566,7 +566,7 @@ func doDeleteRange(documentID, selByTitle, selWithEllipsis string, output string
 
 	if output == "json" {
 		return printJSON(map[string]any{
-			"document_id":   documentID,
+			"document_id":    documentID,
 			"deleted_blocks": deleted,
 			"deleted_ranges": len(ranges),
 		})

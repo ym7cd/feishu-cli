@@ -1,7 +1,9 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"time"
 
 	larkdrive "github.com/larksuite/oapi-sdk-go/v3/service/drive/v1"
@@ -137,8 +139,13 @@ func WaitExportTask(ticket, docToken, userAccessToken string, maxRetries int) (s
 	return "", fmt.Errorf("导出任务超时，已等待 %d 秒", maxRetries)
 }
 
-// CreateImportTask 创建导入任务，返回任务 ticket
+// CreateImportTask 创建导入任务，返回任务 ticket（App Token）
 func CreateImportTask(fileToken, fileType, fileName, targetType, folderToken string) (string, error) {
+	return CreateImportTaskWithToken(fileToken, fileType, fileName, targetType, folderToken, "")
+}
+
+// CreateImportTaskWithToken 创建导入任务，支持 User Access Token 覆盖
+func CreateImportTaskWithToken(fileToken, fileType, fileName, targetType, folderToken, userAccessToken string) (string, error) {
 	client, err := GetClient()
 	if err != nil {
 		return "", err
@@ -164,7 +171,7 @@ func CreateImportTask(fileToken, fileType, fileName, targetType, folderToken str
 		ImportTask(taskBuilder.Build()).
 		Build()
 
-	resp, err := client.Drive.ImportTask.Create(Context(), req)
+	resp, err := client.Drive.ImportTask.Create(Context(), req, UserTokenOption(userAccessToken)...)
 	if err != nil {
 		return "", fmt.Errorf("创建导入任务失败: %w", err)
 	}
@@ -238,4 +245,386 @@ func WaitImportTask(ticket string, maxRetries int) (string, string, error) {
 	}
 
 	return "", "", fmt.Errorf("导入任务超时，已等待 %d 秒", maxRetries)
+}
+
+// ==================== 扩展：有界轮询 + Markdown 快捷路径 + Resume 模式 ====================
+
+// Drive 导出 / 导入 轮询参数
+const (
+	DriveExportMaxAttempts  = 10
+	DriveExportPollInterval = 5 * time.Second
+	DriveImportMaxAttempts  = 30
+	DriveImportPollInterval = 2 * time.Second
+	DriveMoveMaxAttempts    = 30
+	DriveMovePollInterval   = 2 * time.Second
+)
+
+// DriveExportStatus 导出任务状态（归一化）
+type DriveExportStatus struct {
+	Ticket        string `json:"ticket"`
+	FileExtension string `json:"file_extension"`
+	DocType       string `json:"doc_type"`
+	FileName      string `json:"file_name"`
+	FileToken     string `json:"file_token"`
+	JobErrorMsg   string `json:"job_error_msg"`
+	FileSize      int64  `json:"file_size"`
+	JobStatus     int    `json:"job_status"`
+}
+
+// Ready 任务已完成且有 file_token
+func (s *DriveExportStatus) Ready() bool {
+	return s != nil && s.FileToken != "" && s.JobStatus == 0
+}
+
+// Pending 任务进行中
+func (s *DriveExportStatus) Pending() bool {
+	if s == nil {
+		return false
+	}
+	return s.JobStatus == 1 || s.JobStatus == 2 || (s.JobStatus == 0 && s.FileToken == "")
+}
+
+// Failed 任务失败
+func (s *DriveExportStatus) Failed() bool {
+	return s != nil && !s.Ready() && !s.Pending() && s.JobStatus != 0
+}
+
+// StatusLabel 返回人类可读的状态标签
+func (s *DriveExportStatus) StatusLabel() string {
+	if s == nil {
+		return "unknown"
+	}
+	switch s.JobStatus {
+	case 0:
+		if s.FileToken != "" {
+			return "success"
+		}
+		return "pending"
+	case 1:
+		return "new"
+	case 2:
+		return "processing"
+	case 3:
+		return "internal_error"
+	case 107:
+		return "export_size_limit"
+	case 108:
+		return "timeout"
+	case 109:
+		return "export_block_not_permitted"
+	case 110:
+		return "no_permission"
+	case 111:
+		return "docs_deleted"
+	case 122:
+		return "export_denied_on_copying"
+	case 123:
+		return "docs_not_exist"
+	case 6000:
+		return "export_images_exceed_limit"
+	default:
+		return fmt.Sprintf("status_%d", s.JobStatus)
+	}
+}
+
+// GetDriveExportStatus 查询导出任务当前状态（归一化）
+func GetDriveExportStatus(ticket, docToken, userAccessToken string) (*DriveExportStatus, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkdrive.NewGetExportTaskReqBuilder().
+		Ticket(ticket).
+		Token(docToken).
+		Build()
+
+	resp, err := client.Drive.ExportTask.Get(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("查询导出任务失败: %w", err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("查询导出任务失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || resp.Data.Result == nil {
+		return &DriveExportStatus{Ticket: ticket}, nil
+	}
+	r := resp.Data.Result
+	return &DriveExportStatus{
+		Ticket:        ticket,
+		FileExtension: StringVal(r.FileExtension),
+		DocType:       StringVal(r.Type),
+		FileName:      StringVal(r.FileName),
+		FileToken:     StringVal(r.FileToken),
+		JobErrorMsg:   StringVal(r.JobErrorMsg),
+		FileSize:      int64(IntVal(r.FileSize)),
+		JobStatus:     IntVal(r.JobStatus),
+	}, nil
+}
+
+// FetchDocMetaTitle 批量查询文档元数据，返回标题
+// API: POST /open-apis/drive/v1/metas/batch_query
+func FetchDocMetaTitle(docToken, docType, userAccessToken string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	body := map[string]any{
+		"request_docs": []map[string]any{
+			{"doc_token": docToken, "doc_type": docType},
+		},
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := client.Post(Context(), "/open-apis/drive/v1/metas/batch_query", body, tokenType, opts...)
+	if err != nil {
+		return "", fmt.Errorf("查询文档元数据失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("查询文档元数据失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Metas []struct {
+				DocToken string `json:"doc_token"`
+				Title    string `json:"title"`
+				DocType  string `json:"doc_type"`
+			} `json:"metas"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return "", fmt.Errorf("解析文档元数据响应失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return "", fmt.Errorf("查询文档元数据失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+	if len(apiResp.Data.Metas) == 0 {
+		return "", nil
+	}
+	return apiResp.Data.Metas[0].Title, nil
+}
+
+// FetchDocxMarkdownContent 通过 /docs/v1/content 直接获取 docx 的 Markdown 文本
+// API: GET /open-apis/docs/v1/content?doc_token=xxx&doc_type=docx&content_type=markdown
+// 用于 docx → markdown 的快捷导出路径，避开异步 export_tasks
+func FetchDocxMarkdownContent(docToken, userAccessToken string) (string, error) {
+	client, err := GetClient()
+	if err != nil {
+		return "", err
+	}
+
+	apiPath := fmt.Sprintf("/open-apis/docs/v1/content?doc_token=%s&doc_type=docx&content_type=markdown", docToken)
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return "", fmt.Errorf("获取文档 Markdown 内容失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("获取文档 Markdown 内容失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Content string `json:"content"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return "", fmt.Errorf("解析文档 Markdown 响应失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return "", fmt.Errorf("获取文档 Markdown 内容失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+	return apiResp.Data.Content, nil
+}
+
+// WaitDriveExportWithBound 有界轮询导出任务
+// 返回: (status, timedOut, err)
+// - status.Ready() == true 时成功
+// - timedOut == true 表示超出轮询窗口仍未完成（调用方决定是否 resume）
+// - err != nil 表示终态失败
+func WaitDriveExportWithBound(ticket, docToken, userAccessToken string) (*DriveExportStatus, bool, error) {
+	var last *DriveExportStatus
+	for attempt := 1; attempt <= DriveExportMaxAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(DriveExportPollInterval)
+		}
+
+		status, err := GetDriveExportStatus(ticket, docToken, userAccessToken)
+		if err != nil {
+			return last, false, err
+		}
+		last = status
+
+		if status.Ready() {
+			return status, false, nil
+		}
+		if status.Failed() {
+			msg := status.JobErrorMsg
+			if msg == "" {
+				msg = status.StatusLabel()
+			}
+			return status, false, fmt.Errorf("导出任务失败: %s (ticket=%s)", msg, ticket)
+		}
+	}
+	return last, true, nil
+}
+
+// DriveImportStatus 导入任务状态
+type DriveImportStatus struct {
+	Ticket      string `json:"ticket"`
+	JobStatus   int    `json:"job_status"`
+	JobErrorMsg string `json:"job_error_msg"`
+	DocToken    string `json:"doc_token"`
+	DocURL      string `json:"doc_url"`
+	Type        string `json:"type"`
+}
+
+// Ready 任务已完成
+func (s *DriveImportStatus) Ready() bool {
+	return s != nil && s.JobStatus == 0 && s.DocToken != ""
+}
+
+// Pending 任务进行中
+func (s *DriveImportStatus) Pending() bool {
+	if s == nil {
+		return false
+	}
+	return s.JobStatus == 1 || s.JobStatus == 2 || (s.JobStatus == 0 && s.DocToken == "")
+}
+
+// Failed 任务失败
+func (s *DriveImportStatus) Failed() bool {
+	return s != nil && !s.Ready() && !s.Pending() && s.JobStatus != 0
+}
+
+// GetDriveImportStatus 查询导入任务状态（归一化）
+func GetDriveImportStatus(ticket, userAccessToken string) (*DriveImportStatus, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	req := larkdrive.NewGetImportTaskReqBuilder().
+		Ticket(ticket).
+		Build()
+
+	resp, err := client.Drive.ImportTask.Get(Context(), req, UserTokenOption(userAccessToken)...)
+	if err != nil {
+		return nil, fmt.Errorf("查询导入任务失败: %w", err)
+	}
+	if !resp.Success() {
+		return nil, fmt.Errorf("查询导入任务失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+	if resp.Data == nil || resp.Data.Result == nil {
+		return &DriveImportStatus{Ticket: ticket}, nil
+	}
+	r := resp.Data.Result
+	return &DriveImportStatus{
+		Ticket:      ticket,
+		JobStatus:   IntVal(r.JobStatus),
+		JobErrorMsg: StringVal(r.JobErrorMsg),
+		DocToken:    StringVal(r.Token),
+		DocURL:      StringVal(r.Url),
+		Type:        StringVal(r.Type),
+	}, nil
+}
+
+// WaitDriveImportWithBound 有界轮询导入任务
+func WaitDriveImportWithBound(ticket, userAccessToken string) (*DriveImportStatus, bool, error) {
+	var last *DriveImportStatus
+	for attempt := 1; attempt <= DriveImportMaxAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(DriveImportPollInterval)
+		}
+
+		status, err := GetDriveImportStatus(ticket, userAccessToken)
+		if err != nil {
+			return last, false, err
+		}
+		last = status
+
+		if status.Ready() {
+			return status, false, nil
+		}
+		if status.Failed() {
+			msg := status.JobErrorMsg
+			if msg == "" {
+				msg = fmt.Sprintf("job_status=%d", status.JobStatus)
+			}
+			return status, false, fmt.Errorf("导入任务失败: %s (ticket=%s)", msg, ticket)
+		}
+	}
+	return last, true, nil
+}
+
+// ==================== 通用异步任务（file move 用） ====================
+
+// DriveTaskCheckStatus 通用异步任务状态
+type DriveTaskCheckStatus struct {
+	TaskID string `json:"task_id"`
+	Status string `json:"status"` // success / failed / pending 等
+}
+
+// GetDriveTaskCheck 查询通用异步任务状态
+// API: GET /open-apis/drive/v1/files/task_check?task_id=xxx
+func GetDriveTaskCheck(taskID, userAccessToken string) (*DriveTaskCheckStatus, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	apiPath := fmt.Sprintf("/open-apis/drive/v1/files/task_check?task_id=%s", taskID)
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	resp, err := client.Get(Context(), apiPath, nil, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("查询任务状态失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("查询任务状态失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Status string `json:"status"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析任务状态失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("查询任务状态失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+	return &DriveTaskCheckStatus{TaskID: taskID, Status: apiResp.Data.Status}, nil
+}
+
+// WaitDriveTaskCheckWithBound 有界轮询通用任务（用于 folder move 等）
+func WaitDriveTaskCheckWithBound(taskID, userAccessToken string) (*DriveTaskCheckStatus, bool, error) {
+	var last *DriveTaskCheckStatus
+	for attempt := 1; attempt <= DriveMoveMaxAttempts; attempt++ {
+		if attempt > 1 {
+			time.Sleep(DriveMovePollInterval)
+		}
+
+		status, err := GetDriveTaskCheck(taskID, userAccessToken)
+		if err != nil {
+			return last, false, err
+		}
+		last = status
+
+		switch status.Status {
+		case "success":
+			return status, false, nil
+		case "failed":
+			return status, false, fmt.Errorf("任务失败 (task_id=%s)", taskID)
+		}
+	}
+	return last, true, nil
 }

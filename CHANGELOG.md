@@ -37,6 +37,149 @@ feishu-cli config add-scopes --domain all
 
 ---
 
+### Breaking Changes — 多维表格（bitable）切换到 `base/v3` API
+
+**旧实现**：`bitable` 模块全部调用 `/open-apis/bitable/v1/apps/{app_token}/...` 老 API，覆盖 ~30 个基础 CRUD 命令。
+**新实现**：全面切换到 `/open-apis/base/v3/bases/{base_token}/...` 新 API，与官方 `lark-cli` 对齐，覆盖 48 个命令，支持深度能力（视图完整配置读写、记录 upsert、修改历史、角色 CRUD、高级权限、数据聚合、工作流查询）。
+
+#### 命令名迁移表
+
+| 旧命令 | 新命令 |
+|---|---|
+| `bitable tables <app>` | `bitable table list --base-token <t>` |
+| `bitable create-table <app>` | `bitable table create --base-token <t> --name x` |
+| `bitable rename-table <app> <tbl>` | `bitable table update --base-token <t> --table-id <tbl> --name x` |
+| `bitable delete-table <app> <tbl>` | `bitable table delete --base-token <t> --table-id <tbl>` |
+| `bitable fields <app> <tbl>` | `bitable field list --base-token <t> --table-id <tbl>` |
+| `bitable create-field` | `bitable field create` |
+| `bitable update-field` | `bitable field update`（method 改为 `PUT`） |
+| `bitable delete-field` | `bitable field delete` |
+| `bitable records <app> <tbl>` | `bitable record list --base-token <t> --table-id <tbl>` |
+| `bitable get-record` | `bitable record get` |
+| `bitable add-record` | `bitable record upsert --base-token <t> --table-id <tbl> --config '...'` |
+| `bitable add-records --data-file` | `bitable record batch-create --config-file ...` |
+| `bitable update-record` | `bitable record upsert --record-id ...`（根据是否传 id 自动 PATCH/POST） |
+| `bitable delete-records` | `bitable record delete --record-id ...` |
+| `bitable views` | `bitable view list` |
+| `bitable create-view` | `bitable view create` |
+| `bitable delete-view` | `bitable view delete` |
+| `bitable view-filter get/set` | `bitable view view-filter-get / view-filter-set` |
+| `bitable dashboard list`（v1） | **暂不支持**（v3 dashboard CRUD 留待下次迭代） |
+| `bitable form list` | **暂不支持** |
+| `bitable role list` | `bitable role list`（新增 get/create/update/delete） |
+| `bitable workflow list/enable` | `bitable workflow list`（改为 POST /workflows/list） |
+| `bitable advperm enable/disable` | 同名但底层改为 `PUT .../advperm/enable?enable=true/false` |
+| `bitable data-query` | 同名但路径从 table 级改为 base 级：`POST .../bases/{t}/data/query` |
+
+#### 新增能力
+
+- **视图配置完整写入**：`view-sort-set` / `view-group-set` / `view-visible-fields-set` / `view-timebar-set` / `view-card-set`（老 v1 只能写 filter）
+- **记录修改历史**：`bitable record history-list --record-id xxx`
+- **角色 CRUD**：`bitable role create/update/delete`（老 v1 只有 list）
+- **字段选项搜索**：`bitable field search-options`
+- **Base create 支持时区**：`--time-zone Asia/Shanghai`
+
+#### Flag 变化
+- **删除 `--app-token` 别名**：只保留 `--base-token`（对齐官方 v3 命名，不再做兼容别名）
+- `bitable create` 的 `--description` 被删除（官方 base/v3 不支持），新增 `--time-zone`
+- `bitable data-query` 的 `--table-id` 被删除（v3 端点挂在 base 下）
+
+#### 删除的文件
+- `internal/client/bitable.go` / `bitable_test.go`（v1 实现）
+- `cmd/bitable_create.go` / `bitable_get.go` / `bitable_copy.go` / `bitable_advperm.go` / `bitable_dashboard.go` / `bitable_data_query.go` / `bitable_form.go` / `bitable_record_upload_attachment.go` / `bitable_role.go` / `bitable_view_config.go` / `bitable_workflow.go`
+
+#### 新增的文件
+- `internal/client/base.go`（`BaseV3Call` + `BaseV3Path` helper + `X-App-Id` header 自动注入）
+- `cmd/bitable_base.go` / `bitable_misc.go`（所有 base/v3 命令的注册）
+- `cmd/bitable_table.go` / `bitable_field.go` / `bitable_record.go` / `bitable_view.go` 全部重写
+
+---
+
+### Breaking Changes — VC（视频会议）对齐官方实现
+
+- **`vc search`**：底层 API 从 `GET /meeting_list` 切换到 `POST /meetings/search`。
+  - 新增 flag：`--query` / `--organizer-ids` / `--participant-ids` / `--room-ids`
+  - 删除 flag：`--meeting-no` / `--meeting-status`
+  - 必须指定至少一个过滤条件
+- **`vc notes`**：
+  - flag 从 `--meeting-id` / `--minute-token`（单数）改为 `--meeting-ids` / `--minute-tokens`（复数，支持 CSV 批量最多 50）
+  - 新增第三路径 `--calendar-event-ids`：从日历事件自动反查会议 / 妙记
+  - 新增开关 `--with-artifacts`（获取 AI 产物）/ `--download-transcript --output-dir`（下载逐字稿）
+- **所有 vc / minutes 命令默认 User Access Token**，未登录时统一报错提示 `feishu-cli auth login`
+
+#### 新增命令
+- `vc recording --meeting-ids/-calendar-event-ids`：查询会议录制并自动提取 `minute_token`
+- `minutes download --minute-tokens x,y,z --output ./dir`：批量下载妙记音视频媒体（SSRF 防护 / 重定向校验 / Content-Disposition 解析 / 文件名去重 / 5 req/s 速率限制 / `--url-only` 预览链接）
+- `minutes get <token> --with-artifacts`：新增 AI 产物合并输出
+
+---
+
+### Added — `drive` 云盘命令组（8 个命令）
+
+新增独立的 `drive` 子命令组，与现有 `file` / `media` / `doc media-*` 命令并存，提供增强能力：
+
+| 命令 | 相比老命令的增强 |
+|---|---|
+| `drive upload` | 大文件自动分块（>20MB 走 `upload_prepare/part/finish` 三步式，每片独立重试 3 次；支持 User Token） |
+| `drive download` | 流式下载 + 路径校验 + `--overwrite` / `--timeout` |
+| `drive export` | 新增 **markdown 快捷路径**：docx → markdown 走 `/docs/v1/content` 直接拉取，不跑异步 export task；支持 sheet / bitable 按 `--sub-id` 导出 CSV；有界轮询（10×5s）+ 超时返回 resume 命令 |
+| `drive export-download` | 通过 `file_token` 直接下载已完成的导出任务产物，配合 `drive export` 超时后接力完成 |
+| `drive import` | **切换到 `/medias/upload_*` 端点 + `parent_type=ccm_import_open` + `extra` 字段**（对齐官方，不再在用户云盘留下中间文件）；格式特定大小限制（docx 20MB / sheet 20MB / bitable 100MB）；有界轮询 + resume |
+| `drive move` | 文件夹移动自动轮询 `task_check`（30×2s），文件移动同步返回 |
+| `drive add-comment` | 支持**富文本 `reply_elements`**（text / mention_user / link）+ `--block-id` 局部评论（docx）+ **wiki URL 自动解析**成 docx token |
+| `drive task-result` | 通用异步任务查询（`--scenario import/export/task_check`），配合 drive export / import / move 的超时 resume |
+
+**保留不动**：`file list / delete / mkdir / copy / shortcut / quota / meta / stats / version` + `media upload / download` + `doc media-download / media-insert` + `comment list / resolve / delete / reply`
+
+---
+
+### Added — `mail` 飞书邮箱模块（10 个命令，从零新建）
+
+**全新命令组**。首期不支持附件和 CID 内联图片，仅支持纯文本和 HTML body。所有命令默认 User Access Token。
+
+| 命令 | 功能 |
+|---|---|
+| `mail message --message-id x` | 获取单封邮件（`--format full/plain_text_full/raw`） |
+| `mail messages --message-ids a,b,c` | 批量获取多封邮件 |
+| `mail thread --thread-id x` | 获取邮件线程 |
+| `mail triage` | 列出 / 搜索邮件（`--folder INBOX --label x --query xxx --unread-only --list-folders --list-labels`），`--query` 走专用 `POST /search` 端点 |
+| `mail send` | 发送邮件（**默认保存为草稿**，加 `--confirm-send` 立即发送，安全兜底） |
+| `mail draft-create` | 仅创建草稿 |
+| `mail draft-edit --draft-id x` | 编辑已有草稿（全量覆盖） |
+| `mail reply --message-id x --body "..."` | 回复邮件（自动 `Re: ` 前缀 + 引用块 + `In-Reply-To` / `References` header 继承） |
+| `mail reply-all` | 全部回复（包含 To 和 CC，自动排除自己） |
+| `mail forward --message-id x --to y` | 转发（自动 `Fwd: ` 前缀 + 原文正文引用） |
+
+**关键技术点**：
+- RFC 5322 EML 构建 + base64 URL-safe 编码，`POST /drafts` body `{"raw":"..."}`
+- HTML 自动检测（`<html>/<div>/<b>/<br>` 等标签），可用 `--plain-text` / `--html` 强制
+- 发件人地址默认从 `/user_mailboxes/{mailbox}/profile` 读取
+- 地址格式支持 `"Name <email>"` 和 `"email"`
+- Subject 去重：`reply` 自动避免 `Re: Re:`，`forward` 自动避免 `Fwd: Fwd:`
+
+---
+
+### Fixed
+
+- **`mail reply` 引用块缺日期占位符**：之前的 quote header 模板第一个 `%s` 传空字符串，会输出 `"在 ，xxx 写道:"`，已修正为 `"{email} 写道:"`
+- **分片上传 fd 泄漏**：`uploadFileMultipart` 之前每片每次重试都 `os.Open + Seek`，现改为外层打开一次 + `io.NewSectionReader`，大文件不稳定网络下重试时节省 N×syscall
+- **`mail reply` 重复 `GetMailboxProfile` 调用**：之前在 `runMailReply` 里调用 2 次（一次取 selfEmail 一次取 from/fromName），现合并为 1 次，省 1 个 API RTT
+- **`drive import` 上传端点错误**：之前走 `/files/upload_all` 会在用户云盘留下中间文件，现改为官方的 `/medias/upload_all` + `parent_type=ccm_import_open` + `extra`
+- **`mail triage --query` 静默失效**：之前把 query 当 list 端点的查询参数，飞书会忽略；现改走专用的 `POST /search` 端点
+
+### Refactor（内部代码清理，用户感知较小）
+
+- 新增 `requireUserToken(cmd, cmdName)` helper，统一所有新命令的 "需要 User Access Token" 错误信息格式
+- 删除重复的 `GetWikiNodeByToken`（58 行），改用已有的 `GetWikiNode`
+- 删除 `internal/client/mail.go` 的 `joinPath`，用 `strings.Join`
+- `dedupStrings` 从 `vc_recording.go` 移到 `vc_common.go`
+- `runBaseV3WithJSON` 重构，抽出 `runBaseV3WithBody` 让命令层直接传已构造的 body
+- `bitable view create/rename` 去掉 `cmd.Flags().Set("config", ...)` + `MarkHidden` 的 hack 模式
+- 删除 `runBaseV3Simple` / `addBaseTokenFlag` / `exactlyOneNonEmpty` 三处死参数/死变量
+- 所有文件统一 `gofmt`
+
+---
+
 ## [v1.18.0] - 未发布
 
 ### Breaking Changes — OAuth 认证全面对齐官方 lark-cli

@@ -69,7 +69,7 @@ func performAuthCheck(required []string) (result map[string]any, ok bool) {
 	}
 	if len(missing) > 0 {
 		out["suggestion"] = fmt.Sprintf(
-			"在飞书开放平台为应用开通以下 scope 后执行 feishu-cli auth login 重新授权: %s",
+			"确认飞书开放平台已开通后，执行 feishu-cli auth login --scope %q 重新授权",
 			strings.Join(missing, " "),
 		)
 	}
@@ -81,7 +81,7 @@ func errorResult(errCode string, required []string) map[string]any {
 		"ok":         false,
 		"error":      errCode,
 		"missing":    required,
-		"suggestion": "feishu-cli auth login",
+		"suggestion": fmt.Sprintf("feishu-cli auth login --scope %q", strings.Join(required, " ")),
 	}
 }
 

@@ -1,133 +1,224 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/spf13/cobra"
 )
 
-var bitableViewsCmd = &cobra.Command{
-	Use:   "views <app_token> <table_id>",
+// view 子命令组（基础 + 6 种配置的 get/set）
+var bitableViewCmd = &cobra.Command{
+	Use:   "view",
+	Short: "视图管理（list/get/create/delete/rename + 6 种配置的 get/set）",
+}
+
+func bitableViewPath(baseToken, tableID string, extra ...string) string {
+	parts := []string{"bases", baseToken, "tables", tableID, "views"}
+	parts = append(parts, extra...)
+	return client.BaseV3Path(parts...)
+}
+
+// ---- 基础 5 命令 ----
+
+var bitableViewListCmd = &cobra.Command{
+	Use:   "list",
 	Short: "列出视图",
-	Long:  "列出数据表的视图，支持分页参数",
-	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		output, _ := cmd.Flags().GetString("output")
-		pageSize, _ := cmd.Flags().GetInt("page-size")
-		pageToken, _ := cmd.Flags().GetString("page-token")
-		userToken := resolveOptionalUserToken(cmd)
-
-		views, nextPageToken, err := client.ListBitableViews(appToken, tableID, pageSize, pageToken, userToken)
-		if err != nil {
-			return err
-		}
-
-		if output == "json" {
-			result := map[string]any{
-				"views": views,
-			}
-			if nextPageToken != "" {
-				result["page_token"] = nextPageToken
-				result["has_more"] = true
-			}
-			return printJSON(result)
-		}
-
-		if len(views) == 0 {
-			fmt.Println("暂无视图")
-			return nil
-		}
-
-		fmt.Printf("当前返回 %d 个视图", len(views))
-		if nextPageToken != "" {
-			fmt.Printf("（还有更多，page_token: %s）", nextPageToken)
-		}
-		fmt.Println("：")
-		for i, v := range views {
-			fmt.Printf("  %d. %s (类型: %s, ID: %s)\n", i+1, v.ViewName, v.ViewType, v.ViewID)
-		}
-		return nil
+		tableID, _ := cmd.Flags().GetString("table-id")
+		return runBaseV3Simple(cmd, "GET", func(bt string) string {
+			return bitableViewPath(bt, tableID)
+		}, nil)
 	},
 }
 
-var bitableCreateViewCmd = &cobra.Command{
-	Use:   "create-view <app_token> <table_id>",
+var bitableViewGetCmd = &cobra.Command{
+	Use:   "get",
+	Short: "获取视图",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tableID, _ := cmd.Flags().GetString("table-id")
+		viewID, _ := cmd.Flags().GetString("view-id")
+		if viewID == "" {
+			return fmt.Errorf("--view-id 必填")
+		}
+		return runBaseV3Simple(cmd, "GET", func(bt string) string {
+			return bitableViewPath(bt, tableID, viewID)
+		}, nil)
+	},
+}
+
+var bitableViewCreateCmd = &cobra.Command{
+	Use:   "create",
 	Short: "创建视图",
-	Long: `创建数据表视图。
-
-视图类型:
-  grid     表格视图（默认）
-  kanban   看板视图
-  gallery  画册视图
-  gantt    甘特图视图
-  form     表单视图`,
-	Args: cobra.ExactArgs(2),
+	Long:  `通过 --config 传入完整 view 定义（name/view_type 等），或使用 --name + --view-type 快捷方式`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		viewName, _ := cmd.Flags().GetString("name")
-		viewType, _ := cmd.Flags().GetString("type")
-		output, _ := cmd.Flags().GetString("output")
-		userToken := resolveOptionalUserToken(cmd)
+		tableID, _ := cmd.Flags().GetString("table-id")
+		name, _ := cmd.Flags().GetString("name")
+		viewType, _ := cmd.Flags().GetString("view-type")
+		configJSON, _ := cmd.Flags().GetString("config")
+		configFile, _ := cmd.Flags().GetString("config-file")
 
-		view, err := client.CreateBitableView(appToken, tableID, viewName, viewType, userToken)
-		if err != nil {
-			return err
+		pathFn := func(bt string) string { return bitableViewPath(bt, tableID) }
+
+		if configJSON != "" || configFile != "" {
+			return runBaseV3WithJSON(cmd, "POST", pathFn)
 		}
-
-		if output == "json" {
-			return printJSON(view)
+		if name == "" {
+			return fmt.Errorf("需要 --name 或 --config 至少一个")
 		}
-
-		fmt.Printf("创建成功！\n")
-		fmt.Printf("  View ID: %s\n", view.ViewID)
-		fmt.Printf("  名称: %s\n", view.ViewName)
-		fmt.Printf("  类型: %s\n", view.ViewType)
-		return nil
+		// 官方 base/v3 body 顶层直接是 {name, type}，不包 "view" 一层
+		body := map[string]any{"name": name, "type": viewType}
+		return runBaseV3WithBody(cmd, "POST", pathFn, body)
 	},
 }
 
-var bitableDeleteViewCmd = &cobra.Command{
-	Use:   "delete-view <app_token> <table_id> <view_id>",
+var bitableViewDeleteCmd = &cobra.Command{
+	Use:   "delete",
 	Short: "删除视图",
-	Long:  "删除数据表的指定视图",
-	Args:  cobra.ExactArgs(3),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		appToken := args[0]
-		tableID := args[1]
-		viewID := args[2]
-		userToken := resolveOptionalUserToken(cmd)
-
-		if err := client.DeleteBitableView(appToken, tableID, viewID, userToken); err != nil {
-			return err
+		tableID, _ := cmd.Flags().GetString("table-id")
+		viewID, _ := cmd.Flags().GetString("view-id")
+		if viewID == "" {
+			return fmt.Errorf("--view-id 必填")
 		}
-
-		fmt.Println("删除成功")
-		return nil
+		return runBaseV3Simple(cmd, "DELETE", func(bt string) string {
+			return bitableViewPath(bt, tableID, viewID)
+		}, nil)
 	},
+}
+
+var bitableViewRenameCmd = &cobra.Command{
+	Use:   "rename",
+	Short: "重命名视图",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		tableID, _ := cmd.Flags().GetString("table-id")
+		viewID, _ := cmd.Flags().GetString("view-id")
+		name, _ := cmd.Flags().GetString("name")
+		if viewID == "" || name == "" {
+			return fmt.Errorf("--view-id 和 --name 必填")
+		}
+		body := map[string]any{"name": name}
+		return runBaseV3WithBody(cmd, "PATCH", func(bt string) string {
+			return bitableViewPath(bt, tableID, viewID)
+		}, body)
+	},
+}
+
+// ---- 视图配置 get/set（6 种 × 2 = 12 命令）----
+// 官方 base/v3 路径段是简写形式（filter/sort/group/visible_fields/timebar/card），
+// set 方法用 PUT（全量替换），不是 PATCH。
+// sort/group 的 body 会自动包装为 {sort_config: [...]} / {grouping: [...]}。
+
+// viewConfigSuffixes CLI 子命令 kind → 官方 base/v3 API 路径段
+var viewConfigSuffixes = map[string]string{
+	"filter":         "filter",
+	"sort":           "sort",
+	"group":          "group",
+	"visible-fields": "visible_fields",
+	"timebar":        "timebar",
+	"card":           "card",
+}
+
+// viewConfigWrapKey 某些 set 命令需要把用户传的数组自动包装成 {"<key>": [...]}
+// 避免每次都让用户手写外层 key。key 名称来自官方 base/v3 API。
+var viewConfigWrapKey = map[string]string{
+	"sort":  "sort_config",
+	"group": "group_config",
+}
+
+func newViewConfigCmd(kind, action string) *cobra.Command {
+	suffix := viewConfigSuffixes[kind]
+	fullName := fmt.Sprintf("view-%s", kind)
+	cmd := &cobra.Command{
+		Use:   fmt.Sprintf("%s-%s", fullName, action),
+		Short: fmt.Sprintf("%s 视图配置：%s", action, fullName),
+	}
+	switch action {
+	case "get":
+		cmd.RunE = func(cc *cobra.Command, _ []string) error {
+			tableID, _ := cc.Flags().GetString("table-id")
+			viewID, _ := cc.Flags().GetString("view-id")
+			if viewID == "" {
+				return fmt.Errorf("--view-id 必填")
+			}
+			return runBaseV3Simple(cc, "GET", func(bt string) string {
+				return bitableViewPath(bt, tableID, viewID, suffix)
+			}, nil)
+		}
+	case "set":
+		cmd.RunE = func(cc *cobra.Command, _ []string) error {
+			tableID, _ := cc.Flags().GetString("table-id")
+			viewID, _ := cc.Flags().GetString("view-id")
+			if viewID == "" {
+				return fmt.Errorf("--view-id 必填")
+			}
+			// 如果当前 kind 需要外层包装，解析用户输入后自动补上
+			if wrapKey, ok := viewConfigWrapKey[kind]; ok {
+				configJSON, _ := cc.Flags().GetString("config")
+				configFile, _ := cc.Flags().GetString("config-file")
+				raw, err := loadJSONInput(configJSON, configFile, "config", "config-file", "请求体")
+				if err != nil {
+					return err
+				}
+				// 用户既可能传数组（[]）也可能传已经包装好的对象（{wrapKey:[...]}）
+				var parsed any
+				if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+					return fmt.Errorf("解析 --config 失败: %w", err)
+				}
+				if _, isObject := parsed.(map[string]any); !isObject {
+					parsed = map[string]any{wrapKey: parsed}
+				}
+				return runBaseV3WithBody(cc, "PUT", func(bt string) string {
+					return bitableViewPath(bt, tableID, viewID, suffix)
+				}, parsed)
+			}
+			// 官方 base/v3 set 方法是 PUT，不是 PATCH
+			return runBaseV3WithJSON(cc, "PUT", func(bt string) string {
+				return bitableViewPath(bt, tableID, viewID, suffix)
+			})
+		}
+	}
+	return cmd
 }
 
 func init() {
-	bitableCmd.AddCommand(bitableViewsCmd)
-	bitableCmd.AddCommand(bitableCreateViewCmd)
-	bitableCmd.AddCommand(bitableDeleteViewCmd)
+	bitableCmd.AddCommand(bitableViewCmd)
 
-	// views
-	bitableViewsCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableViewsCmd.Flags().Int("page-size", 20, "每页视图数")
-	bitableViewsCmd.Flags().String("page-token", "", "分页标记")
-	bitableViewsCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	// 5 个基础命令
+	for _, c := range []*cobra.Command{
+		bitableViewListCmd, bitableViewGetCmd, bitableViewCreateCmd,
+		bitableViewDeleteCmd, bitableViewRenameCmd,
+	} {
+		bitableViewCmd.AddCommand(c)
+		addBaseTokenFlag(c)
+		c.Flags().String("table-id", "", "table_id（必填）")
+		c.Flags().String("user-access-token", "", "User Access Token")
+		mustMarkFlagRequired(c, "table-id")
+	}
+	bitableViewGetCmd.Flags().String("view-id", "", "view_id（必填）")
+	bitableViewCreateCmd.Flags().String("name", "", "视图名称")
+	bitableViewCreateCmd.Flags().String("view-type", "grid", "视图类型: grid/kanban/gallery/gantt/calendar")
+	bitableViewCreateCmd.Flags().String("config", "", "完整 view JSON 配置（可选）")
+	bitableViewCreateCmd.Flags().String("config-file", "", "完整 view JSON 配置文件")
+	bitableViewDeleteCmd.Flags().String("view-id", "", "view_id（必填）")
+	bitableViewRenameCmd.Flags().String("view-id", "", "view_id（必填）")
+	bitableViewRenameCmd.Flags().String("name", "", "新名称（必填）")
 
-	// create-view
-	bitableCreateViewCmd.Flags().StringP("name", "n", "", "视图名称")
-	bitableCreateViewCmd.Flags().StringP("type", "t", "grid", "视图类型: grid, kanban, gallery, gantt, form")
-	bitableCreateViewCmd.Flags().StringP("output", "o", "text", "输出格式: text, json")
-	bitableCreateViewCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
-	mustMarkFlagRequired(bitableCreateViewCmd, "name")
-
-	// delete-view
-	bitableDeleteViewCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	// 12 个视图配置命令（6 种 × get/set）
+	kinds := []string{"filter", "sort", "group", "visible-fields", "timebar", "card"}
+	for _, kind := range kinds {
+		getCmd := newViewConfigCmd(kind, "get")
+		setCmd := newViewConfigCmd(kind, "set")
+		for _, c := range []*cobra.Command{getCmd, setCmd} {
+			bitableViewCmd.AddCommand(c)
+			addBaseTokenFlag(c)
+			c.Flags().String("table-id", "", "table_id（必填）")
+			c.Flags().String("view-id", "", "view_id（必填）")
+			c.Flags().String("user-access-token", "", "User Access Token")
+			mustMarkFlagRequired(c, "table-id", "view-id")
+		}
+		setCmd.Flags().String("config", "", "JSON 配置（必填）")
+		setCmd.Flags().String("config-file", "", "JSON 配置文件")
+	}
 }

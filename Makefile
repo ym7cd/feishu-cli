@@ -1,4 +1,4 @@
-.PHONY: build clean install test lint fmt help
+.PHONY: build clean install test lint fmt help update-meta
 
 # Go parameters
 GOCMD=go
@@ -86,6 +86,13 @@ build-windows:
 ## run: Run the application
 run: build
 	./$(BUILD_DIR)/$(BINARY_NAME)
+
+## update-meta: Fetch latest API metadata from open.feishu.cn
+update-meta:
+	@echo "Fetching API metadata from open.feishu.cn..."
+	@curl -s "https://open.feishu.cn/api/tools/open/api_definition?protocol=meta" | \
+		python3 -c "import sys,json; json.dump(json.load(sys.stdin)['data'], open('internal/registry/meta_data.json','w'), ensure_ascii=False)" \
+		&& echo "Done. $$(wc -c < internal/registry/meta_data.json | tr -d ' ') bytes written."
 
 ## init-config: Initialize configuration file
 init-config: build

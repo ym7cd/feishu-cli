@@ -25,7 +25,7 @@
 
 feishu-cli 是一个功能完整的飞书开放平台命令行工具。它将飞书文档、知识库、电子表格、消息、日历、任务等操作封装为简洁的命令行接口，**核心能力是 Markdown ↔ 飞书文档双向无损转换**。
 
-除了传统的 CLI 用法，feishu-cli 还为 [Claude Code](https://claude.ai/claude-code) 等 AI 编程助手提供了 **11 个开箱即用的技能文件**，让 AI Agent 能够直接创建文档、发送消息、管理权限 — 无需任何额外配置。
+除了传统的 CLI 用法，feishu-cli 还为 [Claude Code](https://claude.ai/claude-code) 等 AI 编程助手提供了 **16 个开箱即用的技能文件**，让 AI Agent 能够直接创建文档、发送消息、管理权限 — 无需任何额外配置。
 
 > **注意**：feishu-cli 主要面向 AI Agent（如 Claude Code）使用，通过技能文件让 AI 直接操控飞书。虽然人类也可以直接使用命令行，但大多数场景下建议通过 AI Agent 调用，体验更佳。
 
@@ -34,8 +34,8 @@ feishu-cli 是一个功能完整的飞书开放平台命令行工具。它将飞
 - **双向转换零损耗** — 支持 40+ 种块类型，Markdown 导入飞书后再导出，内容完整保留
 - **图表原生渲染** — Mermaid（8 种图表类型）和 PlantUML 自动转换为飞书画板，不是截图，是可编辑的矢量图
 - **大规模文档处理** — 三阶段并发管道架构，实测 10,000+ 行 / 127 个图表 / 170+ 个表格一次导入
-- **AI Agent 原生** — 11 个技能文件覆盖飞书全功能，AI 助手即装即用
-- **一个工具覆盖全平台** — 文档、知识库、表格、消息、日历、任务、权限、画板、评论、搜索
+- **AI Agent 原生** — 16 个技能文件覆盖飞书全功能，AI 助手即装即用
+- **一个工具覆盖全平台** — 文档、知识库、表格、多维表格、消息、邮箱、日历、任务、视频会议、妙记、云盘、权限、画板、评论、搜索
 
 ## 核心能力
 
@@ -106,13 +106,18 @@ feishu-cli doc import large-doc.md --title "大文档" \
 |------|------|
 | **文档** | 创建、导入、导出、编辑、批量更新、Callout、画板、异步导出/导入文件 |
 | **知识库** | 空间列表、节点增删改查、导出、空间详情、成员管理 |
-| **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、合并、查找替换 |
-| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、搜索群聊（Bot/User 双身份）、历史记录（支持 User Token 读 Bot 不在的群） |
+| **电子表格** | V2 基础读写 + V3 富文本 API，行列操作、样式、合并、查找替换、导出 XLSX/CSV |
+| **多维表格** | base/v3 API 全覆盖：数据表/字段/记录 CRUD、视图配置（filter/sort/group/visible-fields/timebar/card）、角色 CRUD、高级权限、数据聚合、工作流（48 个命令） |
+| **消息** | 发送（text/post/image/file/card 等 11 种类型）、转发、合并转发、回复、Pin、表情回复、搜索群聊（Bot/User 双身份）、历史记录、批量获取、资源下载、话题回复 |
 | **群聊** | 创建、获取、更新、删除、分享链接、成员管理 |
-| **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询 |
-| **任务** | 创建、查看、完成、删除、子任务、成员管理、提醒管理、任务列表 |
+| **邮箱** | 收件箱分类/搜索、邮件详情（单条/批量/线程）、发送（默认草稿）、草稿管理、回复/全部回复/转发（需 User Token） |
+| **日历** | 日历列表、主日历、日程增删改查、搜索、回复邀请、参与者管理、忙闲查询、日程视图（agenda） |
+| **任务** | 创建、查看、完成、重新打开、子任务、成员管理、提醒、评论、我的任务、任务清单（CRUD + 任务关联 + 成员管理） |
+| **视频会议** | 多维搜索（query/主持人/参会者/会议室）、会议纪要（三路径批量获取 + AI 产物 + 逐字稿下载）、录制查询（需 User Token） |
+| **妙记** | 妙记详情 + AI 产物（摘要/待办/章节）、音视频媒体批量下载（SSRF 防护 + 速率限制）（需 User Token） |
 | **审批** | 审批定义详情查询、当前登录用户审批任务查询（待办 / 已办 / 已发起 / 抄送） |
 | **权限** | 添加 / 更新 / 删除协作者、批量添加、公开权限管理、分享密码、权限检查、转移所有权 |
+| **云盘增强** | 大文件分块上传（>20MB 自动分片）、流式下载、异步导出（docx→markdown 快捷路径 + sheet/bitable CSV）、异步导入、文件夹移动（自动轮询）、富文本评论（wiki URL 解析）、异步任务查询 |
 | **文件** | 云空间文件列表、创建、移动、复制、删除、上传、下载、版本管理、元数据、统计 |
 | **素材** | 上传 / 下载（图片、文件、音视频） |
 | **画板** | 精排绘图（create-notes）、Mermaid / PlantUML 导入、截图下载、节点管理 |
@@ -228,22 +233,27 @@ feishu-cli <command> [subcommand] [flags]
 Commands:
   doc       文档操作（创建、导入、导出、编辑、异步导出/导入文件）
   wiki      知识库操作（节点增删改查、空间详情、成员管理）
-  sheet     电子表格（读写、样式、V3 富文本 API）
-  msg       消息操作（发送、转发、合并转发、回复、Pin、表情回复）
+  sheet     电子表格（读写、样式、V3 富文本 API、导出 XLSX/CSV）
+  bitable   多维表格（base/v3 API：数据表/字段/记录/视图/角色/权限/聚合/工作流，48 命令）
+  msg       消息操作（发送、转发、合并转发、回复、Pin、表情回复、批量获取、资源下载）
   chat      群聊管理（创建、更新、删除、成员管理）
+  mail      邮箱操作（分类/搜索、发送、草稿、回复、转发，10 命令）
+  drive     云盘增强（分块上传、流式下载、异步导出/导入、移动、评论，8 命令）
+  vc        视频会议（多维搜索、纪要、录制查询）
+  minutes   妙记操作（详情 + AI 产物、媒体批量下载）
   file      文件管理（列出、移动、复制、删除、上传、下载、版本管理）
   media     素材操作（上传、下载）
   perm      权限管理（添加、删除、批量添加、公开权限、密码、转移所有权）
-  calendar  日历操作（日程增删改查、搜索、参与者、忙闲查询）
-  task      任务操作（增删改查、子任务、成员、提醒）
-  tasklist  任务列表管理（创建、查看、删除）
+  calendar  日历操作（日程增删改查、搜索、参与者、忙闲查询、agenda）
+  task      任务操作（增删改查、子任务、成员、提醒、评论、我的任务）
+  tasklist  任务清单管理（CRUD、任务关联、成员管理）
   user      用户操作（获取信息、搜索、部门用户列表）
   dept      部门操作（详情、子部门列表）
   board     画板操作（导入图表、下载图片）
   comment   评论操作（列出、添加、解决/恢复、回复管理）
   approval  审批操作（定义详情、当前登录用户任务查询）
   search    搜索操作（消息、应用、文档）
-  auth      身份认证（OAuth 登录、状态、退出）
+  auth      身份认证（OAuth 登录、状态、退出、scope 预检）
   config    配置管理
 ```
 
@@ -535,14 +545,17 @@ feishu-cli approval task query --topic cc-unread --user-access-token <token>
 > **v1.18+ 变更**：Authorization Code Flow（`--print-url` / `auth callback` / `--manual` / `--port` / `--method` / `--scopes`）已全部删除，只保留 Device Flow。
 
 ```bash
-# 登录（Device Flow，本地桌面和 SSH 远程均可，无差别）
-feishu-cli auth login
+# 按业务域申请推荐权限（推荐）
+feishu-cli auth login --domain search --recommend
+
+# 显式申请某组 scope
+feishu-cli auth login --scope "minutes:minutes.basic:read minutes:minutes.transcript:export"
 
 # JSON 事件流输出（AI Agent 推荐，配合 run_in_background 使用）
-feishu-cli auth login --json
+feishu-cli auth login --domain search --recommend --json
 
 # 两步模式：先立即输出 device_code，不启动轮询
-feishu-cli auth login --no-wait --json
+feishu-cli auth login --domain vc --domain minutes --recommend --no-wait --json
 
 # 两步模式：用已有 device_code 继续轮询
 feishu-cli auth login --device-code <device_code> --json
@@ -561,10 +574,16 @@ feishu-cli auth logout
 
 登录时 CLI 在 stderr 打印验证链接和 user_code，用户在任意设备（电脑、手机）浏览器打开链接完成授权即可。本地桌面会尝试自动打开浏览器，SSH 远程失败静默忽略。
 
+**授权范围策略**：
+- CLI 会显式声明本次请求的 scope，不再依赖“后台开了什么就全量返回”
+- 推荐先用 `auth check --scope "REQ_SCOPES"` 预检，再用 `auth login --scope "..."` 或 `auth login --domain ... --recommend` 补授权
+- 即使显式请求业务 scope，CLI 也会自动追加最小核心 scope（如 `auth:user.id:read`）用于识别当前登录用户
+- 要真正拿到某个 scope，仍然必须先在飞书开放平台应用权限管理页面开通它
+
 **Token 管理**：
 - Token 保存在 `~/.feishu-cli/token.json`，Access Token 有效期约 2 小时
 - Access Token 过期时自动使用 Refresh Token 刷新（Refresh Token 有效期 30 天）
-- **重要**：登录时需包含 `offline_access` scope 才会返回 Refresh Token，否则 2 小时后需重新登录
+- `offline_access` 由 CLI 自动追加，无需手动声明
 - Token 优先级：`--user-access-token` 参数 > `FEISHU_USER_ACCESS_TOKEN` 环境变量 > `token.json` > `config.yaml`
 - 审批任务查询会缓存当前登录用户资料到 `~/.feishu-cli/user_profile.json`，登录态变化或执行 `auth logout` 时会自动清理
 
@@ -623,6 +642,76 @@ feishu-cli comment unresolve <file_token> <comment_id> --type docx
 feishu-cli comment reply list <file_token> <comment_id> --type docx
 feishu-cli comment reply delete <file_token> <comment_id> <reply_id> --type docx
 
+# 多维表格（base/v3 API）
+feishu-cli bitable create --name "项目管理" --time-zone Asia/Shanghai
+feishu-cli bitable table list --base-token bscnxxxx
+feishu-cli bitable table create --base-token bscnxxxx --name "任务"
+feishu-cli bitable field list --base-token bscnxxxx --table-id tblxxx
+feishu-cli bitable field create --base-token bscnxxxx --table-id tblxxx --config '{"name":"状态","type":"select"}'
+feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx --config '{"fields":{"名称":"测试"}}'
+feishu-cli bitable record upsert --base-token bscnxxxx --table-id tblxxx --record-id recxxx --config '{"fields":{"状态":"完成"}}'
+feishu-cli bitable record batch-create --base-token bscnxxxx --table-id tblxxx --config '{"fields":["fld1"],"rows":[["val1"],["val2"]]}'
+feishu-cli bitable record list --base-token bscnxxxx --table-id tblxxx
+feishu-cli bitable view list --base-token bscnxxxx --table-id tblxxx
+feishu-cli bitable view view-filter-get --base-token bscnxxxx --table-id tblxxx --view-id vewxxx
+feishu-cli bitable role list --base-token bscnxxxx
+
+# 云盘增强（drive）
+feishu-cli drive upload --file big.zip --folder-token fldxxx
+feishu-cli drive download --file-token boxxxx --output ./downloads/ --overwrite
+feishu-cli drive export --token docxxxx --doc-type docx --file-extension markdown --output-dir ./exports
+feishu-cli drive export --token sheetxxxx --doc-type sheet --file-extension csv --sub-id sheet_1 --output-dir ./out
+feishu-cli drive import --file report.docx --type docx --folder-token fldxxx
+feishu-cli drive move --file-token fldxxx --type folder --folder-token fldyyy
+feishu-cli drive add-comment --doc docxxx --content '[{"type":"text","text":"评论"}]'
+
+# 邮箱（mail，需 User Token）
+feishu-cli mail triage --folder INBOX --unread-only --page-size 20
+feishu-cli mail triage --query "周会"
+feishu-cli mail message --message-id msg_xxx
+feishu-cli mail send --to user@example.com --subject "测试" --body "hi"                    # 默认存草稿
+feishu-cli mail send --to user@example.com --subject "测试" --body "hi" --confirm-send     # 立即发送
+feishu-cli mail reply --message-id msg_xxx --body "收到" --confirm-send
+feishu-cli mail forward --message-id msg_xxx --to team@example.com --body "请关注"
+
+# 视频会议（vc，需 User Token）
+feishu-cli vc search --query "周会" --start 2026-03-20 --end 2026-03-28
+feishu-cli vc notes --meeting-ids 69xxxx,70xxxx
+feishu-cli vc notes --minute-tokens obcnxxxx --with-artifacts --download-transcript --output-dir ./notes
+feishu-cli vc recording --meeting-ids 69xxxx
+
+# 妙记（minutes，需 User Token）
+feishu-cli minutes get <minute_token> --with-artifacts
+feishu-cli minutes download --minute-tokens obcnxxxx --output ./media
+feishu-cli minutes download --minute-tokens obcnxxxx --url-only
+
+# 日历增强
+feishu-cli calendar agenda                                         # 查看今日日程
+feishu-cli calendar agenda --start-date 2026-03-28 --end-date 2026-03-29
+
+# 任务增强
+feishu-cli task my                                                 # 查看我的任务
+feishu-cli task reopen <task_guid>                                 # 重新打开
+feishu-cli task comment add <task_guid> --content "评论"
+feishu-cli tasklist task-add <tasklist_guid> --task-ids guid1,guid2
+feishu-cli tasklist member add <tasklist_guid> --members ou_xxx
+
+# 消息增强
+feishu-cli msg mget --message-ids om_xxx,om_yyy
+feishu-cli msg resource-download <message_id> <file_key> --type image -o photo.png
+feishu-cli msg thread-messages <thread_id> --page-size 20
+
+# 文档增强
+feishu-cli doc content-update <doc_id> --mode append --markdown "## 新内容"
+feishu-cli doc content-update <doc_id> --mode overwrite --markdown "# 全新文档"
+feishu-cli doc content-update <doc_id> --mode replace_range --selection-by-title "## 旧章节" --markdown "## 新章节"
+feishu-cli doc media-insert <doc_id> --file photo.png --type image --align center
+feishu-cli doc media-download <file_token> -o image.png
+
+# 电子表格导出
+feishu-cli sheet export <token> -o output.xlsx
+feishu-cli sheet export <token> --format csv --sheet-id SHEET_ID -o output.csv
+
 # 用户
 feishu-cli user info <user_id>
 feishu-cli user search --email user@example.com
@@ -638,7 +727,7 @@ feishu-cli dept children <department_id>
 
 ## AI 技能集成
 
-`skills/` 目录包含 **11 个** 为 [Claude Code](https://claude.ai/claude-code) 设计的技能文件，让 AI Agent 能够直接操作飞书 — 创建文档、发送消息、管理权限，全部通过自然语言驱动。
+`skills/` 目录包含 **16 个** 为 [Claude Code](https://claude.ai/claude-code) 设计的技能文件，让 AI Agent 能够直接操作飞书 — 创建文档、发送消息、管理权限，全部通过自然语言驱动。
 
 | 技能 | 功能 | 触发示例 |
 |------|------|---------|
@@ -648,9 +737,14 @@ feishu-cli dept children <department_id>
 | `feishu-cli-export` | 导出为 Markdown / PDF / Word | "把飞书文档导出来" |
 | `feishu-cli-perm` | 权限管理 | "给文档添加权限" |
 | `feishu-cli-msg` | 消息全功能管理 | "发消息给 xxx" |
-| `feishu-cli-toolkit` | 综合工具箱（表格/日历/任务/群聊/文件/评论/知识库/通讯录） | "读取飞书表格数据" |
+| `feishu-cli-chat` | 会话浏览、消息互动与群聊管理 | "查看群聊历史消息" |
+| `feishu-cli-toolkit` | 综合工具箱（表格导出/日历agenda/任务/清单/文件/评论/知识库/通讯录） | "读取飞书表格数据" |
 | `feishu-cli-board` | 画板操作（精排绘图/Mermaid 导入/截图/节点管理） | "画个架构图"、"在飞书里画图" |
-| `feishu-cli-auth` | OAuth 认证、Token 管理、scope 配置 | "登录飞书"、"获取 Token" |
+| `feishu-cli-bitable` | 多维表格全功能（base/v3 API，48 命令） | "创建多维表格"、"查询记录" |
+| `feishu-cli-vc` | 视频会议与妙记（搜索/纪要/录制/AI 产物/逐字稿/媒体下载） | "搜索最近的会议"、"下载会议纪要" |
+| `feishu-cli-drive` | 云盘增强（分块上传/流式下载/异步导出导入/评论） | "上传文件到飞书" |
+| `feishu-cli-mail` | 飞书邮箱（收件箱/发送/回复/转发/草稿） | "查看邮件"、"发邮件" |
+| `feishu-cli-auth` | OAuth 认证、Token 管理、按域精细授权 | "登录飞书"、"获取 Token" |
 | `feishu-cli-search` | 搜索飞书文档 / 消息 / 应用 | "搜索飞书文档" |
 | `feishu-cli-doc-guide` | 飞书文档创建规范 | 其他技能内部引用 |
 

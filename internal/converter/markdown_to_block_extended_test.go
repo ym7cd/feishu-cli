@@ -1141,7 +1141,7 @@ func TestSplitColumnGroups(t *testing.T) {
 		name      string
 		totalCols int
 		wantNil   bool
-		wantLen   int    // 期望分组数
+		wantLen   int // 期望分组数
 		checkFn   func(*testing.T, [][]int)
 	}{
 		{

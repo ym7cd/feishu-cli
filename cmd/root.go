@@ -42,8 +42,14 @@ var rootCmd = &cobra.Command{
   task      任务操作（创建、查看、更新、完成）
   approval  审批操作（定义详情、当前登录用户任务查询）
   calendar  日历操作（日历、日程管理）
+  vc        视频会议（多维搜索、纪要/AI 产物/逐字稿、录制查询；User Token）
+  minutes   妙记（基础信息、AI 产物、媒体下载；User Token）
+  mail      邮箱（发送/回复/转发/草稿/查询；User Token）
+  drive     云盘增强（分块上传、有界轮询导出/导入、富文本评论、通用 task-result）
   search    搜索操作（消息、应用搜索，需要用户授权）
   config    配置管理（初始化配置）
+
+注意：bitable 命令已切换到 base/v3 API，flag 使用 --base-token。
 
 配置方式:
   1. 环境变量（推荐）:

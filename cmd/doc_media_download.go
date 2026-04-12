@@ -39,7 +39,7 @@ var docMediaDownloadCmd = &cobra.Command{
 		mediaType, _ := cmd.Flags().GetString("type")
 		output, _ := cmd.Flags().GetString("output")
 		timeoutStr, _ := cmd.Flags().GetString("timeout")
-		userAccessToken := resolveOptionalUserToken(cmd)
+		userAccessToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		if output == "" {
 			output = safeOutputPath(token, "")
@@ -96,6 +96,6 @@ func init() {
 	docCmd.AddCommand(docMediaDownloadCmd)
 	docMediaDownloadCmd.Flags().String("type", "media", "素材类型（media/whiteboard）")
 	docMediaDownloadCmd.Flags().StringP("output", "o", "", "输出文件路径")
-	docMediaDownloadCmd.Flags().String("user-access-token", "", "User Access Token（可选）")
+	docMediaDownloadCmd.Flags().String("user-access-token", "", "User Access Token（可选；默认优先使用 auth login 登录态，失败时回退 App Token）")
 	docMediaDownloadCmd.Flags().String("timeout", "", "下载超时时间（默认 5m，示例: 10m, 30m, 1h）")
 }

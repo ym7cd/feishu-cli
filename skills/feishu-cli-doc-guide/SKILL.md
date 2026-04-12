@@ -16,7 +16,7 @@ allowed-tools: Read
 本技能是 **其他飞书文档技能的参考规范**，不可直接调用。整合了以下来源的验证经验：
 
 - `feishu-cli` 项目代码实现（`converter/`、`client/board.go`、`cmd/import_markdown.go`）
-- `feishu-cli-write`、`feishu-cli-import`、`feishu-cli-plantuml` 技能的实测数据
+- `feishu-cli-write`、`feishu-cli-import`、`feishu-cli-toolkit` 技能的实测数据
 - 大规模导入测试：10,000+ 行 / 127 个图表 / 170+ 个表格的验证结果
 
 **适用场景**：生成将要导入飞书的 Markdown 文档时，参考本规范确保兼容性。

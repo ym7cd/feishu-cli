@@ -13,10 +13,11 @@ var authCmd = &cobra.Command{
 无需在飞书开放平台配置任何重定向 URL 白名单。
 
 示例:
-  feishu-cli auth login                            # 登录（Device Flow）
+  feishu-cli auth login --domain search --recommend
+  feishu-cli auth login --scope "minutes:minutes.basic:read minutes:minutes.transcript:export"
   feishu-cli auth login --json                     # AI Agent 推荐：JSON 事件流输出
   feishu-cli auth check --scope "search:docs:read" # 检查当前 token 是否包含所需 scope
-  feishu-cli auth status                           # 查看授权状态
+  feishu-cli auth status --verify -o json          # 查看并在线校验授权状态
   feishu-cli auth logout                           # 退出登录`,
 }
 

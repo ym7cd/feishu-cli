@@ -3,7 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"time"
+	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
@@ -12,173 +12,181 @@ import (
 
 var vcSearchCmd = &cobra.Command{
 	Use:   "search",
-	Short: "搜索历史会议记录",
-	Long: `搜索已结束的历史会议记录。
+	Short: "搜索历史会议记录（多维过滤）",
+	Long: `搜索历史会议记录。
+使用飞书 POST /open-apis/vc/v1/meetings/search API，支持关键词 + 时间范围 + 参会者 + 主持人 + 会议室多维过滤。
+
+必须指定至少一个过滤条件：--query / --start / --end / --organizer-ids / --participant-ids / --room-ids
 
 可选参数:
-  --start          起始日期，格式 YYYY-MM-DD（默认 7 天前）
-  --end            结束日期，格式 YYYY-MM-DD（默认今天）
-  --meeting-no     按会议号过滤
-  --meeting-status 会议状态（1=进行中, 2=未开始, 3=已结束，默认 3）
-  --page-size      每页数量
-  --page-token     分页标记
-  --output, -o     输出格式（json）
+  --query            搜索关键词（1-50 字符）
+  --start            起始时间（支持 YYYY-MM-DD 或 RFC3339）
+  --end              结束时间（支持 YYYY-MM-DD 或 RFC3339；纯日期会对齐到 23:59:59）
+  --organizer-ids    主持人 open_id 列表，逗号分隔
+  --participant-ids  参会者 open_id 列表，逗号分隔
+  --room-ids         会议室 ID 列表，逗号分隔
+  --page-size        每页数量（1-30，默认 15）
+  --page-token       分页标记
+  --output, -o       输出格式（json）
+
+权限:
+  需要 User Access Token + vc:meeting.search:read 权限
 
 示例:
-  # 搜索最近 7 天已结束的会议
-  feishu-cli vc search
+  # 按关键词搜索
+  feishu-cli vc search --query "周会"
 
   # 按时间范围搜索
-  feishu-cli vc search --start "2026-03-20" --end "2026-03-28"
+  feishu-cli vc search --start 2026-03-20 --end 2026-04-10
 
-  # 按会议号搜索
-  feishu-cli vc search --meeting-no "123456789"
+  # 按主持人过滤
+  feishu-cli vc search --organizer-ids ou_xxx,ou_yyy
 
-  # JSON 格式输出
-  feishu-cli vc search -o json`,
+  # 组合过滤 + JSON 输出
+  feishu-cli vc search --query "需求评审" --start 2026-03-01 -o json`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := config.Validate(); err != nil {
 			return err
 		}
 
-		token := resolveOptionalUserToken(cmd)
-
-		startStr, _ := cmd.Flags().GetString("start")
-		endStr, _ := cmd.Flags().GetString("end")
-		meetingNo, _ := cmd.Flags().GetString("meeting-no")
-		meetingStatus, _ := cmd.Flags().GetInt("meeting-status")
-		pageSize, _ := cmd.Flags().GetInt("page-size")
-		pageToken, _ := cmd.Flags().GetString("page-token")
-		output, _ := cmd.Flags().GetString("output")
-
-		// 解析时间范围
-		now := time.Now()
-		loc := now.Location()
-
-		var startTime, endTime time.Time
-
-		if startStr != "" {
-			t, err := time.ParseInLocation("2006-01-02", startStr, loc)
-			if err != nil {
-				return fmt.Errorf("解析起始日期失败（格式应为 YYYY-MM-DD）: %w", err)
-			}
-			startTime = t
-		} else {
-			// 默认 7 天前
-			startTime = time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, loc).AddDate(0, 0, -7)
-		}
-
-		if endStr != "" {
-			t, err := time.ParseInLocation("2006-01-02", endStr, loc)
-			if err != nil {
-				return fmt.Errorf("解析结束日期失败（格式应为 YYYY-MM-DD）: %w", err)
-			}
-			// 结束日期设为当天 23:59:59，使查询包含该天
-			endTime = t.Add(24*time.Hour - time.Second)
-		} else {
-			// 默认今天结束
-			endTime = time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
-		}
-
-		meetingList, nextToken, hasMore, err := client.SearchMeetings(
-			startTime.Unix(),
-			endTime.Unix(),
-			meetingStatus,
-			meetingNo,
-			pageSize,
-			pageToken,
-			token,
-		)
+		token, err := requireUserToken(cmd, "vc search")
 		if err != nil {
 			return err
 		}
 
+		query, _ := cmd.Flags().GetString("query")
+		startStr, _ := cmd.Flags().GetString("start")
+		endStr, _ := cmd.Flags().GetString("end")
+		organizerRaw, _ := cmd.Flags().GetString("organizer-ids")
+		participantRaw, _ := cmd.Flags().GetString("participant-ids")
+		roomRaw, _ := cmd.Flags().GetString("room-ids")
+		pageSize, _ := cmd.Flags().GetInt("page-size")
+		pageToken, _ := cmd.Flags().GetString("page-token")
+		output, _ := cmd.Flags().GetString("output")
+
+		// 至少一个过滤条件
+		if strings.TrimSpace(query) == "" &&
+			strings.TrimSpace(startStr) == "" &&
+			strings.TrimSpace(endStr) == "" &&
+			strings.TrimSpace(organizerRaw) == "" &&
+			strings.TrimSpace(participantRaw) == "" &&
+			strings.TrimSpace(roomRaw) == "" {
+			return fmt.Errorf("请至少指定一个过滤条件（--query / --start / --end / --organizer-ids / --participant-ids / --room-ids）")
+		}
+
+		if l := len([]rune(query)); l > 50 {
+			return fmt.Errorf("--query 长度不能超过 50 字符（当前 %d）", l)
+		}
+
+		// 时间解析
+		startRFC, err := parseVCTime(startStr, false)
+		if err != nil {
+			return fmt.Errorf("解析 --start 失败: %w", err)
+		}
+		endRFC, err := parseVCTime(endStr, true)
+		if err != nil {
+			return fmt.Errorf("解析 --end 失败: %w", err)
+		}
+		if startRFC != "" && endRFC != "" && startRFC > endRFC {
+			return fmt.Errorf("--start 不能晚于 --end")
+		}
+
+		// page-size 范围
+		if pageSize < 0 || pageSize > 30 {
+			return fmt.Errorf("--page-size 取值范围 1-30（当前 %d）", pageSize)
+		}
+		if pageSize == 0 {
+			pageSize = 15
+		}
+
+		organizerIDs, err := parseCSVIDs(organizerRaw, "organizer-ids")
+		if err != nil {
+			return err
+		}
+		participantIDs, err := parseCSVIDs(participantRaw, "participant-ids")
+		if err != nil {
+			return err
+		}
+		roomIDs, err := parseCSVIDs(roomRaw, "room-ids")
+		if err != nil {
+			return err
+		}
+
+		req := client.SearchMeetingsReq{
+			Query:          strings.TrimSpace(query),
+			StartRFC3339:   startRFC,
+			EndRFC3339:     endRFC,
+			OrganizerIDs:   organizerIDs,
+			ParticipantIDs: participantIDs,
+			RoomIDs:        roomIDs,
+			PageSize:       pageSize,
+			PageToken:      pageToken,
+		}
+
+		data, err := client.SearchMeetings(req, token)
+		if err != nil {
+			return err
+		}
+
+		// JSON 输出：原样透传 data
 		if output == "json" {
-			result := map[string]any{
-				"meeting_list": json.RawMessage(meetingList),
-				"has_more":     hasMore,
-			}
-			if nextToken != "" {
-				result["page_token"] = nextToken
-			}
-			return printJSON(result)
+			return printJSON(json.RawMessage(data))
 		}
 
-		// 解析会议列表用于格式化输出
-		var meetings []struct {
-			MeetingID string `json:"meeting_id"`
-			Topic     string `json:"topic"`
-			MeetingNo string `json:"meeting_no"`
-			StartTime string `json:"start_time"`
-			EndTime   string `json:"end_time"`
+		// 文本输出
+		var parsed struct {
+			Items []struct {
+				ID          string `json:"id"`
+				DisplayInfo string `json:"display_info"`
+				MetaData    struct {
+					Description string `json:"description"`
+				} `json:"meta_data"`
+			} `json:"items"`
+			Total     int    `json:"total"`
+			HasMore   bool   `json:"has_more"`
+			PageToken string `json:"page_token"`
 		}
-		if meetingList != nil {
-			if err := json.Unmarshal(meetingList, &meetings); err != nil {
-				// 如果解析失败，直接打印原始 JSON
-				fmt.Println(string(meetingList))
-				return nil
-			}
-		}
-
-		if len(meetings) == 0 {
-			fmt.Printf("在 %s ~ %s 期间无会议记录\n",
-				startTime.Format("2006-01-02"),
-				endTime.Format("2006-01-02"))
+		if err := json.Unmarshal(data, &parsed); err != nil {
+			// 解析失败就直接打印原 JSON
+			fmt.Println(string(data))
 			return nil
 		}
 
-		fmt.Printf("会议列表（%s ~ %s，共 %d 个）:\n\n",
-			startTime.Format("2006-01-02"),
-			endTime.Format("2006-01-02"),
-			len(meetings))
+		if len(parsed.Items) == 0 {
+			fmt.Println("未找到匹配的会议记录")
+			return nil
+		}
 
-		for i, m := range meetings {
-			topic := m.Topic
-			if topic == "" {
-				topic = "(无标题)"
+		fmt.Printf("会议列表（共 %d 条）:\n\n", len(parsed.Items))
+		for i, it := range parsed.Items {
+			title := strings.TrimSpace(it.DisplayInfo)
+			if title == "" {
+				title = "(无标题)"
 			}
-
-			fmt.Printf("[%d] %s\n", i+1, topic)
-			fmt.Printf("    会议 ID:   %s\n", m.MeetingID)
-			if m.MeetingNo != "" {
-				fmt.Printf("    会议号:    %s\n", m.MeetingNo)
-			}
-
-			// 尝试解析 Unix 时间戳为可读时间
-			if m.StartTime != "" {
-				fmt.Printf("    开始时间:  %s\n", formatVCTime(m.StartTime))
-			}
-			if m.EndTime != "" {
-				fmt.Printf("    结束时间:  %s\n", formatVCTime(m.EndTime))
+			fmt.Printf("[%d] %s\n", i+1, title)
+			fmt.Printf("    会议 ID:  %s\n", it.ID)
+			if meta := strings.TrimSpace(it.MetaData.Description); meta != "" {
+				fmt.Printf("    时间/备注: %s\n", meta)
 			}
 			fmt.Println()
 		}
-
-		if hasMore {
-			fmt.Printf("还有更多会议，使用 --page-token %s 获取下一页\n", nextToken)
+		if parsed.HasMore {
+			fmt.Printf("还有更多会议，可用 --page-token %s 获取下一页\n", parsed.PageToken)
 		}
-
 		return nil
 	},
 }
 
-// formatVCTime 尝试将 Unix 秒字符串转为可读时间
-func formatVCTime(ts string) string {
-	var sec int64
-	if _, err := fmt.Sscanf(ts, "%d", &sec); err == nil && sec > 0 {
-		return time.Unix(sec, 0).Format("2006-01-02 15:04:05")
-	}
-	return ts
-}
-
 func init() {
 	vcCmd.AddCommand(vcSearchCmd)
-	vcSearchCmd.Flags().String("start", "", "起始日期，格式 YYYY-MM-DD（默认 7 天前）")
-	vcSearchCmd.Flags().String("end", "", "结束日期，格式 YYYY-MM-DD（默认今天）")
-	vcSearchCmd.Flags().String("meeting-no", "", "按会议号过滤")
-	vcSearchCmd.Flags().Int("meeting-status", 3, "会议状态（1=进行中, 2=未开始, 3=已结束）")
-	vcSearchCmd.Flags().Int("page-size", 0, "每页数量")
+	vcSearchCmd.Flags().String("query", "", "搜索关键词（1-50 字符）")
+	vcSearchCmd.Flags().String("start", "", "起始时间（YYYY-MM-DD 或 RFC3339）")
+	vcSearchCmd.Flags().String("end", "", "结束时间（YYYY-MM-DD 或 RFC3339）")
+	vcSearchCmd.Flags().String("organizer-ids", "", "主持人 open_id 列表，逗号分隔")
+	vcSearchCmd.Flags().String("participant-ids", "", "参会者 open_id 列表，逗号分隔")
+	vcSearchCmd.Flags().String("room-ids", "", "会议室 ID 列表，逗号分隔")
+	vcSearchCmd.Flags().Int("page-size", 15, "每页数量（1-30）")
 	vcSearchCmd.Flags().String("page-token", "", "分页标记")
 	vcSearchCmd.Flags().StringP("output", "o", "", "输出格式（json）")
-	vcSearchCmd.Flags().String("user-access-token", "", "User Access Token（用户授权令牌）")
+	vcSearchCmd.Flags().String("user-access-token", "", "User Access Token（覆盖登录态）")
 }

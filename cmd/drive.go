@@ -1,0 +1,44 @@
+package cmd
+
+import (
+	"github.com/spf13/cobra"
+)
+
+// driveCmd Drive（云盘）命令组 — 对齐飞书官方 drive 子命令
+// 与 file / media / comment / doc 的相关子命令互补，提供更强能力：
+// 分块上传、异步任务 resume、富文本评论、markdown 快捷导出等
+var driveCmd = &cobra.Command{
+	Use:   "drive",
+	Short: "云盘（Drive）操作命令 - 与 file/media 互补",
+	Long: `Drive 云盘操作，覆盖上传、下载、导出、导入、移动、评论、异步任务管理。
+
+相对 file/media 命令的增强能力：
+  - drive upload    支持自动分块（>20MB）
+  - drive download  流式下载 + 路径校验 + --overwrite
+  - drive export    支持 sheet/bitable CSV 带 sub-id，docx → markdown 快捷路径，有界轮询 + resume
+  - drive import    分块上传媒体 + 有界轮询 + resume
+  - drive move      folder 移动时轮询 task_check
+  - drive add-comment 支持局部评论、wiki URL 解析、富文本 reply_elements
+  - drive task-result 通用异步任务查询（import/export/task_check）
+
+所有子命令默认走 User Access Token，先 feishu-cli auth login。
+
+子命令:
+  upload          上传本地文件（大文件自动分块）
+  download        下载云盘文件
+  export          导出文档为本地文件（doc/docx/sheet/bitable → pdf/docx/xlsx/csv/markdown）
+  export-download 通过 file_token 下载已完成的导出任务（配合 export 超时后 resume）
+  import          导入本地文件为云文档
+  move            移动文件/文件夹
+  add-comment     添加文件评论（支持局部、wiki 解析、富文本）
+  task-result     通用异步任务查询
+
+示例:
+  feishu-cli drive upload --file big.zip --folder-token fldxxx
+  feishu-cli drive export --token docxxx --doc-type docx --file-extension markdown --output-dir ./exports
+  feishu-cli drive add-comment --doc https://xxx.feishu.cn/docx/yyy --content '[{"type":"text","text":"评论内容"}]'`,
+}
+
+func init() {
+	rootCmd.AddCommand(driveCmd)
+}

@@ -20,6 +20,9 @@ var authLogoutCmd = &cobra.Command{
 		if err := auth.DeleteToken(); err != nil {
 			return err
 		}
+		if err := clearLoginRequestedScopeCache(); err != nil {
+			return err
+		}
 
 		path, _ := auth.TokenPath()
 		fmt.Printf("已清除本地授权信息 (%s)\n", path)

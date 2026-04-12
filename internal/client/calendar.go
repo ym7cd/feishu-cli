@@ -494,6 +494,69 @@ func GetPrimaryCalendar(userAccessToken string) (*Calendar, error) {
 	}, nil
 }
 
+// InstanceRelationInfo 日历事件实例的关联信息（会议实例 ID + 妙记 token）
+type InstanceRelationInfo struct {
+	MeetingInstanceIDs []string `json:"meeting_instance_ids,omitempty"`
+	MeetingNotes       []string `json:"meeting_notes,omitempty"` // minute_tokens
+}
+
+// MgetInstanceRelationInfo 批量查询日历事件实例的会议/妙记关联信息
+// API: POST /open-apis/calendar/v4/calendars/{calendar_id}/events/mget_instance_relation_info
+// 返回 map[instance_id]InstanceRelationInfo
+func MgetInstanceRelationInfo(calendarID string, instanceIDs []string, needNotes bool, userAccessToken string) (map[string]*InstanceRelationInfo, error) {
+	client, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+
+	body := map[string]any{
+		"instance_ids":              instanceIDs,
+		"need_meeting_instance_ids": true,
+	}
+	if needNotes {
+		body["need_meeting_notes"] = true
+	}
+
+	tokenType, opts := resolveTokenOpts(userAccessToken)
+	apiPath := fmt.Sprintf("/open-apis/calendar/v4/calendars/%s/events/mget_instance_relation_info", calendarID)
+
+	resp, err := client.Post(Context(), apiPath, body, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("查询日历事件实例关联信息失败: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("查询日历事件实例关联信息失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			InstanceRelationInfos []struct {
+				InstanceID         string   `json:"instance_id"`
+				MeetingInstanceIDs []string `json:"meeting_instance_ids"`
+				MeetingNotes       []string `json:"meeting_notes"`
+			} `json:"instance_relation_infos"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(resp.RawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析响应失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("查询日历事件实例关联信息失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+
+	result := make(map[string]*InstanceRelationInfo, len(apiResp.Data.InstanceRelationInfos))
+	for _, info := range apiResp.Data.InstanceRelationInfos {
+		result[info.InstanceID] = &InstanceRelationInfo{
+			MeetingInstanceIDs: info.MeetingInstanceIDs,
+			MeetingNotes:       info.MeetingNotes,
+		}
+	}
+	return result, nil
+}
+
 // SearchEvents 搜索日程
 func SearchEvents(calendarID, query string, startTime, endTime string, pageToken string, pageSize int, userAccessToken string) ([]*CalendarEvent, string, error) {
 	client, err := GetClient()

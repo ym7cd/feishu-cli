@@ -117,4 +117,3 @@ func TestResolveUserAccessToken_Priority(t *testing.T) {
 		t.Errorf("got %q, want file-token", token)
 	}
 }
-

@@ -11,10 +11,10 @@ func TestTokenStoreValidation(t *testing.T) {
 	now := time.Now()
 
 	tests := []struct {
-		name           string
-		token          TokenStore
-		accessValid    bool
-		refreshValid   bool
+		name         string
+		token        TokenStore
+		accessValid  bool
+		refreshValid bool
 	}{
 		{
 			name: "both valid",

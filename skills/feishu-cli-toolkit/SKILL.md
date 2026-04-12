@@ -10,7 +10,9 @@ description: >-
   操作画板、生成 PlantUML、管理文件、上传素材、查看评论、查看知识库、查询用户信息、
   查询部门、下载文档附件时使用。
   注意：群聊浏览/管理请使用 feishu-cli-chat，搜索请使用 feishu-cli-search，
-  发送消息请使用 feishu-cli-msg。
+  发送消息请使用 feishu-cli-msg，邮箱操作请使用 feishu-cli-mail，
+  云盘增强（分块上传/markdown 快捷导出/异步 resume/富文本评论）请使用 feishu-cli-drive，
+  多维表格请使用 feishu-cli-bitable，视频会议/妙记请使用 feishu-cli-vc。
 argument-hint: <module> <command> [args]
 user-invocable: true
 allowed-tools: Bash, Read, Write
@@ -21,6 +23,22 @@ allowed-tools: Bash, Read, Write
 覆盖 feishu-cli 的 14 个功能模块，提供命令速查和核心用法。复杂模块的详细参考文档在 `references/` 目录中。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
+
+> **路由到其他 skill**：
+> - 📧 **邮箱**（发/读/回复/转发/草稿/搜索）→ `feishu-cli-mail`
+> - 💾 **云盘增强**（分块上传/markdown 快捷导出/异步 resume/富文本评论/wiki 解析）→ `feishu-cli-drive`
+>   （基础的 `file list/delete/mkdir` 等仍在本 toolkit 的"文件管理"段落）
+> - 📊 **多维表格**（base/v3 API，含视图写配置/upsert/history/角色 CRUD）→ `feishu-cli-bitable`
+> - 🎥 **视频会议 / 妙记**（三路径纪要/录制查询/媒体下载）→ `feishu-cli-vc`
+> - 💬 **群聊管理** → `feishu-cli-chat`
+> - 🔍 **搜索**（文档/消息/应用）→ `feishu-cli-search`
+> - 📨 **发送消息** → `feishu-cli-msg`
+> - 📄 **创建/写入文档** → `feishu-cli-write`
+> - 📖 **读取文档** → `feishu-cli-read`
+> - ⬇️ **导出文档** → `feishu-cli-export`
+> - ⬆️ **Markdown 导入** → `feishu-cli-import`
+> - 🔒 **权限管理** → `feishu-cli-perm`
+> - 🔑 **OAuth 登录 / Token 管理** → `feishu-cli-auth`
 
 ## 模块速查表
 

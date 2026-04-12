@@ -146,12 +146,12 @@ func TestPollDeviceToken_Success(t *testing.T) {
 		}
 		// 第三次返回 token
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"access_token":              "test_access_token",
-			"refresh_token":             "test_refresh_token",
-			"token_type":                "Bearer",
-			"expires_in":                7200,
-			"refresh_token_expires_in":  2592000,
-			"scope":                     "offline_access",
+			"access_token":             "test_access_token",
+			"refresh_token":            "test_refresh_token",
+			"token_type":               "Bearer",
+			"expires_in":               7200,
+			"refresh_token_expires_in": 2592000,
+			"scope":                    "offline_access",
 		})
 	}))
 	defer ts.Close()

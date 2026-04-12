@@ -69,6 +69,16 @@ func resolveRequiredUserToken(cmd *cobra.Command) (string, error) {
 	return auth.ResolveUserAccessToken(flagToken, cfg.UserAccessToken, cfg.AppID, cfg.AppSecret, cfg.BaseURL)
 }
 
+// requireUserToken 封装 resolveRequiredUserToken，失败时返回带命令名和 auth login 提示的统一错误。
+// 新命令（vc/minutes/mail/drive/bitable/...）都走这个 helper，保持错误信息一致。
+func requireUserToken(cmd *cobra.Command, cmdName string) (string, error) {
+	token, err := resolveRequiredUserToken(cmd)
+	if err != nil {
+		return "", fmt.Errorf("%s 需要 User Access Token（请先 `feishu-cli auth login`）: %w", cmdName, err)
+	}
+	return token, nil
+}
+
 // resolveCurrentAuthedUserID returns the current logged-in user's ID for the requested type.
 func resolveCurrentAuthedUserID(cmd *cobra.Command, userIDType string) (string, error) {
 	token, err := resolveRequiredUserToken(cmd)

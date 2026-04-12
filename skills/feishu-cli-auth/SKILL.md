@@ -2,8 +2,8 @@
 name: feishu-cli-auth
 description: >-
   飞书 OAuth 认证和 User Access Token 管理（Device Flow，RFC 8628）。
-  支持一键创建飞书应用（config create-app）、auth check 预检 scope、
-  auth login 登录、Token 自动刷新。无需配置任何重定向 URL 白名单。
+  支持一键创建飞书应用（config create-app）、按域精细申请权限（--domain --recommend）、
+  auth check 预检 scope、auth login 登录、Token 自动刷新。
   当用户请求"登录飞书"、"获取 Token"、"OAuth 授权"、"auth login"、"认证"、
   "搜索需要什么权限"、"Token 过期了"、"刷新 Token"、"创建应用"、"create-app"、
   "缺少权限"、"99991672"、"99991679"时使用。
@@ -18,7 +18,7 @@ feishu-cli 通过 **OAuth 2.0 Device Flow（RFC 8628）** 获取 User Access Tok
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
 >
-> **v1.18+ 变更**：Authorization Code Flow（`--print-url` / `auth callback` / `--manual` / `--no-manual` / `--port` / `--method` / `--scopes`）已全部删除，只保留 Device Flow。旧脚本请迁移至 `auth login --json` 或 `auth login --no-wait` + `--device-code` 两步模式。
+> **v1.18+ 变更**：Authorization Code Flow（`--print-url` / `auth callback` / `--manual` / `--no-manual` / `--port` / `--method` / `--scopes`）已全部删除，只保留 Device Flow。旧脚本请迁移至 `auth login --scope "..." --json` 或 `auth login --no-wait` + `--device-code` 两步模式。
 
 ---
 
@@ -61,10 +61,39 @@ feishu-cli doc create --title "Hello Feishu"
 - Refresh Token：**30 天**有效（Device Flow 会强制注入 `offline_access` scope）
 - 过期后自动用 Refresh Token 刷新，用户无感
 
-**Scope 由飞书应用配置决定，不由 CLI 请求**：
-- CLI 在 `auth login` 时不传任何 scope 请求参数
-- 飞书 token v2 端点**忽略**客户端声明的 scope，始终返回应用在开放平台已开通的**全部** scope
-- 要增减 Token 权限范围，直接在飞书开放平台的"应用权限管理"页面调整应用的 scope 配置，然后重新 `auth login`。feishu-cli 不做权限申请自动化。
+**Scope 策略**：
+- CLI 在 `auth login` 时会显式声明本次请求的 scope，不再依赖“后台开了就自动全量返回”
+- 推荐先 `auth check --scope "REQ_SCOPES"` 预检，再执行 `auth login --scope "..."` 或 `auth login --domain ... --recommend`
+- CLI 会自动追加最小核心 scope（如 `auth:user.id:read`）和 `offline_access`
+- 要真正拿到某个 scope，仍需先在飞书开放平台的"应用权限管理"页面开通，然后重新 `auth login`
+
+---
+
+## 按域申请权限（--domain --recommend）
+
+`auth login` 支持通过 `--domain` 指定业务域，配合 `--recommend` 自动推荐该域所需的 scope，避免手动拼写 scope 字符串。
+
+**可用的业务域（20 个）**：
+
+`approval`, `attendance`, `bitable`, `calendar`, `chat`, `contact`, `doc_access`, `docs`, `drive`, `im`, `mail`, `minutes`, `search`, `sheets`, `slides`, `task`, `vc`, `whiteboard`, `wiki`, `all`
+
+**用法示例：**
+
+```bash
+# 按单个域申请推荐 scope
+feishu-cli auth login --domain search --recommend
+
+# 按多个域申请推荐 scope
+feishu-cli auth login --domain vc --domain minutes --recommend
+
+# 申请所有域的推荐 scope
+feishu-cli auth login --domain all --recommend
+
+# --recommend 单独使用（不带 --domain）= 等价于 --domain all --recommend
+feishu-cli auth login --recommend
+```
+
+**交互式选择**：在交互终端下（非管道/非 --json/非 --scope/非 --domain），`auth login` 会显示交互式提示符，让用户用方向键多选要授权的业务域，无需记忆域名。
 
 ---
 
@@ -104,7 +133,7 @@ feishu-cli auth check --scope "REQ_SCOPES" -o json   (exit 0 = 全部满足)
 case ok=true:                         继续执行业务命令
 case error=not_logged_in:             → 启动登录流程
 case error=token_expired:             → 启动登录流程
-case missing=[...]:                   → 提示用户去飞书开放平台的应用权限管理页面开通缺失的 scope，然后重新 auth login
+case missing=[...]:                   → 提示用户去飞书开放平台的应用权限管理页面开通缺失的 scope，然后执行 `auth login --scope "missing..."` 重新授权
 ```
 
 AI **永远不应该**：
@@ -112,7 +141,6 @@ AI **永远不应该**：
 - 调 `auth callback` 命令（已删除）
 - 使用 `--print-url` flag（已删除）
 - 调 `config add-scopes` 命令（已删除，权限申请是用户/管理员的责任，不做自动化）
-- 维护硬编码的 scope 列表
 - 自己生成或管理 device_code
 - **要求用户从浏览器地址栏复制回调 URL 回传给 AI**——这是 v1.18 前 Authorization Code Flow 的流程，已彻底删除。Device Flow 下用户只需**点击链接完成授权**，无需复制任何东西。如果 AI 引导用户"把地址栏的 URL 粘贴给我"，那是在回忆错误的旧流程
 
@@ -120,15 +148,15 @@ AI **永远不应该**：
 1. 打开飞书开放平台 → 你的应用 → 权限管理页面
 2. 搜索并开通缺失的 scope（具体 scope 名可从 auth check 的 `missing` 字段读到）
 3. 或者复制 README 的完整权限 JSON 一次性导入
-4. 重新 `feishu-cli auth login`
+4. 重新 `feishu-cli auth login --scope "缺失的 scope..."`；若一组功能要一起开通，也可用 `--domain ... --recommend`
 
 ### 方案 A：run_in_background 后台阻塞（推荐）
 
-最简洁的做法——让 `auth login --json` 阻塞轮询，AI 通过 Claude Code 的 `run_in_background: true` 把它丢到后台：
+最简洁的做法——让 `auth login --scope "..." --json` 阻塞轮询，AI 通过 Claude Code 的 `run_in_background: true` 把它丢到后台：
 
 ```
-# 步骤 1: 后台启动登录
-task = Bash(command="feishu-cli auth login --json", run_in_background=true)
+# 步骤 1: 后台启动登录（显式指定本次要拿的 scope）
+task = Bash(command='feishu-cli auth login --scope "search:docs:read search:message" --json', run_in_background=true)
 
 # 步骤 2: 读 stdout 第一行（首次 stdout 事件）
 {
@@ -148,12 +176,14 @@ task = Bash(command="feishu-cli auth login --json", run_in_background=true)
 授权完成后告诉我继续。"
 
 # 步骤 4: 等后台任务自动完成通知
-# 步骤 5: 读 stdout 第二行（成功事件）
+# 步骤 5: 读 stdout 第二行（完成事件）
 {
-  "event": "authorization_success",
+  "event": "authorization_complete",
   "expires_at": "2026-04-18T04:05:36+08:00",
   "refresh_expires_at": "2026-04-25T02:05:36+08:00",
-  "scope": "auth:user.id:read search:docs:read ... offline_access"
+  "scope": "auth:user.id:read search:docs:read ... offline_access",
+  "requested_scope": "auth:user.id:read search:docs:read search:message",
+  "missing_scopes": []
 }
 
 # 步骤 6: 再调一次 auth check 确认，继续业务
@@ -165,7 +195,7 @@ task = Bash(command="feishu-cli auth login --json", run_in_background=true)
 
 ```bash
 # 步骤 1: 只请求 device_code，立即退出（不轮询）
-feishu-cli auth login --no-wait --json
+feishu-cli auth login --domain vc --domain minutes --recommend --no-wait --json
 # stdout 输出一行 JSON: {"event":"device_authorization", ..., "device_code":"O-NUxxxx..."}
 # 进程立即退出 0
 
@@ -174,10 +204,10 @@ feishu-cli auth login --no-wait --json
 # 步骤 3: 用上一步的 device_code 继续轮询
 feishu-cli auth login --device-code "O-NUxxxx..." --json
 # 阻塞直到用户授权完成或 device_code 过期（约 3 分钟）
-# 成功后 stdout 输出: {"event":"authorization_success", ...}
+# 成功后 stdout 输出: {"event":"authorization_complete", ...}
 ```
 
-两步模式的 device_code 是第一步服务器返回的原始值，AI 需要自己管理这个字符串（通常直接传给下一步命令参数）。
+两步模式的 device_code 是第一步服务器返回的原始值，AI 需要自己管理这个字符串（通常直接传给下一步命令参数）。第一步请求时的 requested scope 会按 `device_code` 本地缓存，第二步轮询完成后仍会基于同一组 requested scope 做 granted-scope 校验。
 
 > **⚠️ 这个"两步模式"≠ v1.18 前的"两步式非交互登录"**。新模式是 Device Flow 的拆分：
 > - 旧两步式（已删除）：用户必须**复制**浏览器地址栏里的 `127.0.0.1:9768/callback?code=...&state=...` 回调 URL 粘贴给 AI
@@ -187,7 +217,7 @@ feishu-cli auth login --device-code "O-NUxxxx..." --json
 
 | 维度 | 人类直接跑 | AI 方案 A（后台阻塞） | AI 方案 B（两步拆分） |
 |---|---|---|---|
-| 命令 | `auth login` | `auth login --json` + `run_in_background=true` | `auth login --no-wait --json` → ... → `auth login --device-code <c> --json` |
+| 命令 | `auth login --domain search --recommend` | `auth login --scope "..." --json` + `run_in_background=true` | `auth login --domain ... --recommend --no-wait --json` → ... → `auth login --device-code <c> --json` |
 | Bash 调用次数 | 1 次（前台/后台同进程） | 1 次（后台） | 2 次（独立进程） |
 | 进程阻塞 | 阻塞到授权完成 | 后台阻塞 | 第一步立即退出，第二步阻塞轮询 |
 | 用户操作 | 点击链接 / 输入用户码 | 点击链接 / 输入用户码 | 点击链接 / 输入用户码 |
@@ -235,7 +265,7 @@ feishu-cli auth check --scope "search:docs:read im:message:readonly"
 # exit 1
 
 # 部分缺失
-{"ok":false,"granted":["search:docs:read"],"missing":["im:message:readonly"],"suggestion":"在飞书开放平台为应用开通以下 scope 后执行 feishu-cli auth login 重新授权: im:message:readonly"}
+{"ok":false,"granted":["search:docs:read"],"missing":["im:message:readonly"],"suggestion":"确认飞书开放平台已开通后，执行 feishu-cli auth login --scope \"im:message:readonly\" 重新授权"}
 # exit 1
 ```
 
@@ -257,19 +287,40 @@ feishu-cli auth status -o json
 
 ```json
 {
-  "logged_in": true,
+  "access_token": "eyJhbG...BZJrXA",
   "access_token_valid": true,
-  "access_token_expires_at": "2026-04-11T04:05:36+08:00",
+  "cached_user": {
+    "cached_at": "2026-04-12T15:39:38+08:00",
+    "name": "用户名",
+    "open_id": "ou_xxx",
+    "union_id": "on_xxx",
+    "user_id": "xxx"
+  },
+  "expires_at": "2026-04-12T17:39:38+08:00",
+  "identity": "user",
+  "logged_in": true,
+  "refresh_expires_at": "2026-04-19T15:39:38+08:00",
   "refresh_token_valid": true,
-  "refresh_token_expires_at": "2026-04-18T02:05:36+08:00",
-  "scope": "auth:user.id:read search:docs:read ... offline_access"
+  "scope": "base:app:read ...",
+  "token_status": "valid"
 }
 ```
+
+**字段说明：**
+- `identity`：身份类型，`user`（User Access Token）或 `bot`（App Access Token）
+- `cached_user`：缓存的当前登录用户信息（首次登录后自动拉取并缓存到 `~/.feishu-cli/user_profile.json`）
+- `token_status`：Token 状态，`valid` / `expired` / `refresh_needed` 等
 
 **未登录：**
 
 ```json
 {"logged_in": false}
+```
+
+**`--verify` 在线校验**：默认 `auth status` 只检查本地 Token 文件的过期时间。加上 `--verify` 会向飞书服务端发起一次在线校验请求，确认 Token 是否真正有效（而非仅本地未过期）：
+
+```bash
+feishu-cli auth status -o json --verify
 ```
 
 > 一般情况下 AI Agent 应该优先用 `auth check` 而不是 `auth status`，因为 `check` 直接返回"是否满足需求"。`auth status` 更适合人类用户排查。
@@ -309,6 +360,21 @@ feishu-cli auth status -o json
 | `chat get / update / delete` | `im:chat:read` / `im:chat` |
 | `chat member list / add / remove` | `im:chat.members:read` / `im:chat.members` |
 | `approval task query` | `approval:task` |
+| **`vc search`** | `vc:meeting.search:read` |
+| **`vc notes`**（三路径） | `vc:note:read` + `vc:meeting.meetingevent:read`（meeting-ids 路径）/ `minutes:minutes:readonly`（minute-tokens 路径）/ `calendar:calendar:read` + `calendar:calendar.event:read`（calendar-event-ids 路径）|
+| **`vc notes --with-artifacts`** | + `minutes:minutes.artifacts:read` |
+| **`vc notes --download-transcript`** | + `minutes:minutes.transcript:export` |
+| **`vc recording`** | `vc:record:readonly`（+ calendar 两个 scope 若用 calendar-event-ids 路径）|
+| **`minutes get`** | `minutes:minutes:readonly`（`--with-artifacts` 额外需 `minutes:minutes.artifacts:read`）|
+| **`minutes download`** | `minutes:minutes.media:export` |
+| **`mail message / messages / thread / triage`** | `mail:user_mailbox:readonly` + `mail:user_mailbox.message:readonly` + `mail:user_mailbox.message.body:read` + `mail:user_mailbox.message.address:read` + `mail:user_mailbox.message.subject:read` |
+| **`mail send / draft-create / draft-edit / reply / reply-all / forward`** | 上述只读权限 + `mail:user_mailbox.message:send` + `mail:user_mailbox.message:modify` |
+| **`drive upload`** | `drive:file:upload` |
+| **`drive download / export / export-download`** | `drive:file:download` + `docs:document.content:read` + `docs:document:export` + `drive:drive.metadata:readonly` |
+| **`drive import`** | `docs:document.media:upload` + `docs:document:import` |
+| **`drive move`** | `space:document:move` |
+| **`drive add-comment`** | `docs:document.comment:create` + `docs:document.comment:write_only` + `docx:document:readonly` |
+| **`bitable *`（v3 API）** | `base:base` + `base:table` + `base:record` + `base:field` + `base:view` + `base:role`（按操作取子集）|
 
 ### 可选 User Access Token 的命令（默认用 App Token）
 
@@ -325,14 +391,14 @@ feishu-cli auth status -o json
 
 ```bash
 # 1. 预检 scope（AI 推荐）
-feishu-cli auth check --scope "search:docs:read offline_access"
+feishu-cli auth check --scope "search:docs:read"
 # exit 0 → 继续
 
 # 或者 2. 手动检查登录状态（人类用户）
 feishu-cli auth status -o json
 
-# 3. 如果缺少登录或 scope，执行登录
-feishu-cli auth login
+# 3. 如果缺少登录或 scope，执行按需登录
+feishu-cli auth login --scope "search:docs:read"
 
 # 4. 登录后，搜索命令自动从 token.json 读取 Token
 feishu-cli search docs "产品需求"
@@ -525,6 +591,6 @@ feishu-cli auth check --scope "im:message:readonly search:docs:read"
 # 2. 去飞书开放平台 → 你的应用 → 权限管理 → 搜索上一步 missing 里的 scope 逐个开通
 #    或粘贴 README 的完整权限 JSON 一次性开通全部
 
-# 3. 管理员审批通过后，重新 auth login
-feishu-cli auth login
+# 3. 管理员审批通过后，按缺失 scope 重新授权
+feishu-cli auth login --scope "im:message:readonly search:docs:read"
 ```
