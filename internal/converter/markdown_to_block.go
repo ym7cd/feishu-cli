@@ -19,6 +19,34 @@ import (
 // 最大递归深度常量（在 block_to_markdown.go 中定义）
 // const maxRecursionDepth = 100
 
+// unescapeMarkdownText 去除 CommonMark 反斜杠转义。
+// goldmark 的 Segment.Value 返回源文件原始字节，不处理转义序列。
+// 例如 "1\." 应还原为 "1."，"\[1\]" 应还原为 "[1]"，"prompt\_len" 应还原为 "prompt_len"。
+// 按 CommonMark 规范，反斜杠后跟 ASCII 标点符号（!-/:-@[-`{-~）是转义序列。
+func unescapeMarkdownText(s string) string {
+	var buf strings.Builder
+	buf.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			next := s[i+1]
+			// ASCII punctuation: !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~
+			if (next >= '!' && next <= '/') || (next >= ':' && next <= '@') ||
+				(next >= '[' && next <= '`') || (next >= '{' && next <= '~') {
+				buf.WriteByte(next)
+				i++ // skip next
+				continue
+			}
+		}
+		buf.WriteByte(s[i])
+	}
+	return buf.String()
+}
+
+// unescapeMarkdownBytes 是 unescapeMarkdownText 的 []byte 版本，用于 buf.Write 场景。
+func unescapeMarkdownBytes(b []byte) []byte {
+	return []byte(unescapeMarkdownText(string(b)))
+}
+
 // 飞书 API 限制单个表格最多 9 行（包括表头）、9 列
 const maxTableRows = 9
 const maxTableCols = 9
@@ -460,7 +488,7 @@ func (c *MarkdownToBlock) convertListItem(node *ast.ListItem, isOrdered bool) (*
 				}
 				// Also check for raw text pattern
 				if txt, ok := tb.FirstChild().(*ast.Text); ok {
-					text := string(txt.Segment.Value(c.source))
+					text := unescapeMarkdownText(string(txt.Segment.Value(c.source)))
 					if strings.HasPrefix(text, "[ ] ") || strings.HasPrefix(text, "[x] ") || strings.HasPrefix(text, "[X] ") {
 						block, err := c.convertTaskListItem(node, text)
 						if err != nil {
@@ -625,7 +653,7 @@ func (c *MarkdownToBlock) extractTextElementsSkipCheckbox(node ast.Node) []*lark
 
 		switch child := n.(type) {
 		case *ast.Text:
-			text := string(child.Segment.Value(c.source))
+			text := unescapeMarkdownText(string(child.Segment.Value(c.source)))
 			if text != "" {
 				elements = append(elements, &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{
@@ -714,7 +742,7 @@ func (c *MarkdownToBlock) convertBlockquote(node *ast.Blockquote) ([]*BlockNode,
 			var firstLineText string
 			for inline := para.FirstChild(); inline != nil; inline = inline.NextSibling() {
 				if txt, ok := inline.(*ast.Text); ok {
-					firstLineText += string(txt.Segment.Value(c.source))
+					firstLineText += unescapeMarkdownText(string(txt.Segment.Value(c.source)))
 					if txt.SoftLineBreak() {
 						break
 					}
@@ -840,7 +868,7 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 
 		switch child := n.(type) {
 		case *ast.Text:
-			text := string(child.Segment.Value(c.source))
+			text := unescapeMarkdownText(string(child.Segment.Value(c.source)))
 			if text != "" {
 				currentLine = append(currentLine, &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &text},
@@ -1530,7 +1558,7 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 
 		switch child := n.(type) {
 		case *ast.Text:
-			text := string(child.Segment.Value(c.source))
+			text := unescapeMarkdownText(string(child.Segment.Value(c.source)))
 			if text != "" {
 				elements = append(elements, &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{
@@ -1644,7 +1672,7 @@ func (c *MarkdownToBlock) getNodeTextWithDepth(node ast.Node, depth int) string 
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch n := child.(type) {
 		case *ast.Text:
-			buf.Write(n.Segment.Value(c.source))
+			buf.Write(unescapeMarkdownBytes(n.Segment.Value(c.source)))
 		case *ast.String:
 			buf.Write(n.Value)
 		case *ast.RawHTML:
@@ -1674,7 +1702,7 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 	for child := node.FirstChild(); child != nil; child = child.NextSibling() {
 		switch n := child.(type) {
 		case *ast.Text:
-			text := string(n.Segment.Value(c.source))
+			text := unescapeMarkdownText(string(n.Segment.Value(c.source)))
 			if text != "" {
 				elem := &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &text},
