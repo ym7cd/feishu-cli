@@ -621,10 +621,9 @@ func phase1CreateBlocks(
 				if idx < len(createdBlockIDs) {
 					parentID := createdBlockIDs[idx]
 
-					// Callout / QuoteContainer 块：飞书 API 创建容器块时会自动生成一个空文本子块（位于 index 0），
-					// 必须在添加实际子块之前将其删除——此时容器内只有该自动生成块，不会误删我们的内容。
-					// （若在 createNestedChildren 之后再删，容器内已有实际子块，index 0 可能被误判或 GetBlockChildren
-					// 因 API 一致性延迟返回不完整结果，导致自动生成块未能删除，引用块顶部出现多余空行。）
+					// Callout / QuoteContainer 容器创建时飞书 API 会自动插入一个 index 0 的空文本子块。
+					// 必须在调用 createNestedChildren 之前删除它，否则 GetBlockChildren 可能因 API
+					// 一致性延迟返回不完整结果，导致自动子块残留、容器顶部出现多余空行。
 					if idx < len(result.BlockNodes) {
 						node := result.BlockNodes[idx]
 						if node.Block.BlockType != nil && (*node.Block.BlockType == int(converter.BlockTypeCallout) || *node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
@@ -632,7 +631,6 @@ func phase1CreateBlocks(
 							if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
 								blockTypeName = "QuoteContainer"
 							}
-							// 在添加实际子块之前查询：此时容器里唯一可能存在的就是 API 自动生成的空文本子块
 							childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
 								return client.GetBlockChildren(documentID, parentID)
 							}, client.RetryConfig{

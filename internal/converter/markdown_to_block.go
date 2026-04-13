@@ -16,26 +16,27 @@ import (
 	"github.com/yuin/goldmark/text"
 )
 
-// 最大递归深度常量（在 block_to_markdown.go 中定义）
-// const maxRecursionDepth = 100
+// isMarkdownEscapable 判断字节是否为 CommonMark §2.4 可转义的 ASCII 标点。
+// 范围：!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~
+func isMarkdownEscapable(b byte) bool {
+	return (b >= '!' && b <= '/') || (b >= ':' && b <= '@') ||
+		(b >= '[' && b <= '`') || (b >= '{' && b <= '~')
+}
 
 // unescapeMarkdownText 去除 CommonMark 反斜杠转义。
 // goldmark 的 Segment.Value 返回源文件原始字节，不处理转义序列。
-// 例如 "1\." 应还原为 "1."，"\[1\]" 应还原为 "[1]"，"prompt\_len" 应还原为 "prompt_len"。
-// 按 CommonMark 规范，反斜杠后跟 ASCII 标点符号（!-/:-@[-`{-~）是转义序列。
+// 例如 "1\." → "1."、"\[1\]" → "[1]"、"prompt\_len" → "prompt_len"。
 func unescapeMarkdownText(s string) string {
+	if strings.IndexByte(s, '\\') < 0 {
+		return s
+	}
 	var buf strings.Builder
 	buf.Grow(len(s))
 	for i := 0; i < len(s); i++ {
-		if s[i] == '\\' && i+1 < len(s) {
-			next := s[i+1]
-			// ASCII punctuation: !"#$%&'()*+,-./:;<=>?@[\]^_`{|}~
-			if (next >= '!' && next <= '/') || (next >= ':' && next <= '@') ||
-				(next >= '[' && next <= '`') || (next >= '{' && next <= '~') {
-				buf.WriteByte(next)
-				i++ // skip next
-				continue
-			}
+		if s[i] == '\\' && i+1 < len(s) && isMarkdownEscapable(s[i+1]) {
+			buf.WriteByte(s[i+1])
+			i++
+			continue
 		}
 		buf.WriteByte(s[i])
 	}
@@ -44,7 +45,19 @@ func unescapeMarkdownText(s string) string {
 
 // unescapeMarkdownBytes 是 unescapeMarkdownText 的 []byte 版本，用于 buf.Write 场景。
 func unescapeMarkdownBytes(b []byte) []byte {
-	return []byte(unescapeMarkdownText(string(b)))
+	if bytes.IndexByte(b, '\\') < 0 {
+		return b
+	}
+	buf := make([]byte, 0, len(b))
+	for i := 0; i < len(b); i++ {
+		if b[i] == '\\' && i+1 < len(b) && isMarkdownEscapable(b[i+1]) {
+			buf = append(buf, b[i+1])
+			i++
+			continue
+		}
+		buf = append(buf, b[i])
+	}
+	return buf
 }
 
 // 飞书 API 限制单个表格最多 9 行（包括表头）、9 列
@@ -967,17 +980,14 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 	return lines
 }
 
-// extractParagraphLines 从段落 AST 节点提取文本元素，按 SoftLineBreak 拆分为多行
-// 与 extractQuoteLines 逻辑相同，额外支持内联图片和行内公式后处理
-// 解决连续行（无空行分隔）被合并为一段的飞书文档问题
+// extractParagraphLines 从段落 AST 节点提取文本元素，按 SoftLineBreak 拆分为多行。
 //
-// Known limitation：换行符若位于行内容器（Emphasis/Strikethrough/Link）内部，
-// 如 **行一\n行二**，则不会触发分行（这些节点走 WalkSkipChildren）。
-// 此类写法在实际 Markdown 中极罕见，暂不处理。
+// Known limitation：位于行内容器（Emphasis/Strikethrough/Link）内部的换行符不会触发分行——
+// 这些节点走 WalkSkipChildren，子节点的 SoftLineBreak 无法到达顶层。
 func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.TextElement {
 	var lines [][]*larkdocx.TextElement
 	var currentLine []*larkdocx.TextElement
-	inUnderline := false // 跟踪 <u>...</u> 状态，避免 RawHTML 内容被静默丢失
+	inUnderline := false
 
 	// 辅助：将 <u>/<mark> 等样式状态应用到 elem
 	applyUnderlineIfNeeded := func(elem *larkdocx.TextElement) {
