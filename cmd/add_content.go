@@ -133,6 +133,44 @@ var addContentCmd = &cobra.Command{
 	},
 }
 
+// deleteContainerAutoEmptyBlock 删除 QuoteContainer/Callout 容器块中飞书 API 自动生成的空文本子块。
+// 飞书 API 在创建容器块时会异步在 index 0 插入一个空 Text 块，导致渲染时顶部出现多余空行。
+// 必须在 createNestedChildren 完成后调用，此时 API 已稳定：实际子块内容均非空，
+// 若 index 0 仍为空 Text 块则可安全判定为自动生成块并删除。
+func deleteContainerAutoEmptyBlock(documentID, parentID, blockTypeName string) {
+	childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
+		return client.GetBlockChildren(documentID, parentID)
+	}, client.RetryConfig{
+		MaxRetries:       3,
+		RetryOnRateLimit: true,
+	})
+	if childrenResult.Err != nil || len(childrenResult.Value) == 0 {
+		return
+	}
+	firstChild := childrenResult.Value[0]
+	if firstChild.BlockType == nil || *firstChild.BlockType != int(converter.BlockTypeText) {
+		return
+	}
+	// 检查是否为空文本块（无元素或所有 TextRun 内容为空字符串）
+	if firstChild.Text != nil {
+		for _, elem := range firstChild.Text.Elements {
+			if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
+				return
+			}
+		}
+	}
+	delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
+		headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
+		return struct{}{}, headers, err
+	}, client.RetryConfig{
+		MaxRetries:       5,
+		RetryOnRateLimit: true,
+	})
+	if delResult.Err != nil {
+		fmt.Fprintf(os.Stderr, "[Warning] %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
+	}
+}
+
 // addContentMarkdown 处理 Markdown 模式的内容添加，支持嵌套结构、分批创建、表格 429 重试
 func addContentMarkdown(documentID, blockID, contentData, basePath string, uploadImages bool, index int, output string) error {
 	opts := converter.ConvertOptions{
@@ -210,49 +248,15 @@ func addContentMarkdown(documentID, blockID, contentData, basePath string, uploa
 			}
 			totalCreated += nestedCount
 
-			// QuoteContainer / Callout：飞书 API 创建容器块后会异步在 index 0 生成一个空文本子块，
-			// 导致引用块顶部出现多余空行。在 createNestedChildren 完成后再检查并删除：
-			// 此时 API 已有足够时间生成该空块；我们的实际内容均非空，可安全判断 index 0 是否为自动生成的空块。
+			// QuoteContainer / Callout：在 createNestedChildren 完成后清理飞书 API 自动生成的空子块
 			if idx < len(result.BlockNodes) {
 				node := result.BlockNodes[idx]
-				if node.Block.BlockType != nil &&
-					(*node.Block.BlockType == int(converter.BlockTypeCallout) ||
-						*node.Block.BlockType == int(converter.BlockTypeQuoteContainer)) {
-					blockTypeName := "Callout"
-					if *node.Block.BlockType == int(converter.BlockTypeQuoteContainer) {
-						blockTypeName = "QuoteContainer"
-					}
-					childrenResult := client.DoWithRetry(func() ([]*larkdocx.Block, http.Header, error) {
-						return client.GetBlockChildren(documentID, parentID)
-					}, client.RetryConfig{
-						MaxRetries:       3,
-						RetryOnRateLimit: true,
-					})
-					if childrenResult.Err == nil && len(childrenResult.Value) > 0 {
-						firstChild := childrenResult.Value[0]
-						if firstChild.BlockType != nil && *firstChild.BlockType == int(converter.BlockTypeText) {
-							isEmpty := true
-							if firstChild.Text != nil && len(firstChild.Text.Elements) > 0 {
-								for _, elem := range firstChild.Text.Elements {
-									if elem.TextRun != nil && elem.TextRun.Content != nil && *elem.TextRun.Content != "" {
-										isEmpty = false
-										break
-									}
-								}
-							}
-							if isEmpty {
-								delResult := client.DoWithRetry(func() (struct{}, http.Header, error) {
-									headers, err := client.DeleteBlocks(documentID, parentID, 0, 1)
-									return struct{}{}, headers, err
-								}, client.RetryConfig{
-									MaxRetries:       5,
-									RetryOnRateLimit: true,
-								})
-								if delResult.Err != nil {
-									fmt.Fprintf(os.Stderr, "[Warning] %s 空子块删除失败 (parent=%s): %v\n", blockTypeName, parentID, delResult.Err)
-								}
-							}
-						}
+				if node.Block.BlockType != nil {
+					switch *node.Block.BlockType {
+					case int(converter.BlockTypeQuoteContainer):
+						deleteContainerAutoEmptyBlock(documentID, parentID, "QuoteContainer")
+					case int(converter.BlockTypeCallout):
+						deleteContainerAutoEmptyBlock(documentID, parentID, "Callout")
 					}
 				}
 			}
