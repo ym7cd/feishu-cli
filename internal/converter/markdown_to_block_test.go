@@ -181,6 +181,103 @@ func TestConvert_ConsecutiveBoldLinesPreserveContent(t *testing.T) {
 	}
 }
 
+func TestConvert_ConsecutiveLinesPreserveInlineUnderline(t *testing.T) {
+	// 验证段落拆分时 <u>...</u> 包裹的内容不丢失，且下划线样式保留
+	markdown := "line1 <u>under</u>\nline2"
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("期望 2 个 block，实际 %d 个", len(blocks))
+	}
+
+	// 第一行应包含 "under" 并带下划线
+	firstBlock := blocks[0]
+	if firstBlock.Text == nil {
+		t.Fatal("blocks[0].Text 为 nil")
+	}
+	foundUnderline := false
+	combined := strings.Builder{}
+	for _, elem := range firstBlock.Text.Elements {
+		if elem.TextRun == nil || elem.TextRun.Content == nil {
+			continue
+		}
+		combined.WriteString(*elem.TextRun.Content)
+		if *elem.TextRun.Content == "under" &&
+			elem.TextRun.TextElementStyle != nil &&
+			elem.TextRun.TextElementStyle.Underline != nil &&
+			*elem.TextRun.TextElementStyle.Underline {
+			foundUnderline = true
+		}
+	}
+	if !strings.Contains(combined.String(), "under") {
+		t.Errorf("blocks[0] 应包含 'under'，实际内容 %q", combined.String())
+	}
+	if !foundUnderline {
+		t.Errorf("blocks[0] 中 'under' 应带下划线样式")
+	}
+
+	// 第二行应为 "line2"
+	secondBlock := blocks[1]
+	if secondBlock.Text == nil {
+		t.Fatal("blocks[1].Text 为 nil")
+	}
+	line2 := strings.Builder{}
+	for _, elem := range secondBlock.Text.Elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			line2.WriteString(*elem.TextRun.Content)
+		}
+	}
+	if !strings.Contains(line2.String(), "line2") {
+		t.Errorf("blocks[1] 应包含 'line2'，实际内容 %q", line2.String())
+	}
+}
+
+func TestConvert_ConsecutiveLinesPreserveInlineMark(t *testing.T) {
+	// 验证段落拆分时 <mark>...</mark> 包裹的内容不丢失
+	markdown := "line1 <mark>hl</mark>\nline2"
+	converter := NewMarkdownToBlock([]byte(markdown), ConvertOptions{}, "")
+	blocks, err := converter.Convert()
+	if err != nil {
+		t.Fatalf("Convert() 返回错误: %v", err)
+	}
+	if len(blocks) != 2 {
+		t.Fatalf("期望 2 个 block，实际 %d 个", len(blocks))
+	}
+
+	// 第一行应包含 "hl"（高亮内容不能丢失）
+	firstBlock := blocks[0]
+	if firstBlock.Text == nil {
+		t.Fatal("blocks[0].Text 为 nil")
+	}
+	combined := strings.Builder{}
+	for _, elem := range firstBlock.Text.Elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			combined.WriteString(*elem.TextRun.Content)
+		}
+	}
+	if !strings.Contains(combined.String(), "hl") {
+		t.Errorf("blocks[0] 应包含 'hl'（<mark> 内容不应丢失），实际内容 %q", combined.String())
+	}
+
+	// 第二行应为 "line2"
+	secondBlock := blocks[1]
+	if secondBlock.Text == nil {
+		t.Fatal("blocks[1].Text 为 nil")
+	}
+	line2 := strings.Builder{}
+	for _, elem := range secondBlock.Text.Elements {
+		if elem.TextRun != nil && elem.TextRun.Content != nil {
+			line2.WriteString(*elem.TextRun.Content)
+		}
+	}
+	if !strings.Contains(line2.String(), "line2") {
+		t.Errorf("blocks[1] 应包含 'line2'，实际内容 %q", line2.String())
+	}
+}
+
 func TestConvert_CodeBlock(t *testing.T) {
 	markdown := "```go\nfmt.Println(\"Hello\")\n```"
 

@@ -977,6 +977,19 @@ func (c *MarkdownToBlock) extractQuoteLines(node ast.Node) [][]*larkdocx.TextEle
 func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.TextElement {
 	var lines [][]*larkdocx.TextElement
 	var currentLine []*larkdocx.TextElement
+	inUnderline := false // 跟踪 <u>...</u> 状态，避免 RawHTML 内容被静默丢失
+
+	// 辅助：将 <u>/<mark> 等样式状态应用到 elem
+	applyUnderlineIfNeeded := func(elem *larkdocx.TextElement) {
+		if !inUnderline || elem == nil || elem.TextRun == nil {
+			return
+		}
+		underline := true
+		if elem.TextRun.TextElementStyle == nil {
+			elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+		}
+		elem.TextRun.TextElementStyle.Underline = &underline
+	}
 
 	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
 		if !entering {
@@ -985,11 +998,13 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 
 		switch child := n.(type) {
 		case *ast.Text:
-			text := string(child.Segment.Value(c.source))
+			text := unescapeMarkdownText(string(child.Segment.Value(c.source)))
 			if text != "" {
-				currentLine = append(currentLine, &larkdocx.TextElement{
+				elem := &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &text},
-				})
+				}
+				applyUnderlineIfNeeded(elem)
+				currentLine = append(currentLine, elem)
 			}
 			if child.SoftLineBreak() {
 				if len(currentLine) > 0 {
@@ -1001,9 +1016,11 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 		case *ast.String:
 			text := string(child.Value)
 			if text != "" {
-				currentLine = append(currentLine, &larkdocx.TextElement{
+				elem := &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &text},
-				})
+				}
+				applyUnderlineIfNeeded(elem)
+				currentLine = append(currentLine, elem)
 			}
 
 		case *ast.Emphasis:
@@ -1012,6 +1029,7 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 			italic := child.Level == 1
 			for _, elem := range childElems {
 				applyTextStyle(elem, bold, italic, false)
+				applyUnderlineIfNeeded(elem)
 				currentLine = append(currentLine, elem)
 			}
 			return ast.WalkSkipChildren, nil
@@ -1020,12 +1038,14 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 			text := c.getNodeText(child)
 			if text != "" {
 				inlineCode := true
-				currentLine = append(currentLine, &larkdocx.TextElement{
+				elem := &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{
 						Content:          &text,
 						TextElementStyle: &larkdocx.TextElementStyle{InlineCode: &inlineCode},
 					},
-				})
+				}
+				applyUnderlineIfNeeded(elem)
+				currentLine = append(currentLine, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -1033,6 +1053,7 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 			childElems := c.extractChildElements(child)
 			for _, elem := range childElems {
 				applyTextStyle(elem, false, false, true)
+				applyUnderlineIfNeeded(elem)
 				currentLine = append(currentLine, elem)
 			}
 			return ast.WalkSkipChildren, nil
@@ -1041,7 +1062,9 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 			text := c.getNodeText(child)
 			url := string(child.Destination)
 			if text != "" {
-				currentLine = append(currentLine, createLinkElement(text, url))
+				elem := createLinkElement(text, url)
+				applyUnderlineIfNeeded(elem)
+				currentLine = append(currentLine, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -1052,7 +1075,9 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 				label = linkURL
 			}
 			if linkURL != "" {
-				currentLine = append(currentLine, createLinkElement(label, linkURL))
+				elem := createLinkElement(label, linkURL)
+				applyUnderlineIfNeeded(elem)
+				currentLine = append(currentLine, elem)
 			}
 			return ast.WalkSkipChildren, nil
 
@@ -1063,13 +1088,51 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 			if alt == "" {
 				alt = dest
 			}
+			var elem *larkdocx.TextElement
 			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
-				currentLine = append(currentLine, createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest))
+				elem = createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest)
 			} else {
 				placeholder := fmt.Sprintf("[Image: %s]", dest)
-				currentLine = append(currentLine, &larkdocx.TextElement{
+				elem = &larkdocx.TextElement{
 					TextRun: &larkdocx.TextRun{Content: &placeholder},
-				})
+				}
+			}
+			applyUnderlineIfNeeded(elem)
+			currentLine = append(currentLine, elem)
+			return ast.WalkSkipChildren, nil
+
+		case *ast.RawHTML:
+			// 处理内联 HTML 标签：<br> 作为软换行拆分，<u>/</u> 切换下划线状态，
+			// <mark>/</mark>（暂以下划线近似）、其他标签按占位/纯文本保留，避免静默丢失。
+			var htmlBuf bytes.Buffer
+			for i := 0; i < child.Segments.Len(); i++ {
+				seg := child.Segments.At(i)
+				htmlBuf.Write(c.source[seg.Start:seg.Stop])
+			}
+			rawOriginal := strings.TrimSpace(htmlBuf.String())
+			raw := strings.ToLower(rawOriginal)
+			switch {
+			case raw == "<br>" || raw == "<br/>" || raw == "<br />":
+				// <br> 视为软换行，当前行收尾并开启新行
+				if len(currentLine) > 0 {
+					lines = append(lines, splitInlineMath(currentLine))
+					currentLine = nil
+				}
+			case raw == "<u>", raw == "<mark>":
+				inUnderline = true
+			case raw == "</u>", raw == "</mark>":
+				inUnderline = false
+			default:
+				// 尝试解析自定义 HTML 标签（如 <mention-user/>）
+				if tag := ParseHTMLTag(rawOriginal); tag != nil {
+					if elems := c.handleInlineHTMLTag(tag, &inUnderline); len(elems) > 0 {
+						for _, elem := range elems {
+							applyUnderlineIfNeeded(elem)
+							currentLine = append(currentLine, elem)
+						}
+					}
+				}
+				// 其他未识别的 HTML 标签丢弃（与 extractTextElements/extractChildElements 保持一致）
 			}
 			return ast.WalkSkipChildren, nil
 		}
