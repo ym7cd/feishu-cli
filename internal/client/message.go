@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -294,6 +295,73 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 		PageToken: StringVal(resp.Data.PageToken),
 		HasMore:   BoolVal(resp.Data.HasMore),
 	}, nil
+}
+
+// ResolveP2PChatID 通过对方的 open_id 反查 P2P 私聊的 chat_id（oc_xxx）。
+// 拿到 chat_id 后即可像读群聊一样使用 `container_id_type=chat` 读取私聊消息。
+// 底层调用 POST /open-apis/im/v1/chat_p2p/batch_query，必须 User Token；
+// SDK 未封装此端点，所以走 raw HTTP。
+func ResolveP2PChatID(openID, userAccessToken string) (string, error) {
+	if userAccessToken == "" {
+		return "", fmt.Errorf("反查 P2P chat_id 需要 User Access Token")
+	}
+	if openID == "" {
+		return "", fmt.Errorf("反查 P2P chat_id 必须提供 open_id")
+	}
+
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+
+	reqURL := fmt.Sprintf("%s/open-apis/im/v1/chat_p2p/batch_query?chatter_id_type=open_id", baseURL)
+	bodyBytes, err := json.Marshal(map[string]any{"chatter_ids": []string{openID}})
+	if err != nil {
+		return "", fmt.Errorf("反查 P2P chat_id 失败: %w", err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
+	if err != nil {
+		return "", fmt.Errorf("反查 P2P chat_id 失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+userAccessToken)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("反查 P2P chat_id 失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return "", fmt.Errorf("反查 P2P chat_id 失败: 读取响应失败: %w", err)
+	}
+
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			P2PChats []struct {
+				ChatID string `json:"chat_id"`
+			} `json:"p2p_chats"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return "", fmt.Errorf("反查 P2P chat_id 失败: 解析响应失败: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return "", fmt.Errorf("反查 P2P chat_id 失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	for _, c := range resp.Data.P2PChats {
+		if c.ChatID != "" {
+			return c.ChatID, nil
+		}
+	}
+	return "", fmt.Errorf("尚未和该用户有过私聊（open_id=%s）", openID)
 }
 
 // GetMessageResult contains the result of getting a message

@@ -5,11 +5,13 @@ description: >-
   获取消息详情、Reaction 表情回应、Pin 置顶/取消置顶、删除消息、
   群聊信息查询与管理（获取/更新/解散/成员管理）。
   支持普通群和话题群两种模式，话题群自动获取线程回复。所有命令需要 User Token。
-  当用户请求"查看聊天记录"、"看和某人的消息"、"群聊历史"、"群消息"、"搜索群聊"、
-  "查群信息"、"群成员"、"最近消息"、"聊天记录"、"Reaction"、"表情回应"、
-  "置顶消息"、"Pin"、"删除消息"、"获取消息"、"消息详情"、
-  "和谁聊了什么"、"群里说了什么"、"总结群消息"、"话题回复"、"线程回复"、
-  "thread replies"时使用。
+  当用户请求"查看聊天记录"、"看和某人的消息"、"读私聊"、"私聊记录"、"p2p 聊天"、
+  "群聊历史"、"群消息"、"搜索群聊"、"查群信息"、"群成员"、"最近消息"、"聊天记录"、
+  "Reaction"、"表情回应"、"置顶消息"、"Pin"、"删除消息"、"获取消息"、"消息详情"、
+  "和谁聊了什么"、"和 xxx 聊了什么"、"群里说了什么"、"总结群消息"、
+  "话题回复"、"线程回复"、"thread replies"时使用。
+  支持传邮箱（--user-email）或 open_id（--user-id）一条命令直接读私聊，
+  无需手动反查 chat_id。
   也适用于：用户给出一个群聊名称或 chat_id 并希望浏览其消息的场景，
   即使没有明确说"聊天记录"。当用户想了解某个群最近在讨论什么、
   想找和某人的对话内容、或想对消息进行互动操作时，都应使用此技能。
@@ -215,46 +217,55 @@ feishu-cli msg history \
 
 ## 场景二：查看和某人的私聊记录
 
-飞书 Open API **不支持直接按用户查询 p2p 聊天记录**。需要通过搜索 API 间接实现。
+`msg history` 原生支持 P2P：传 `--user-email` 或 `--user-id`，CLI 会自动
+搜用户 → 反查 P2P `chat_id`（`POST /open-apis/im/v1/chat_p2p/batch_query`）→
+复用标准的 `GET /open-apis/im/v1/messages` 读消息，整条流程一条命令搞定。
 
-### 方法：搜索 + 筛选
+### 推荐用法：按邮箱读私聊
 
 ```bash
-# 搜索私聊消息
-feishu-cli search messages "关键词" \
-  --chat-type p2p_chat \
-  -o json
+# 读和某人的私聊最近 50 条（按时间倒序）
+feishu-cli msg history --user-email user@example.com --page-size 50 -o json
 
-# 如果知道对方的 open_id，可以按发送者筛选
-feishu-cli search messages "关键词" \
-  --chat-type p2p_chat \
-  --from-ids ou_xxx \
-  -o json
-
-# 获取单条消息详情
-feishu-cli msg get om_xxx -o json
+# 指定时间范围 + 按时间正序（便于阅读）
+feishu-cli msg history --user-email user@example.com \
+  --start-time 1704067200 --sort-type ByCreateTimeAsc -o json
 ```
 
-### 查找用户 ID
-
-如果用户只给了邮箱或手机号，可以查找对应的 open_id：
+### 按 open_id 读私聊
 
 ```bash
-# 通过邮箱查找用户
+# 已知对方 open_id，跳过搜用户步骤
+feishu-cli msg history --user-id ou_xxx --page-size 50 -o json
+```
+
+### 查找对方 open_id（可选，仅在 `--user-email` 走不通时用）
+
+```bash
+# 按邮箱查（推荐）— 带 User Token 时自动用 search/v1/user 补 open_id
 feishu-cli user search --email user@example.com -o json
 
-# 通过手机号查找用户
-feishu-cli user search --mobile 13800138000 -o json
+# 按姓名/任意关键词模糊搜索
+feishu-cli user search --query "张三" -o json
 ```
 
-> **注意**：`user search` 仅支持 `--email` 和 `--mobile` 精确查找，不支持按姓名模糊搜索。
+### 按关键词搜 P2P 消息
+
+`msg history` 拉全量；如果要按关键词筛 P2P，用搜索 API：
+
+```bash
+# 搜全部 P2P 私聊中含关键词的消息
+feishu-cli search messages "关键词" --chat-type p2p_chat -o json
+
+# 限定发送者
+feishu-cli search messages "关键词" --chat-type p2p_chat --from-ids ou_xxx -o json
+```
 
 ### 限制说明
 
-- 搜索 API 的 `query` 参数**不能为空**，至少需要一个空格 `" "`
-- p2p 聊天无法通过 `msg search-chats` 搜索（该 API 只搜索群聊）
-- 搜索结果返回的是消息 ID 列表，需要逐条 `msg get` 获取完整内容
-- **`msg get` 对私聊消息可能返回 230001 错误**（API 限制：部分私聊消息不支持通过 Get API 获取详情），此时只能依赖搜索结果中的摘要信息
+- P2P 场景下 **不要用 `msg get`**：飞书 API 对 p2p 消息详情有硬限制（230013 / 230001），拿不到完整内容。`msg history` 走的是 list 端点，不受此限制
+- 搜索 API 的 `query` 参数不能为空，至少一个空格 `" "`
+- P2P 聊天无法通过 `msg search-chats` 搜索（该 API 只搜索群聊）
 
 ---
 
@@ -412,7 +423,9 @@ feishu-cli msg delete <message_id>
 |---------|------|:---:|
 | 看某群最近消息 | `msg history --container-id oc_xxx --container-id-type chat` | User |
 | 看话题群的线程回复 | `msg history --container-id omt_xxx --container-id-type thread` | User |
-| 看和某人的聊天 | `search messages " " --chat-type p2p_chat --from-ids ou_xxx` | User |
+| 看和某人的私聊（邮箱） | `msg history --user-email user@example.com` | User |
+| 看和某人的私聊（open_id） | `msg history --user-id ou_xxx` | User |
+| 按关键词搜 P2P 消息 | `search messages " " --chat-type p2p_chat --from-ids ou_xxx` | User |
 | 搜索群聊 | `msg search-chats --query "关键词"` | User |
 | 在群内搜索消息 | `search messages "关键词" --chat-ids oc_xxx` | User |
 | 查群信息 | `chat get oc_xxx` | User |
@@ -508,6 +521,8 @@ text = content.get('text', '')
 |-------|------|---------|
 | `im:message:readonly` | 消息读取 | msg get/history/list |
 | `im:message.group_msg:get_as_user` | User 身份读取群消息 | msg history/list（读群消息必需） |
+| `im:message.p2p_msg:get_as_user` | User 身份读取私聊消息 | msg history --user-email/--user-id |
+| `contact:user:search` | 按关键词搜用户 | user search --query / --email（补 open_id）、msg history --user-email |
 | `im:message.pins` | 消息置顶管理 | msg pin/unpin/pins |
 | `im:message.reactions` | 消息 Reaction | msg reaction add/remove/list |
 | `im:message` | 消息读写 | msg delete |

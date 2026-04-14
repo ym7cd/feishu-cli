@@ -248,6 +248,8 @@ feishu-cli msg send --receive-id-type email --receive-id user@example.com --text
 feishu-cli msg send --receive-id-type email --receive-id user@example.com --msg-type post --content-file msg.json
 feishu-cli msg search-chats --query "关键词"
 feishu-cli msg history --container-id <chat_id> --container-id-type chat
+feishu-cli msg history --user-email user@example.com --page-size 50                # 读和某人的私聊（邮箱入口）
+feishu-cli msg history --user-id ou_xxx --page-size 50                              # 读和某人的私聊（open_id 入口）
 feishu-cli msg get <message_id>
 feishu-cli msg forward <message_id> --receive-id <id> --receive-id-type email
 feishu-cli msg mget --message-ids om_xxx,om_yyy                                     # 批量获取消息详情
@@ -458,7 +460,8 @@ feishu-cli wiki member remove <space_id> --member-type userid --member-id USER_I
 
 # === 其他 ===
 feishu-cli user info <user_id>
-feishu-cli user search --email user@example.com
+feishu-cli user search --email user@example.com                       # 邮箱查 user_id；带 User Token 时自动补 open_id 和姓名
+feishu-cli user search --query "张三"                                  # 姓名/关键词模糊搜索（需 User Token）
 feishu-cli user list --department-id DEPT_ID
 feishu-cli dept get <department_id>
 feishu-cli dept children <department_id>

@@ -1,16 +1,125 @@
 package client
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"strconv"
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
+
+	"github.com/riba2534/feishu-cli/internal/config"
 )
 
 // UserContactIDInfo 用户联系信息（通过邮箱/手机号查询）
 type UserContactIDInfo struct {
 	UserID string `json:"user_id,omitempty"`
+	OpenID string `json:"open_id,omitempty"`
 	Mobile string `json:"mobile,omitempty"`
 	Email  string `json:"email,omitempty"`
+	Name   string `json:"name,omitempty"`
+}
+
+// SearchUserItem 搜索用户接口返回的单个用户
+type SearchUserItem struct {
+	OpenID        string   `json:"open_id,omitempty"`
+	UserID        string   `json:"user_id,omitempty"`
+	Name          string   `json:"name,omitempty"`
+	DepartmentIDs []string `json:"department_ids,omitempty"`
+	AvatarURL     string   `json:"avatar_url,omitempty"`
+}
+
+// SearchUsersResult 搜索用户接口的返回
+type SearchUsersResult struct {
+	Users     []*SearchUserItem `json:"users"`
+	PageToken string            `json:"page_token,omitempty"`
+	HasMore   bool              `json:"has_more"`
+}
+
+// SearchUsers 通过关键词（姓名/邮箱/手机号）搜索用户，返回 open_id 等信息。
+// 底层调用 GET /open-apis/search/v1/user，需要 User Token + scope contact:user:search。
+// SDK 未封装该端点，直接走 raw HTTP；与 listMessagesWithUserToken 保持相同风格。
+func SearchUsers(query string, pageSize int, pageToken, userAccessToken string) (*SearchUsersResult, error) {
+	if userAccessToken == "" {
+		return nil, fmt.Errorf("搜索用户需要 User Access Token")
+	}
+	if query == "" {
+		return nil, fmt.Errorf("搜索用户必须提供 query")
+	}
+
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+
+	params := url.Values{}
+	params.Set("query", query)
+	if pageSize > 0 {
+		params.Set("page_size", strconv.Itoa(pageSize))
+	}
+	if pageToken != "" {
+		params.Set("page_token", pageToken)
+	}
+
+	reqURL := fmt.Sprintf("%s/open-apis/search/v1/user?%s", baseURL, params.Encode())
+	req, err := http.NewRequest(http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("搜索用户失败: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+userAccessToken)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+	httpResp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("搜索用户失败: %w", err)
+	}
+	defer httpResp.Body.Close()
+
+	body, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("搜索用户失败: 读取响应失败: %w", err)
+	}
+
+	var resp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Users []struct {
+				OpenID        string   `json:"open_id"`
+				UserID        string   `json:"user_id"`
+				Name          string   `json:"name"`
+				DepartmentIDs []string `json:"department_ids"`
+				AvatarURL     string   `json:"avatar_url"`
+			} `json:"users"`
+			PageToken string `json:"page_token"`
+			HasMore   bool   `json:"has_more"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(body, &resp); err != nil {
+		return nil, fmt.Errorf("搜索用户失败: 解析响应失败: %w", err)
+	}
+
+	if resp.Code != 0 {
+		return nil, fmt.Errorf("搜索用户失败: code=%d, msg=%s", resp.Code, resp.Msg)
+	}
+
+	result := &SearchUsersResult{
+		PageToken: resp.Data.PageToken,
+		HasMore:   resp.Data.HasMore,
+	}
+	for _, u := range resp.Data.Users {
+		result.Users = append(result.Users, &SearchUserItem{
+			OpenID:        u.OpenID,
+			UserID:        u.UserID,
+			Name:          u.Name,
+			DepartmentIDs: u.DepartmentIDs,
+			AvatarURL:     u.AvatarURL,
+		})
+	}
+	return result, nil
 }
 
 // DepartmentInfo 部门信息
