@@ -25,7 +25,7 @@ var msgMgetCmd = &cobra.Command{
 		}
 
 		messageIDsStr, _ := cmd.Flags().GetString("message-ids")
-		userToken := resolveOptionalUserToken(cmd)
+		userToken := resolveOptionalUserTokenWithFallback(cmd)
 
 		messageIDs := splitAndTrim(messageIDsStr)
 		if len(messageIDs) == 0 {
@@ -37,7 +37,11 @@ var msgMgetCmd = &cobra.Command{
 			return err
 		}
 
-		return printJSON(messages)
+		senderNames := client.ResolveSenderNames(messages, userToken)
+		return printJSON(map[string]any{
+			"messages":     messages,
+			"sender_names": senderNames,
+		})
 	},
 }
 

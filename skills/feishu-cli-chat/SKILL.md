@@ -11,7 +11,8 @@ description: >-
   "和谁聊了什么"、"和 xxx 聊了什么"、"群里说了什么"、"总结群消息"、
   "话题回复"、"线程回复"、"thread replies"时使用。
   支持传邮箱（--user-email）或 open_id（--user-id）一条命令直接读私聊，
-  无需手动反查 chat_id。
+  无需手动反查 chat_id。消息列表自动附带 sender_names 映射（open_id → 姓名），
+  无需额外调 chat member list。
   也适用于：用户给出一个群聊名称或 chat_id 并希望浏览其消息的场景，
   即使没有明确说"聊天记录"。当用户想了解某个群最近在讨论什么、
   想找和某人的对话内容、或想对消息进行互动操作时，都应使用此技能。
@@ -170,6 +171,30 @@ feishu-cli msg history --container-id omt_yyy --container-id-type thread --page-
 ```
 
 > **性能提示**：话题群中活跃话题可能有 10-20 个，建议**并发获取**多个话题的回复。飞书 API 对 `msg history` 无严格 QPS 限制（不同于搜索 API），可以安全并发。
+
+### 发送者名字自动解析（v1.21.0+）
+
+`msg history` / `msg get` / `msg mget` 的 JSON 输出会自动附带一个 `sender_names` 顶层字段，形如：
+
+```json
+{
+  "Items": [...],
+  "HasMore": true,
+  "sender_names": {
+    "ou_abc...": "张三",
+    "ou_def...": "李四"
+  }
+}
+```
+
+解析路径：
+1. 从消息的 `mentions` 字段抽已有的 `{id, name}` 映射（免费）
+2. 剩余未解的 user 发送者 open_id 批量调 `POST /open-apis/contact/v3/users/basic_batch`（每批 10 个）
+
+覆盖范围优于 `chat member list`：**已退群成员**也能解出来（basic_batch 不依赖群成员视野）。
+App sender（bot）不会被解析，需要名字时查应用列表。
+
+**AI Agent 使用建议**：直接 `sender_names[msg.sender.id]` 查名字，不用再另外跑 `chat member list`。
 
 ### 步骤 3：解析消息内容
 
@@ -523,6 +548,7 @@ text = content.get('text', '')
 | `im:message.group_msg:get_as_user` | User 身份读取群消息 | msg history/list（读群消息必需） |
 | `im:message.p2p_msg:get_as_user` | User 身份读取私聊消息 | msg history --user-email/--user-id |
 | `contact:user:search` | 按关键词搜用户 | user search --query / --email（补 open_id）、msg history --user-email |
+| `contact:user.base:readonly` | 批量查用户基本资料 | msg history/get/mget 自动补 sender_names |
 | `im:message.pins` | 消息置顶管理 | msg pin/unpin/pins |
 | `im:message.reactions` | 消息 Reaction | msg reaction add/remove/list |
 | `im:message` | 消息读写 | msg delete |

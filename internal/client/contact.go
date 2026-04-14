@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -20,6 +21,78 @@ type UserContactIDInfo struct {
 	Mobile string `json:"mobile,omitempty"`
 	Email  string `json:"email,omitempty"`
 	Name   string `json:"name,omitempty"`
+}
+
+// BatchGetUsersBasic 通过 open_id 批量获取用户基本资料（姓名/头像），用于补齐消息列表中
+// 的发送者名字。底层调用 POST /open-apis/contact/v3/users/basic_batch，需要 User Token；
+// 该端点权限更轻，目标用户即使不在 app 可见范围内也能返回 basic profile。
+// 单次最多 50 个 open_id，超出会自动分批。失败时返回已解出的部分结果 + 错误。
+func BatchGetUsersBasic(openIDs []string, userAccessToken string) (map[string]string, error) {
+	if userAccessToken == "" {
+		return nil, fmt.Errorf("批量查询用户基本资料需要 User Access Token")
+	}
+
+	cfg := config.Get()
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://open.feishu.cn"
+	}
+
+	nameMap := make(map[string]string)
+	const batchSize = 10 // basic_batch API 单次最多 10 个 user_ids
+	for i := 0; i < len(openIDs); i += batchSize {
+		end := i + batchSize
+		if end > len(openIDs) {
+			end = len(openIDs)
+		}
+		batch := openIDs[i:end]
+
+		bodyBytes, err := json.Marshal(map[string]any{"user_ids": batch})
+		if err != nil {
+			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
+		}
+
+		reqURL := fmt.Sprintf("%s/open-apis/contact/v3/users/basic_batch?user_id_type=open_id", baseURL)
+		req, err := http.NewRequest(http.MethodPost, reqURL, bytes.NewReader(bodyBytes))
+		if err != nil {
+			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
+		}
+		req.Header.Set("Authorization", "Bearer "+userAccessToken)
+		req.Header.Set("Content-Type", "application/json; charset=utf-8")
+
+		httpResp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nameMap, fmt.Errorf("批量查询用户基本资料失败: %w", err)
+		}
+		body, readErr := io.ReadAll(httpResp.Body)
+		httpResp.Body.Close()
+		if readErr != nil {
+			return nameMap, fmt.Errorf("批量查询用户基本资料失败: 读取响应失败: %w", readErr)
+		}
+
+		var resp struct {
+			Code int    `json:"code"`
+			Msg  string `json:"msg"`
+			Data struct {
+				Users []struct {
+					UserID string `json:"user_id"`
+					Name   string `json:"name"`
+				} `json:"users"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal(body, &resp); err != nil {
+			return nameMap, fmt.Errorf("批量查询用户基本资料失败: 解析响应失败: %w", err)
+		}
+		if resp.Code != 0 {
+			return nameMap, fmt.Errorf("批量查询用户基本资料失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		}
+		for _, u := range resp.Data.Users {
+			if u.UserID != "" && u.Name != "" {
+				nameMap[u.UserID] = u.Name
+			}
+		}
+	}
+	return nameMap, nil
 }
 
 // SearchUserItem 搜索用户接口返回的单个用户

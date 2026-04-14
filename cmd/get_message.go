@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -43,8 +45,13 @@ var getMessageCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		msg := result.Message
+		senderNames := client.ResolveSenderNames([]*larkim.Message{msg}, token)
 		if output == "json" {
-			if err := printJSON(msg); err != nil {
+			enriched := map[string]any{
+				"message":      msg,
+				"sender_names": senderNames,
+			}
+			if err := printJSON(enriched); err != nil {
 				return err
 			}
 		} else {

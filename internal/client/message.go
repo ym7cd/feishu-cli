@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -295,6 +296,69 @@ func listMessagesWithUserToken(containerID string, opts ListMessagesOptions, use
 		PageToken: StringVal(resp.Data.PageToken),
 		HasMore:   BoolVal(resp.Data.HasMore),
 	}, nil
+}
+
+// ResolveSenderNames 为消息列表补齐每个 user 发送者的显示名字，返回 open_id → name 的映射。
+// 两步解析（对齐官方 lark-cli 的 ResolveSenderNames）：
+//  1. 从每条消息的 mentions 里抽已有的 {id, name}（免费，无需 API 调用）
+//  2. 剩余未解的 user 发送者 open_id 走 POST /open-apis/contact/v3/users/basic_batch 批量补齐。
+//
+// 该函数对网络错误是容错的：任一步失败只返回当前累积的映射，调用方仍可得到部分结果。
+// App sender（id_type=app_id / sender_type=app）跳过，不会发起查询。
+func ResolveSenderNames(messages []*larkim.Message, userAccessToken string) map[string]string {
+	nameMap := make(map[string]string)
+
+	// Step 1: 从 mentions 抽映射
+	for _, msg := range messages {
+		if msg == nil {
+			continue
+		}
+		for _, mention := range msg.Mentions {
+			if mention == nil {
+				continue
+			}
+			id := StringVal(mention.Id)
+			name := StringVal(mention.Name)
+			if id != "" && name != "" && strings.HasPrefix(id, "ou_") {
+				nameMap[id] = name
+			}
+		}
+	}
+
+	// Step 2: 收集剩余未解的 user sender open_id
+	seen := make(map[string]bool)
+	var missing []string
+	for _, msg := range messages {
+		if msg == nil || msg.Sender == nil {
+			continue
+		}
+		senderType := StringVal(msg.Sender.SenderType)
+		if senderType != "" && senderType != "user" {
+			continue
+		}
+		id := StringVal(msg.Sender.Id)
+		if id == "" || !strings.HasPrefix(id, "ou_") || seen[id] || nameMap[id] != "" {
+			continue
+		}
+		seen[id] = true
+		missing = append(missing, id)
+	}
+	if len(missing) == 0 || userAccessToken == "" {
+		return nameMap
+	}
+
+	resolved, err := BatchGetUsersBasic(missing, userAccessToken)
+	if err != nil {
+		// 容错：拿到多少算多少
+		for k, v := range resolved {
+			nameMap[k] = v
+		}
+		return nameMap
+	}
+	for k, v := range resolved {
+		nameMap[k] = v
+	}
+	return nameMap
 }
 
 // ResolveP2PChatID 通过对方的 open_id 反查 P2P 私聊的 chat_id（oc_xxx）。

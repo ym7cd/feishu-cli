@@ -140,8 +140,17 @@ var getMessageHistoryCmd = &cobra.Command{
 			result = fallbackResult
 		}
 
+		// 解析发送者名字：从 mentions + contact basic_batch 两路补齐
+		senderNames := client.ResolveSenderNames(result.Items, token)
+
 		if output == "json" {
-			if err := printJSON(result); err != nil {
+			enriched := map[string]any{
+				"Items":        result.Items,
+				"HasMore":      result.HasMore,
+				"PageToken":    result.PageToken,
+				"sender_names": senderNames,
+			}
+			if err := printJSON(enriched); err != nil {
 				return err
 			}
 		} else {
@@ -163,10 +172,14 @@ var getMessageHistoryCmd = &cobra.Command{
 				if msg.Sender != nil && msg.Sender.Id != nil {
 					sender = *msg.Sender.Id
 				}
+				senderDisplay := sender
+				if name, ok := senderNames[sender]; ok {
+					senderDisplay = fmt.Sprintf("%s (%s)", name, sender)
+				}
 
 				fmt.Printf("[%d] 消息 ID: %s\n", i+1, msgID)
 				fmt.Printf("    类型: %s\n", msgType)
-				fmt.Printf("    发送者: %s\n", sender)
+				fmt.Printf("    发送者: %s\n", senderDisplay)
 				fmt.Printf("    时间: %s\n", createTime)
 				fmt.Println()
 			}
