@@ -681,6 +681,23 @@ func phase1CreateBlocks(
 				}
 			}
 
+			// QuoteContainer / Callout：遍历所有顶层节点清理飞书 API 异步生成的空子块。
+			// 在所有 createNestedChildren 完成后执行，覆盖有子块和无子块的容器节点。
+			for i, node := range result.BlockNodes {
+				if i >= len(createdBlockIDs) {
+					break
+				}
+				if node.Block.BlockType == nil {
+					continue
+				}
+				switch *node.Block.BlockType {
+				case int(converter.BlockTypeQuoteContainer):
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "QuoteContainer")
+				case int(converter.BlockTypeCallout):
+					deleteContainerAutoEmptyBlock(documentID, createdBlockIDs[i], "Callout")
+				}
+			}
+
 			if verbose {
 				fmt.Printf("  [段落 %d] 创建 %d 个块, %d 个表格\n", segIdx+1, len(createdBlockIDs), len(tableIndices))
 			}
@@ -1156,11 +1173,24 @@ func createNestedChildren(documentID string, parentBlockID string, children []*c
 
 	// 递归创建更深层的子块
 	for i, child := range children {
-		if len(child.Children) > 0 && i < len(createdBlockIDs) {
-			nestedCount, err := createNestedChildren(documentID, createdBlockIDs[i], child.Children, userAccessToken)
+		if i >= len(createdBlockIDs) {
+			continue
+		}
+		childID := createdBlockIDs[i]
+		if len(child.Children) > 0 {
+			nestedCount, err := createNestedChildren(documentID, childID, child.Children, userAccessToken)
 			totalCreated += nestedCount
 			if err != nil {
 				return totalCreated, err
+			}
+		}
+		// QuoteContainer / Callout 嵌套场景：无论是否有子块，均清理 API 自动生成的空块
+		if child.Block.BlockType != nil {
+			switch *child.Block.BlockType {
+			case int(converter.BlockTypeQuoteContainer):
+				deleteContainerAutoEmptyBlock(documentID, childID, "QuoteContainer")
+			case int(converter.BlockTypeCallout):
+				deleteContainerAutoEmptyBlock(documentID, childID, "Callout")
 			}
 		}
 	}
