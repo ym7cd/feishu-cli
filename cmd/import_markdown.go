@@ -758,7 +758,7 @@ func phase1CreateBlocks(
 
 			// 只创建画板占位块，不导入图表
 			createResult := client.DoWithRetry(func() (*client.AddBoardResult, http.Header, error) {
-				return client.AddBoard(documentID, "", -1)
+				return client.AddBoard(documentID, "", -1, userAccessToken)
 			}, client.RetryConfig{
 				MaxRetries:       5,
 				RetryOnRateLimit: true,

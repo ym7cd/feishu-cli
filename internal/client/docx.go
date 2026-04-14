@@ -449,8 +449,9 @@ type AddBoardResult struct {
 	WhiteboardID string `json:"whiteboard_id"`
 }
 
-// AddBoard adds a board block to document and returns the whiteboard ID
-func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, http.Header, error) {
+// AddBoard adds a board block to document and returns the whiteboard ID.
+// userAccessToken 非空时使用用户身份创建，避免需要用户权限的画板块误回退到租户身份。
+func AddBoard(documentID string, parentID string, index int, userAccessToken ...string) (*AddBoardResult, http.Header, error) {
 	if parentID == "" {
 		parentID = documentID
 	}
@@ -463,7 +464,7 @@ func AddBoard(documentID string, parentID string, index int) (*AddBoardResult, h
 	}
 
 	// 创建画板块
-	createdBlocks, headers, err := CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index)
+	createdBlocks, headers, err := CreateBlock(documentID, parentID, []*larkdocx.Block{boardBlock}, index, userAccessToken...)
 	if err != nil {
 		return nil, headers, fmt.Errorf("创建画板块失败: %w", err)
 	}
