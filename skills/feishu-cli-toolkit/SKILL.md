@@ -44,6 +44,7 @@ allowed-tools: Bash, Read, Write
 | # | 模块 | 核心命令 | 详细参考 |
 |---|------|---------|---------|
 | 1 | 电子表格 | `sheet create/get/read/write/append` + V3 富文本 | `references/sheet-commands.md` |
+| 1.5 | 文档表格 | `doc table insert-row/column/delete-rows/columns/merge-cells/unmerge-cells` | — |
 | 2 | 日历日程 | `calendar list/get/primary/create-event/event-search/freebusy` | `references/calendar-commands.md` |
 | 3 | 任务管理 | `task create/complete/delete` + subtask/member/reminder + `tasklist` | `references/task-commands.md` |
 | 4 | 群聊创建 | `chat create/link`（App Token，群信息/成员/消息互动请用 **feishu-cli-chat**） | `references/chat-commands.md` |
@@ -138,6 +139,63 @@ feishu-cli sheet export <spreadsheet_token> -o /tmp/report.xlsx --max-retries 50
 **详细参考**：读取 `references/sheet-commands.md` 获取 V3 富文本格式、工作表管理、单元格图片等完整说明。
 
 **权限要求**：`sheets:spreadsheet`
+
+---
+
+## 1.5. 文档表格（内嵌表格）
+
+**定义**：文档内嵌表格（Block 类型 31），嵌入在飞书文档中的表格，与电子表格（Sheet）不同。
+
+**与电子表格的区别**：
+| 维度 | 文档表格（Table Block） | 电子表格（Sheet） |
+|------|------------------------|------------------|
+| 位置 | 嵌入在文档中 | 独立的云文档 |
+| 行列限制 | **最多 9 行 × 9 列**（API 限制） | 无限制 |
+| 操作方式 | `doc table` 命令 | `sheet` 命令 |
+| 合并单元格 | 支持 | 支持 |
+
+### 常用命令
+
+```bash
+# 插入行（-1 表示末尾）
+feishu-cli doc table insert-row DOC_ID TABLE_BLOCK_ID --index -1
+
+# 插入列
+feishu-cli doc table insert-column DOC_ID TABLE_BLOCK_ID --index 2
+
+# 删除行（左闭右开区间）
+feishu-cli doc table delete-rows DOC_ID TABLE_BLOCK_ID --start 1 --end 3
+
+# 删除列（左闭右开区间）
+feishu-cli doc table delete-columns DOC_ID TABLE_BLOCK_ID --start 0 --end 2
+
+# 合并单元格（左闭右开区间）
+feishu-cli doc table merge-cells DOC_ID TABLE_BLOCK_ID \
+  --row-start 0 --row-end 2 --col-start 0 --col-end 3
+
+# 取消合并
+feishu-cli doc table unmerge-cells DOC_ID TABLE_BLOCK_ID --row 0 --col 0
+```
+
+### 参数说明
+
+| 命令 | 参数 | 说明 |
+|------|------|------|
+| insert-row | `--index` | 插入位置，-1 表示末尾 |
+| insert-column | `--index` | 插入位置，-1 表示末尾 |
+| delete-rows | `--start`, `--end` | 行范围（左闭右开） |
+| delete-columns | `--start`, `--end` | 列范围（左闭右开） |
+| merge-cells | `--row-start/end`, `--col-start/end` | 合并范围（左闭右开） |
+| unmerge-cells | `--row`, `--col` | 单元格位置 |
+
+### 获取表格块 ID
+
+```bash
+# 查看文档结构，找到 block_type=31 的表格块
+feishu-cli doc blocks DOC_ID
+```
+
+**权限要求**：`docx:document`
 
 ---
 

@@ -17,6 +17,7 @@ var docCmd = &cobra.Command{
   content-update 更新文档内容（追加/覆盖/替换/插入/删除）
   update         更新块内容
   delete         删除块
+  table          表格操作（插入/删除行列、合并/取消合并单元格）
   export         导出文档为 Markdown
   import         从 Markdown 导入文档
   export-file    导出文档为文件（PDF/DOCX/XLSX）

@@ -346,6 +346,36 @@ feishu-cli doc add-callout <document_id> "内容" --callout-type error --parent-
 
 > 需要橙色（CAUTION）或紫色（IMPORTANT）时，请使用 Markdown 导入方式（`doc import` 或 `doc add --content-type markdown`）。
 
+### 表格操作
+
+对文档内嵌表格（Block 类型 31）进行行列操作和单元格合并：
+
+```bash
+# 获取表格块 ID（查找 block_type=31 的块）
+feishu-cli doc blocks DOC_ID
+
+# 插入行（-1 表示末尾）
+feishu-cli doc table insert-row DOC_ID TABLE_BLOCK_ID --index -1
+
+# 插入列
+feishu-cli doc table insert-column DOC_ID TABLE_BLOCK_ID --index 2
+
+# 删除行（左闭右开区间）
+feishu-cli doc table delete-rows DOC_ID TABLE_BLOCK_ID --start 1 --end 3
+
+# 删除列（左闭右开区间）
+feishu-cli doc table delete-columns DOC_ID TABLE_BLOCK_ID --start 0 --end 2
+
+# 合并单元格（左闭右开区间）
+feishu-cli doc table merge-cells DOC_ID TABLE_BLOCK_ID \
+  --row-start 0 --row-end 2 --col-start 0 --col-end 3
+
+# 取消合并
+feishu-cli doc table unmerge-cells DOC_ID TABLE_BLOCK_ID --row 0 --col 0
+```
+
+> **注意**：文档表格 API 限制单表最多 9 行 × 9 列。超出限制需使用电子表格（Sheet）。
+
 ### 批量更新块
 
 批量更新文档中的块内容：
