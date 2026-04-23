@@ -851,3 +851,82 @@ func GetTableCellIDs(documentID string, tableBlockID string, userAccessToken ...
 
 	return block.Table.Cells, nil
 }
+
+// ============================================================
+// 文档表格操作（Block 类型 31）
+// ============================================================
+
+// InsertTableRow 在表格中插入一行
+// index = -1 表示插入到表格末尾
+func InsertTableRow(documentID, tableBlockID string, index int, userAccessToken ...string) error {
+	_, err := UpdateBlock(documentID, tableBlockID, map[string]any{
+		"insert_table_row": map[string]any{
+			"row_index": index,
+		},
+	}, userAccessToken...)
+	return err
+}
+
+// InsertTableColumn 在表格中插入一列
+// index = -1 表示插入到表格末尾
+func InsertTableColumn(documentID, tableBlockID string, index int, userAccessToken ...string) error {
+	_, err := UpdateBlock(documentID, tableBlockID, map[string]any{
+		"insert_table_column": map[string]any{
+			"column_index": index,
+		},
+	}, userAccessToken...)
+	return err
+}
+
+// DeleteTableRows 删除表格中的行（左闭右开区间）
+// rowStartIndex: 起始行索引（包含，0 表示第一行）
+// rowEndIndex: 结束行索引（不包含）
+func DeleteTableRows(documentID, tableBlockID string, rowStartIndex, rowEndIndex int, userAccessToken ...string) error {
+	_, err := UpdateBlock(documentID, tableBlockID, map[string]any{
+		"delete_table_rows": map[string]any{
+			"row_start_index": rowStartIndex,
+			"row_end_index":   rowEndIndex,
+		},
+	}, userAccessToken...)
+	return err
+}
+
+// DeleteTableColumns 删除表格中的列（左闭右开区间）
+// columnStartIndex: 起始列索引（包含，0 表示第一列）
+// columnEndIndex: 结束列索引（不包含）
+func DeleteTableColumns(documentID, tableBlockID string, columnStartIndex, columnEndIndex int, userAccessToken ...string) error {
+	_, err := UpdateBlock(documentID, tableBlockID, map[string]any{
+		"delete_table_columns": map[string]any{
+			"column_start_index": columnStartIndex,
+			"column_end_index":   columnEndIndex,
+		},
+	}, userAccessToken...)
+	return err
+}
+
+// MergeTableCells 合并表格单元格（左闭右开区间）
+// rowStartIndex, rowEndIndex: 行范围（左闭右开）
+// columnStartIndex, columnEndIndex: 列范围（左闭右开）
+func MergeTableCells(documentID, tableBlockID string, rowStartIndex, rowEndIndex, columnStartIndex, columnEndIndex int, userAccessToken ...string) error {
+	_, err := UpdateBlock(documentID, tableBlockID, map[string]any{
+		"merge_table_cells": map[string]any{
+			"row_start_index":    rowStartIndex,
+			"row_end_index":      rowEndIndex,
+			"column_start_index": columnStartIndex,
+			"column_end_index":   columnEndIndex,
+		},
+	}, userAccessToken...)
+	return err
+}
+
+// UnmergeTableCells 取消合并单元格
+// rowIndex, columnIndex: 单元格位置
+func UnmergeTableCells(documentID, tableBlockID string, rowIndex, columnIndex int, userAccessToken ...string) error {
+	_, err := UpdateBlock(documentID, tableBlockID, map[string]any{
+		"unmerge_table_cells": map[string]any{
+			"row_index":    rowIndex,
+			"column_index": columnIndex,
+		},
+	}, userAccessToken...)
+	return err
+}
