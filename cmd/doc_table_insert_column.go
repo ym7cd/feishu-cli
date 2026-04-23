@@ -46,6 +46,11 @@ func runDocTableInsertColumn(cmd *cobra.Command, args []string) error {
 	output, _ := cmd.Flags().GetString("output")
 	userAccessToken := resolveOptionalUserToken(cmd)
 
+	// 飞书 API 仅接受 index == -1（末尾）或 index >= 0
+	if index < -1 {
+		return fmt.Errorf("索引必须 >= 0 或 -1（表示末尾）")
+	}
+
 	err := client.InsertTableColumn(documentID, tableBlockID, index, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("插入列失败: %w", err)
@@ -56,7 +61,7 @@ func runDocTableInsertColumn(cmd *cobra.Command, args []string) error {
 			"document_id":    documentID,
 			"table_block_id": tableBlockID,
 			"operation":      "insert_column",
-			"index":          index,
+			"column_index":   index,
 		})
 	}
 

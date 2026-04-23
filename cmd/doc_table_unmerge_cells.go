@@ -15,7 +15,7 @@ var docTableUnmergeCellsCmd = &cobra.Command{
 
 参数:
   document_id     文档 ID
-  table_block_id  表格块 ID
+  table_block_id  表格块 ID（Block 类型 31）
   --row           单元格所在行索引
   --col           单元格所在列索引
 

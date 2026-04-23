@@ -15,7 +15,7 @@ var docTableMergeCellsCmd = &cobra.Command{
 
 参数:
   document_id     文档 ID
-  table_block_id  表格块 ID
+  table_block_id  表格块 ID（Block 类型 31）
   --row-start     起始行索引（包含）
   --row-end       结束行索引（不包含）
   --col-start     起始列索引（包含）

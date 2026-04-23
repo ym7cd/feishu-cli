@@ -864,10 +864,7 @@ func InsertTableRow(documentID, tableBlockID string, index int, userAccessToken 
 			"row_index": index,
 		},
 	}, userAccessToken...)
-	if err != nil {
-		return fmt.Errorf("插入行失败: %w", err)
-	}
-	return nil
+	return err
 }
 
 // InsertTableColumn 在表格中插入一列
@@ -878,10 +875,7 @@ func InsertTableColumn(documentID, tableBlockID string, index int, userAccessTok
 			"column_index": index,
 		},
 	}, userAccessToken...)
-	if err != nil {
-		return fmt.Errorf("插入列失败: %w", err)
-	}
-	return nil
+	return err
 }
 
 // DeleteTableRows 删除表格中的行（左闭右开区间）
@@ -894,10 +888,7 @@ func DeleteTableRows(documentID, tableBlockID string, rowStartIndex, rowEndIndex
 			"row_end_index":   rowEndIndex,
 		},
 	}, userAccessToken...)
-	if err != nil {
-		return fmt.Errorf("删除行失败: %w", err)
-	}
-	return nil
+	return err
 }
 
 // DeleteTableColumns 删除表格中的列（左闭右开区间）
@@ -910,10 +901,7 @@ func DeleteTableColumns(documentID, tableBlockID string, columnStartIndex, colum
 			"column_end_index":   columnEndIndex,
 		},
 	}, userAccessToken...)
-	if err != nil {
-		return fmt.Errorf("删除列失败: %w", err)
-	}
-	return nil
+	return err
 }
 
 // MergeTableCells 合并表格单元格（左闭右开区间）
@@ -928,10 +916,7 @@ func MergeTableCells(documentID, tableBlockID string, rowStartIndex, rowEndIndex
 			"column_end_index":   columnEndIndex,
 		},
 	}, userAccessToken...)
-	if err != nil {
-		return fmt.Errorf("合并单元格失败: %w", err)
-	}
-	return nil
+	return err
 }
 
 // UnmergeTableCells 取消合并单元格
@@ -943,8 +928,5 @@ func UnmergeTableCells(documentID, tableBlockID string, rowIndex, columnIndex in
 			"column_index": columnIndex,
 		},
 	}, userAccessToken...)
-	if err != nil {
-		return fmt.Errorf("取消合并失败: %w", err)
-	}
-	return nil
+	return err
 }

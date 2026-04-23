@@ -15,7 +15,7 @@ var docTableDeleteColumnsCmd = &cobra.Command{
 
 参数:
   document_id     文档 ID
-  table_block_id  表格块 ID
+  table_block_id  表格块 ID（Block 类型 31）
   --start         起始列索引（包含，0 表示第一列）
   --end           结束列索引（不包含）
 
