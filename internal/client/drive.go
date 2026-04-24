@@ -142,7 +142,27 @@ func UploadMediaWithExtra(filePath, parentType, parentNode, fileName, extra stri
 type DownloadMediaOptions struct {
 	UserAccessToken string        // User Access Token（可选）
 	DocToken        string        // 文档 Token（文档内嵌图片下载时需要）
+	DocType         string        // 文档类型（默认 docx）
+	Extra           string        // 原始 extra JSON，设置后优先于 DocToken/DocType
 	Timeout         time.Duration // 自定义超时时间（0 表示使用默认 5 分钟）
+}
+
+func buildDownloadMediaExtra(opts DownloadMediaOptions) string {
+	if opts.Extra != "" {
+		return opts.Extra
+	}
+	if opts.DocToken == "" {
+		return ""
+	}
+	docType := opts.DocType
+	if docType == "" {
+		docType = "docx"
+	}
+	extraJSON, _ := json.Marshal(map[string]string{
+		"doc_token": opts.DocToken,
+		"doc_type":  docType,
+	})
+	return string(extraJSON)
 }
 
 // DownloadMedia downloads a file from Feishu drive
@@ -162,9 +182,8 @@ func DownloadMedia(fileToken string, outputPath string, opts ...DownloadMediaOpt
 	var reqOpts []larkcore.RequestOptionFunc
 	if len(opts) > 0 {
 		reqOpts = UserTokenOption(opts[0].UserAccessToken)
-		if opts[0].DocToken != "" {
-			extraJSON, _ := json.Marshal(map[string]string{"doc_token": opts[0].DocToken, "obj_type": "docx"})
-			reqBuilder = reqBuilder.Extra(string(extraJSON))
+		if extra := buildDownloadMediaExtra(opts[0]); extra != "" {
+			reqBuilder = reqBuilder.Extra(extra)
 		}
 	}
 
@@ -198,9 +217,8 @@ func GetMediaTempURL(fileToken string, opts ...DownloadMediaOptions) (string, er
 	var reqOpts []larkcore.RequestOptionFunc
 	if len(opts) > 0 {
 		reqOpts = UserTokenOption(opts[0].UserAccessToken)
-		if opts[0].DocToken != "" {
-			extraJSON, _ := json.Marshal(map[string]string{"doc_token": opts[0].DocToken, "obj_type": "docx"})
-			reqBuilder = reqBuilder.Extra(string(extraJSON))
+		if extra := buildDownloadMediaExtra(opts[0]); extra != "" {
+			reqBuilder = reqBuilder.Extra(extra)
 		}
 	}
 

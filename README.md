@@ -718,6 +718,7 @@ feishu-cli doc content-update <doc_id> --mode overwrite --markdown "# 全新文�
 feishu-cli doc content-update <doc_id> --mode replace_range --selection-by-title "## 旧章节" --markdown "## 新章节"
 feishu-cli doc media-insert <doc_id> --file photo.png --type image --align center
 feishu-cli doc media-download <file_token> -o image.png
+feishu-cli doc media-download <file_token> --doc-token DOC_TOKEN --doc-type docx -o image.png
 
 # 电子表格导出
 feishu-cli sheet export <token> -o output.xlsx
