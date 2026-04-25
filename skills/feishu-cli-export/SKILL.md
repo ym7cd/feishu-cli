@@ -364,6 +364,12 @@ feishu-cli doc import-file ~/Documents/report.docx --type docx --name "季度报
 # 下载图片素材
 feishu-cli doc media-download <file_token> -o /tmp/image.png
 
+# 下载文档内嵌图片（表格单元格等场景）
+feishu-cli doc media-download <file_token> --doc-token DOC_TOKEN --doc-type docx -o /tmp/image.png
+
+# 手动指定素材下载 extra
+feishu-cli doc media-download <file_token> --extra '{"doc_token":"DOC_TOKEN","doc_type":"docx"}' -o /tmp/image.png
+
 # 下载文件素材
 feishu-cli doc media-download <file_token> -o /tmp/attachment.pdf
 
@@ -387,6 +393,9 @@ feishu-cli doc media-download <whiteboard_token> --type whiteboard -o /tmp/board
 | `<token>` | 素材 Token 或画板 Token | 必填 |
 | `--type` | 素材类型 `media`/`whiteboard` | `media` |
 | `-o, --output` | 输出文件路径 | — |
+| `--doc-token` | 素材所属文档 token（文档内嵌图片需要） | — |
+| `--doc-type` | 素材所属文档类型 | `docx` |
+| `--extra` | 原始素材下载 extra JSON，优先于 `--doc-token/--doc-type` | — |
 | `--timeout` | 下载超时时间（Go duration 格式，如 `10m`、`30m`、`1h`） | `5m` |
 
 ### 两种下载模式的区别
