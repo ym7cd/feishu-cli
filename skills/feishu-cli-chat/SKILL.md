@@ -385,7 +385,15 @@ feishu-cli chat delete oc_xxx
 
 ```bash
 feishu-cli msg get om_xxx -o json
+
+# interactive 卡片拿到原始 schema 2.0 JSON（开发者视角的 userDSL，便于偷师/调试）
+feishu-cli msg get om_xxx --card-content-type user -o json
+
+# 返回平台内部完整 cardDSL（含默认补全字段）
+feishu-cli msg get om_xxx --card-content-type raw -o json
 ```
+
+> **`--card-content-type`** 接受 `user` / `user_card_content`（userDSL）/ `raw` / `raw_card_content`（cardDSL）/ 空（默认渲染版），短别名与完整 OAPI 名等价。同样适用于 `msg list` 和 `msg mget`，仅对 interactive 卡片生效，其他 msg_type 不受影响。`user_card_content` = userDSL（开发者构建卡片时的 schema 2.0 JSON）；`raw_card_content` = cardDSL（平台内部完整描述，含默认补全字段）。
 
 ### 查看消息已读情况
 
