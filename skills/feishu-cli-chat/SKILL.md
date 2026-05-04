@@ -3,7 +3,7 @@ name: feishu-cli-chat
 description: >-
   飞书会话浏览、消息互动与群聊管理。查看聊天记录（单聊/群聊）、搜索群聊、获取消息详情、
   Reaction 表情回应、Pin 置顶/取消置顶、删除消息，以及群聊信息管理（获取/更新/解散/成员）。
-  支持普通群和话题群（话题群自动获取线程回复）。所有命令需要 User Token。
+  支持普通群和话题群（话题群自动获取线程回复）。大多数命令需要 User Token；`msg delete` 默认使用 App Token（Bot 撤回自己 24h 内消息），可选传 User Token 让群管理员撤回他人消息。
   当用户请求"查看聊天记录"、"读私聊"、"p2p 聊天"、"群聊历史"、"搜索群聊"、
   "查群信息/群成员"、"Reaction/表情回应"、"Pin/置顶消息"、"删除消息"、"消息详情"、
   "和某人聊了什么"、"群里说了什么"、"总结群消息"、"话题回复 / thread replies"时使用。
@@ -23,7 +23,7 @@ allowed-tools: Bash, Read, Write
 
 - **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式
 
-本技能的核心命令**必须使用 User Token**，使用前需先登录。`chat create`、`chat link`、`msg read-users` 使用 App Token，属于 feishu-cli-toolkit 技能。
+本技能的**大多数核心命令需使用 User Token**，使用前需先登录。例外：`msg delete` 默认走 App Token（Bot 撤回自己 24h 内消息无需登录），仅在群管理员撤回他人消息时才需要 User Token。`chat create`、`chat link`、`msg read-users` 使用 App Token，属于 feishu-cli-toolkit 技能。
 
 ```bash
 feishu-cli auth login
@@ -35,7 +35,8 @@ feishu-cli auth login
 
 | 身份 | 使用场景 |
 |------|---------|
-| **User Token**（必须） | 本技能所有读取/管理命令：chat get/update/delete、member list/add/remove、msg get/history/list/pins/reaction/search-chats、search messages |
+| **User Token**（必须） | 本技能大多数读取/管理命令：chat get/update/delete、member list/add/remove、msg get/history/list/pins/reaction/search-chats、search messages |
+| **App Token / User Token 可选** | `msg delete`：默认 App Token（Bot 撤回自己 24h 内消息）；可选 `--user-access-token` 让群管理员撤回他人消息 |
 | **App Token** | 仅 `chat create`、`chat link`、`msg read-users`（这三个命令不属于本技能核心流程） |
 
 User Token 能力：
@@ -436,10 +437,17 @@ feishu-cli msg reaction list <message_id> [--emoji-type THUMBSUP] [--page-size 2
 
 ### 删除消息
 
-仅能删除机器人自己发送的消息，不可恢复。
+撤回消息后不可恢复。Token 用法分两种：
+
+- **Bot 自撤回**（默认）：使用 App Token 撤回机器人自己 24h 内发送的群/私聊消息，**无需登录**
+- **管理员撤回他人**：传 `--user-access-token` 或设置 `FEISHU_USER_ACCESS_TOKEN`，要求当前用户在该群有管理权限
 
 ```bash
+# Bot 撤回自己消息（默认）
 feishu-cli msg delete <message_id>
+
+# 群管理员撤回他人消息（需先 auth login）
+feishu-cli msg delete <message_id> --user-access-token <token>
 ```
 
 ---
@@ -463,7 +471,8 @@ feishu-cli msg delete <message_id>
 | 看置顶消息 | `msg pins --chat-id oc_xxx` | User |
 | 置顶/取消置顶 | `msg pin/unpin <message_id>` | User |
 | 添加 Reaction | `msg reaction add <message_id> --emoji-type THUMBSUP` | User |
-| 删除消息 | `msg delete <message_id>` | User |
+| Bot 撤回自己消息 | `msg delete <message_id>` | App（默认，无需登录） |
+| 群管理员撤回他人消息 | `msg delete <message_id> --user-access-token <token>` | User |
 | 查消息已读 | `msg read-users om_xxx` | App（仅 bot 消息） |
 | 创建群聊 | `chat create --name "群名"` | App |
 | 获取群链接 | `chat link oc_xxx` | App |

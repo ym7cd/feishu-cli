@@ -8,8 +8,9 @@ description: >-
   "给某人发飞书消息"、"通知某人"、"批量获取消息"、"下载消息资源"、
   "下载消息图片"、"下载消息文件"、"话题回复"、"thread 消息"时使用，
   即使没有明确说"发送"，只要意图是把信息传达给某人，都应使用此技能。
-  注意：Reaction/Pin/删除/获取消息详情/消息历史/搜索群聊/群聊管理
-  请使用 feishu-cli-chat 技能（需 User Token）。
+  注意：Reaction/Pin/获取消息详情/消息历史/搜索群聊/群聊管理（需 User Token），
+  以及消息删除（默认 App Token 用于 Bot 自撤回，可选 User Token 让管理员撤回他人）
+  请使用 feishu-cli-chat 技能。
   发送结构化或美观的 interactive 卡片（带折叠面板、图表、按钮组、人员卡等）
   请先用 feishu-cli-card 构造 JSON（内置 7 个场景模板和 20+ 组件、配色布局规范，
   避免手搓易错的 JSON），再回到本技能用 --msg-type interactive 发送。
@@ -91,7 +92,8 @@ allowed-tools: Bash, Read, Write
 
 本技能所有命令使用 **App Token（Bot 身份）**，无需登录。
 
-> **Reaction/Pin/删除/获取消息/搜索群聊？** 这些操作需要 User Token，已移至 **feishu-cli-chat** 技能（需先 `auth login`）。
+> **Reaction/Pin/获取消息/搜索群聊？** 这些操作需要 User Token，已移至 **feishu-cli-chat** 技能（需先 `auth login`）。
+> **删除消息？** 也在 feishu-cli-chat 技能中：Bot 撤回自己 24h 内消息默认走 App Token（无需登录），群管理员撤回他人消息时才传 `--user-access-token`。
 
 ## 发送命令
 
@@ -562,14 +564,18 @@ feishu-cli msg merge-forward \
 | `--receive-id-type` | 接收者类型 | `email` |
 | `--message-ids` | 消息 ID 列表（逗号分隔） | 必填 |
 
-## Reaction / Pin / 删除消息
+## Reaction / Pin / 获取消息详情 / 删除消息
 
-> 这些命令需要 **User Token**，已移至 **feishu-cli-chat** 技能。包括：
+> 以下命令均已移至 **feishu-cli-chat** 技能。Token 要求各异：
+>
+> 需要 **User Token**（先 `auth login`）：
 > - `msg reaction add/remove/list` — 表情回应
 > - `msg pin/unpin` — 置顶/取消置顶
 > - `msg pins` — 查看群内置顶消息
-> - `msg delete` — 删除消息（仅 Bot 自己发的）
 > - `msg get` — 获取消息详情
+>
+> Token 可选：
+> - `msg delete` — 删除消息：默认 App Token 撤回 Bot 自己 24h 内消息（无需登录）；可选 `--user-access-token` 让群管理员撤回他人消息
 >
 > 请使用 feishu-cli-chat 技能操作以上功能。
 

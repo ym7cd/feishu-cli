@@ -223,7 +223,7 @@ feishu-cli doc update <document_id> <block_id> \
 | `$公式$` | **行内公式** | 支持一段多个公式 |
 | `$$公式$$` | **块级公式** | 独立公式行 |
 | `[链接](url)` | 链接 | |
-| `| 表格 |` | Table | 超过 9 行或 9 列自动拆分，列拆分保留首列，列宽自动计算 |
+| `| 表格 |` | Table | 行 > 9 通过 `insert_table_row` API 追加保持单 block；列 > 9 按列组拆分保留首列；列宽自动计算 |
 
 ### 推荐：使用 Mermaid / PlantUML 画图
 
@@ -374,7 +374,7 @@ feishu-cli doc table merge-cells DOC_ID TABLE_BLOCK_ID \
 feishu-cli doc table unmerge-cells DOC_ID TABLE_BLOCK_ID --row 0 --col 0
 ```
 
-> **注意**：文档表格 API 限制单表最多 9 行 × 9 列。超出限制需使用电子表格（Sheet）。
+> **注意**：`create_block` API 限制单次创建最多 9 行 × 9 列。行超出时 CLI 自动通过 `insert_table_row` API 把剩余行追加到同一 block（视觉连贯）；列超出时按列组拆分保留首列作为标识。行数极多（200+）时仍建议改用电子表格（Sheet）承载。
 
 ### 批量更新块
 
@@ -471,7 +471,8 @@ feishu-cli doc media-insert <document_id> \
 | 权限添加失败 | 检查飞书开放平台中 App 是否已配置 `docs:permission.member:create` 权限，且应用已发布 |
 | 认证过期（401 错误） | 重新执行 `feishu-cli auth login`（Device Flow 会自动注入 `offline_access` 获取 30 天 Refresh Token） |
 | 文档创建成功但无法访问 | 确认已执行 `perm add` 授予 `full_access` 权限并 `perm transfer-owner` 转移所有权 |
-| 表格内容显示不全 | 飞书 API 单个表格限制 9 行 9 列，超出部分会自动拆分为多个表格，属于正常行为 |
+| 超长表格导入耗时长 | 行 > 9 时 CLI 通过 `insert_table_row` API 逐行串行追加到同一 block（每行约 1 次 API 往返），verbose 模式每 5 行打印进度 |
+| 表格被拆分为多个 block | 列 > 9 时 CLI 按列组拆分（每组 ≤ 9 列），首列作为标识在所有组中保留 |
 
 ## content-update 定位参考
 
