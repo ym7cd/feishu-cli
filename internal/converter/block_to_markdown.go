@@ -23,6 +23,8 @@ type BlockToMarkdown struct {
 	childBlockIDs map[string]bool // 子块 ID 集合，这些块不应独立处理
 	options       ConvertOptions
 	imageCount    int
+	videoCount    int
+	videoFiles    map[string]bool
 	headingSeqs   []string                   // 标题自动编号状态，按深度索引（depth-1）
 	userCache     map[string]MentionUserInfo // 用户 ID → 信息缓存
 }
@@ -1024,12 +1026,25 @@ func (c *BlockToMarkdown) convertFile(block *larkdocx.Block) (string, error) {
 		return "", nil
 	}
 
-	var attrs []string
-	if block.File.Token != nil && *block.File.Token != "" {
-		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", *block.File.Token))
+	token := ""
+	if block.File.Token != nil {
+		token = *block.File.Token
 	}
-	if block.File.Name != nil && *block.File.Name != "" {
-		attrs = append(attrs, fmt.Sprintf("name=\"%s\"", *block.File.Name))
+	name := ""
+	if block.File.Name != nil {
+		name = *block.File.Name
+	}
+
+	if IsVideoFilename(name) {
+		return c.convertVideoFile(token, name, block.File.ViewType)
+	}
+
+	var attrs []string
+	if token != "" {
+		attrs = append(attrs, fmt.Sprintf("token=\"%s\"", token))
+	}
+	if name != "" {
+		attrs = append(attrs, fmt.Sprintf("name=\"%s\"", name))
 	}
 	if block.File.ViewType != nil && *block.File.ViewType > 0 {
 		attrs = append(attrs, fmt.Sprintf("view-type=\"%d\"", *block.File.ViewType))
@@ -1040,6 +1055,94 @@ func (c *BlockToMarkdown) convertFile(block *larkdocx.Block) (string, error) {
 	}
 
 	return fmt.Sprintf("<file %s/>\n", strings.Join(attrs, " ")), nil
+}
+
+func (c *BlockToMarkdown) convertVideoFile(token, name string, viewType *int) (string, error) {
+	attrs := []string{"controls"}
+
+	if token != "" && c.options.DownloadImages {
+		if err := os.MkdirAll(c.options.AssetsDir, 0755); err != nil {
+			return "", fmt.Errorf("创建资源目录失败: %w", err)
+		}
+
+		localPath := c.nextVideoAssetPath(name)
+		dlOpts := client.DownloadMediaOptions{UserAccessToken: c.options.UserAccessToken, DocToken: c.options.DocumentID}
+		if tmpURL, err := client.GetMediaTempURL(token, dlOpts); err == nil {
+			if dlErr := client.DownloadFromURL(tmpURL, localPath); dlErr == nil {
+				attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
+				return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+			} else if c.options.Debug {
+				fmt.Fprintf(os.Stderr, "[Debug] 视频下载失败 (URL方式): %v\n", dlErr)
+			}
+		} else if c.options.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] 获取视频临时URL失败: %v\n", err)
+		}
+		if err := client.DownloadMedia(token, localPath, dlOpts); err == nil {
+			attrs = appendVideoMetadata(append(attrs, fmt.Sprintf("src=\"%s\"", localPath)), name, viewType)
+			return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+		} else if c.options.Debug {
+			fmt.Fprintf(os.Stderr, "[Debug] 视频SDK下载失败: %v\n", err)
+		}
+	}
+
+	if token != "" {
+		attrs = append(attrs, fmt.Sprintf("src=\"feishu://media/%s\"", token))
+	}
+	attrs = appendVideoMetadata(attrs, name, viewType)
+	// 即使没有 token 也输出最小占位标签，避免视频块在导出 Markdown 中被静默丢失。
+	// 与 appendVideoMetadata 现有风格一致，name 不做额外转义。
+	return fmt.Sprintf("<video %s></video>\n", strings.Join(attrs, " ")), nil
+}
+
+func appendVideoMetadata(attrs []string, name string, viewType *int) []string {
+	if name != "" {
+		attrs = append(attrs, fmt.Sprintf("data-name=\"%s\"", name))
+	}
+	if viewType != nil && *viewType > 0 {
+		attrs = append(attrs, fmt.Sprintf("data-view-type=\"%d\"", *viewType))
+	}
+	return attrs
+}
+
+func (c *BlockToMarkdown) nextVideoAssetPath(name string) string {
+	c.videoCount++
+	filename := name
+	if filename == "" {
+		filename = fmt.Sprintf("video_%d.mp4", c.videoCount)
+	}
+	if filepath.Ext(filename) == "" {
+		filename += ".mp4"
+	}
+	return filepath.Join(c.options.AssetsDir, c.reserveUniqueVideoFilename(filename))
+}
+
+func (c *BlockToMarkdown) reserveUniqueVideoFilename(filename string) string {
+	if c.videoFiles == nil {
+		c.videoFiles = make(map[string]bool)
+	}
+
+	ext := filepath.Ext(filename)
+	base := strings.TrimSuffix(filename, ext)
+	candidate := filename
+	for i := 2; ; i++ {
+		if !c.videoFiles[candidate] {
+			if _, err := os.Stat(filepath.Join(c.options.AssetsDir, candidate)); os.IsNotExist(err) {
+				c.videoFiles[candidate] = true
+				return candidate
+			}
+		}
+		candidate = fmt.Sprintf("%s_%d%s", base, i, ext)
+	}
+}
+
+// IsVideoFilename reports whether name uses an extension that should roundtrip as a video file.
+func IsVideoFilename(name string) bool {
+	switch strings.ToLower(filepath.Ext(name)) {
+	case ".mp4", ".mov", ".m4v", ".webm", ".avi", ".mkv", ".flv", ".wmv", ".mpeg", ".mpg", ".3gp", ".ogv":
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *BlockToMarkdown) convertBitable(block *larkdocx.Block) (string, error) {

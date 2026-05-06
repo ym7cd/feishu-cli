@@ -1068,6 +1068,80 @@ func TestMarkdownToBlockImage(t *testing.T) {
 	}
 }
 
+func TestMarkdownToBlockVideo(t *testing.T) {
+	tests := []struct {
+		name     string
+		markdown string
+		options  ConvertOptions
+		checkFn  func(*testing.T, *ConvertResult)
+	}{
+		{
+			name:     "UploadImages=false 跳过 video",
+			markdown: "<video src=\"./demo.mp4\" controls></video>",
+			options:  ConvertOptions{UploadImages: false},
+			checkFn: func(t *testing.T, result *ConvertResult) {
+				if result.VideoStats.Skipped == 0 {
+					t.Error("expected video to be skipped")
+				}
+			},
+		},
+		{
+			name:     "本地路径 video 记录来源",
+			markdown: "<video src=\"./demo.mp4\" controls data-name=\"original.mov\" data-view-type=\"1\"></video>",
+			options:  ConvertOptions{UploadImages: true},
+			checkFn: func(t *testing.T, result *ConvertResult) {
+				if result.VideoStats.Total != 1 {
+					t.Fatalf("expected 1 video total, got %d", result.VideoStats.Total)
+				}
+				if len(result.VideoSources) != 1 || result.VideoSources[0] != "./demo.mp4" {
+					t.Fatalf("unexpected video sources: %#v", result.VideoSources)
+				}
+				file := result.BlockNodes[0].Block.File
+				if file == nil || file.Name == nil || *file.Name != "original.mov" {
+					t.Fatalf("expected video data-name to become file name, got %#v", file)
+				}
+				if file.ViewType == nil || *file.ViewType != 1 {
+					t.Fatalf("expected data-view-type=1, got %#v", file.ViewType)
+				}
+			},
+		},
+		{
+			name:     "feishu media video restores file block",
+			markdown: "<video controls src=\"feishu://media/file_video_123\" data-name=\"demo.mp4\" data-view-type=\"1\"></video>",
+			options:  ConvertOptions{UploadImages: true},
+			checkFn: func(t *testing.T, result *ConvertResult) {
+				if result.VideoStats.Skipped != 0 || len(result.VideoSources) != 0 {
+					t.Fatalf("feishu media token should not be counted as skipped upload, stats=%#v sources=%#v", result.VideoStats, result.VideoSources)
+				}
+				file := result.BlockNodes[0].Block.File
+				if file == nil {
+					t.Fatal("expected File block")
+				}
+				if file.Token == nil || *file.Token != "file_video_123" {
+					t.Fatalf("expected token file_video_123, got %#v", file.Token)
+				}
+				if file.Name == nil || *file.Name != "demo.mp4" {
+					t.Fatalf("expected name demo.mp4, got %#v", file.Name)
+				}
+				if file.ViewType == nil || *file.ViewType != 1 {
+					t.Fatalf("expected view type 1, got %#v", file.ViewType)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			converter := NewMarkdownToBlock([]byte(tt.markdown), tt.options, "")
+			result, err := converter.ConvertWithTableData()
+			if err != nil {
+				t.Fatalf("ConvertWithTableData failed: %v", err)
+			}
+			tt.checkFn(t, result)
+		})
+	}
+}
+
 func TestMarkdownToBlockLargeTable(t *testing.T) {
 	// 构造超过 9 行的大表格
 	markdown := "| 列1 | 列2 |\n|-----|-----|\n"
