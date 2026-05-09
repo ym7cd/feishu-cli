@@ -60,6 +60,24 @@ feishu-cli doc create --title "Hello Feishu"
 - Access Token：**2 小时**有效
 - Refresh Token：**30 天**有效（Device Flow 会强制注入 `offline_access` scope）
 - 过期后自动用 Refresh Token 刷新，用户无感
+- **v1.22+**：通过 `--user-access-token` 参数或 `FEISHU_USER_ACCESS_TOKEN` 环境变量传入的过期 token 也会触发自动刷新（前提是 `~/.feishu-cli/token.json` 中存在仍有效的 refresh_token）
+
+**主动刷新 Token：`auth refresh`**
+
+通常无需手动调用——所有读取 token.json 的命令在过期时会自动刷新。`auth refresh` 用于以下少数场景：
+
+```bash
+# 长时间运行脚本前主动续期，避免中途过期
+feishu-cli auth refresh
+
+# JSON 输出（自动化场景，含 access_token 掩码、过期时间、scope）
+feishu-cli auth refresh -o json
+
+# 排查 refresh_token 状态（30 天到期前手动验证）
+feishu-cli auth refresh
+```
+
+退出码：`0` 成功，`1` 失败（refresh_token 过期、网络错误等）。失败时按提示重新执行 `auth login`。
 
 **Scope 策略**：
 - CLI 在 `auth login` 时会显式声明本次请求的 scope，不再依赖“后台开了就自动全量返回”

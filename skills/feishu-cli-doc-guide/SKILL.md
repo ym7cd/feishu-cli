@@ -247,6 +247,8 @@ flowchart TD
 | `` ```plantuml `` / `` ```puml `` | 21→43 | Diagram→Board | 自动转飞书画板（见第 4 节） |
 | `$$公式$$` | 16 | Equation | 块级公式（降级为行内 Equation） |
 | `$公式$` | — | InlineEquation | 行内公式 |
+| `<video src="..."></video>` (HTML) | 23 | File（作为视频） | v1.22+：底层 File Block，按扩展名（mp4/mov/avi/mkv 等）识别为视频；导入 src 可为本地路径或 token，导出输出 `<video>` 标签保留 `data-name` / `data-view-type` |
+| `<sheet token="..." id="..."/>` (HTML) | 30 | Sheet | 嵌入电子表格块；v1.22+ 导出格式从 `token="父token_blockid"` 拆为独立 `token` + `id` 两属性 |
 
 ### 新增块类型（导出支持）
 
