@@ -263,7 +263,7 @@ sleep 5 && feishu-cli doc export <doc_id>
 | 导入（Markdown → 飞书） | 导出（飞书 → Markdown） |
 |------------------------|------------------------|
 | Mermaid/PlantUML 代码块 → 飞书画板 | 飞书画板 → 画板链接/PNG 图片 |
-| 大表格 → 自动拆分为多个表格 | 多个表格 → 分开的表格 |
+| 大表格（行 > 9）→ 单 block 用 `insert_table_row` API 追加保持连贯；列 > 9 → 按列组拆分 | 表格按原结构导出（不会因导入侧的列拆分丢失） |
 | 缩进列表 → 嵌套父子块 | 嵌套列表 → 缩进 Markdown |
 | `> [!NOTE]` → Callout 高亮块 | Callout 高亮块 → `> [!NOTE]` |
 | `$formula$` → 行内公式 | 行内/块级公式 → `$formula$` |
@@ -499,9 +499,10 @@ Callout 内部子块（段落、列表等）会在引用语法内逐行展示。
 | Image（图片） | `<image token="xxx" width="800" height="600" align="center"/>` | 使用 `--download-images` 时下载为本地文件输出 `![alt](path)`，否则输出此标签 |
 | Grid（分栏） | `<grid cols="N"><column>内容</column>...</grid>` | 每个 GridColumn 子块递归导出 |
 | Board（画板） | `<whiteboard token="xxx" type="blank"/>` | 使用 `--download-images` 时导出为 PNG 图片，否则输出此标签 |
-| Sheet（电子表格块） | `<sheet token="xxx" rows="N" cols="N"/>` | 文档内嵌的电子表格块 |
+| Sheet（电子表格块） | `<sheet token="xxx" id="..." rows="N" cols="N"/>` | 文档内嵌电子表格块。**v1.22+**：`token_id` 拆分为独立 `token`（父 sheet token）+ `id`（block id）两个属性，避免下划线分隔的拼接歧义 |
 | Bitable（多维表格块） | `<bitable token="xxx" view="table"/>` | `view` 支持 table/kanban/calendar/gallery/gantt/form |
 | File（文件块） | `<file token="xxx" name="report.pdf" view-type="1"/>` | 文件附件块 |
+| Video（视频块，v1.22+） | `<video src="./assets/video_1.mp4" data-name="原文件名.mp4" data-view-type="1"></video>` | 底层为 File Block（type=23），按文件名扩展（mp4/mov/avi/mkv 等）识别为视频；使用 `--download-images` 时下载到 assets 目录，否则输出 token 形式 |
 
 > 这些 HTML 标签可被 `doc import` 导入端解析还原为对应的飞书块类型，实现无损 roundtrip。
 

@@ -292,8 +292,11 @@ $\int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$
 | `<bitable view="table"/>` | 多维表格 | 创建 Bitable Block |
 | `<image token="xxx" width="800" align="center" caption="说明"/>` | 带属性图片 | 创建 Image Block，保留尺寸/对齐 |
 | `<file token="xxx" name="report.pdf" view-type="1"/>` | 文件块 | 创建 File Block |
+| `<video src="./demo.mp4" data-name="demo.mp4" data-view-type="1"></video>` | 视频块（v1.22+） | 创建 File Block (type=23)，识别 mp4/mov/avi/mkv 等扩展名作为视频；`src` 为本地路径或上传后的 token；单文件 ≤ 20MB 直传 |
 
 这些标签主要用于 roundtrip 场景（导出后重新导入），也可手动编写用于精确控制飞书块类型。
+
+**视频导入并发**：与图片共用 worker 池（默认 2 并发，受 API 5 QPS 限制），导入统计含 `video_total/success/failed/skipped`。verbose 模式打印每个视频的上传进度。
 
 ## 常见问题
 
