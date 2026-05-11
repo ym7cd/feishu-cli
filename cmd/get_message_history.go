@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -143,7 +145,12 @@ var getMessageHistoryCmd = &cobra.Command{
 		}
 
 		// 解析发送者名字：从 mentions + contact basic_batch 两路补齐
-		senderNames := client.ResolveSenderNames(result.Items, token)
+		// 合并主消息 + merge_forward 子消息，让 sub 中的发送者也能被解析
+		allMsgs := append([]*larkim.Message{}, result.Items...)
+		for _, subs := range result.MergeForwardSubMessages {
+			allMsgs = append(allMsgs, subs...)
+		}
+		senderNames := client.ResolveSenderNames(allMsgs, token)
 
 		if output == "json" {
 			enriched := map[string]any{
@@ -151,6 +158,9 @@ var getMessageHistoryCmd = &cobra.Command{
 				"HasMore":      result.HasMore,
 				"PageToken":    result.PageToken,
 				"sender_names": senderNames,
+			}
+			if len(result.MergeForwardSubMessages) > 0 {
+				enriched["merge_forward_sub_messages"] = result.MergeForwardSubMessages
 			}
 			if err := printJSON(enriched); err != nil {
 				return err

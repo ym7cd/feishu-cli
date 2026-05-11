@@ -6,7 +6,8 @@ description: >-
   支持普通群和话题群（话题群自动获取线程回复）。大多数命令需要 User Token；`msg delete` 默认使用 App Token（Bot 撤回自己 24h 内消息），可选传 User Token 让群管理员撤回他人消息。
   当用户请求"查看聊天记录"、"读私聊"、"p2p 聊天"、"群聊历史"、"搜索群聊"、
   "查群信息/群成员"、"Reaction/表情回应"、"Pin/置顶消息"、"删除消息"、"消息详情"、
-  "和某人聊了什么"、"群里说了什么"、"总结群消息"、"话题回复 / thread replies"时使用。
+  "和某人聊了什么"、"群里说了什么"、"总结群消息"、"话题回复 / thread replies"、
+  "合并转发里有啥"、"读合并转发"、"merge_forward 子消息"时使用。
   特性：传 --user-email 或 --user-id 即可直读私聊无需反查 chat_id；消息列表自动附带
   sender_names（open_id → 姓名）映射，无需额外调 member list。
   即使用户只给出群名或 chat_id 想"浏览消息"而未说"聊天记录"，也应使用此技能。
@@ -204,6 +205,7 @@ API 返回的消息 body.content 是 JSON 字符串，常见格式：
 | share_calendar_event | `{"summary":"会议名","start_time":"ms","end_time":"ms",...}` | 日历事件分享 |
 | sticker | `{"sticker_key":"xxx"}` | 表情包 |
 | file | `{"file_key":"xxx","file_name":"..."}` | 文件 |
+| merge_forward | `"Merged and Forwarded Message"` 占位符 | **容器壳**——实际子消息已**自动展开**到顶层 `merge_forward_sub_messages[<container_message_id>]`（list/history/mget）或 `sub_messages`（get），递归到底。每条子消息带 `upper_message_id` 可重建嵌套树 |
 
 用 Python 提取文本内容的常用方式：
 
@@ -211,6 +213,19 @@ API 返回的消息 body.content 是 JSON 字符串，常见格式：
 import json
 content = json.loads(msg['body']['content'])
 text = content.get('text', '')
+```
+
+合并转发消息的子内容已经自动展开，**不需要二次调 API**：
+
+```python
+sub_map = data.get('merge_forward_sub_messages', {})
+for msg in data['Items']:
+    if msg['msg_type'] == 'merge_forward':
+        subs = sub_map.get(msg['message_id'], [])
+        print(f"合并转发包含 {len(subs)} 条嵌套消息（含递归展开）")
+        for sub in subs:
+            print(f"  - [{sub['msg_type']}] {sub['body']['content'][:80]}")
+            # sub['upper_message_id'] 标记父级，可重建嵌套树
 ```
 
 ### 完整示例：获取并总结群聊最近 N 条消息
@@ -396,6 +411,58 @@ feishu-cli msg get om_xxx --card-content-type raw -o json
 
 > **`--card-content-type`** 接受 `user` / `user_card_content`（userDSL）/ `raw` / `raw_card_content`（cardDSL）/ 空（默认渲染版），短别名与完整 OAPI 名等价。同样适用于 `msg list` 和 `msg mget`，仅对 interactive 卡片生效，其他 msg_type 不受影响。`user_card_content` = userDSL（开发者构建卡片时的 schema 2.0 JSON）；`raw_card_content` = cardDSL（平台内部完整描述，含默认补全字段）。
 
+### 合并转发消息自动展开（v1.23.0+）
+
+飞书"合并转发"（`msg_type=merge_forward`）消息的 `body.content` 是固定占位符 `"Merged and Forwarded Message"`，子消息（文本/卡片/图片等）需通过特殊 API 路径获取。**`msg get` / `msg list` / `msg history` / `msg mget` 现已默认自动展开子消息，无需手动二次调用**。
+
+**输出形态**：
+
+> 下方 JSON 示例仅展示新增字段；其余字段（`sender`、`create_time`、`chat_id` 等）走标准 message schema，示例中以 `...` 省略，实际响应保留全部字段。
+
+- `msg get <merge_forward_id>` 时 JSON 顶层多出 `sub_messages` 数组：
+
+  ```json
+  {
+    "message": {"message_id": "om_mf", "msg_type": "merge_forward", "body": {"content": "Merged and Forwarded Message"}, ...},
+    "sender_names": {"ou_xxx": "张三", "ou_yyy": "李四"},
+    "sub_messages": [
+      {"message_id": "om_sub_1", "upper_message_id": "om_mf", "msg_type": "interactive", "body": {"content": "..."}, ...},
+      {"message_id": "om_sub_2", "upper_message_id": "om_mf", "msg_type": "text", ...}
+    ]
+  }
+  ```
+
+- `msg list` / `msg history` / `msg mget` 时 JSON 顶层多出 `merge_forward_sub_messages` map（key 为容器 `message_id`，value 为递归平铺的子消息列表）：
+
+  ```json
+  {
+    "Items": [
+      {"message_id": "om_text", "msg_type": "text", ...},
+      {"message_id": "om_mf", "msg_type": "merge_forward", ...}
+    ],
+    "sender_names": {...},
+    "merge_forward_sub_messages": {
+      "om_mf": [
+        {"message_id": "om_sub_1", "upper_message_id": "om_mf", ...},
+        {"message_id": "om_sub_2", "upper_message_id": "om_mf", ...}
+      ]
+    }
+  }
+  ```
+
+**行为特性**：
+- **递归到底**：嵌套合并转发会一直展开，深度上限 10 层（防呆）
+- **平铺保留 `upper_message_id`**：每条子消息带 `upper_message_id` 指向直接父级，可用此字段重建嵌套树
+- **`sender_names` 已合并**：顶层 `sender_names` 包含所有嵌套子消息发送者，无需额外查用户
+- **并发展开**：list/history 中多个 merge_forward 容器并发展开（上限 5），常见场景延迟增加 200-500ms
+- **失败容错**：单条 merge_forward 展开失败不阻断主流程，stderr 提示但 JSON 输出不污染
+
+**逃生开关**：极端情况（如飞书 API 行为变更）可设环境变量禁用：
+
+```bash
+export FEISHU_DISABLE_MERGE_FORWARD_EXPAND=1
+```
+
 ### 查看消息已读情况
 
 ```bash
@@ -467,7 +534,7 @@ feishu-cli msg delete <message_id> --user-access-token <token>
 | 查群成员 | `chat member list oc_xxx` | User |
 | 改群名/群主 | `chat update oc_xxx --name "新名"` | User |
 | 加/删群成员 | `chat member add/remove oc_xxx --id-list xxx` | User |
-| 查消息详情 | `msg get om_xxx` | User |
+| 查消息详情（含合并转发自动展开） | `msg get om_xxx`（合并转发自动展开到 `sub_messages` 字段） | User |
 | 看置顶消息 | `msg pins --chat-id oc_xxx` | User |
 | 置顶/取消置顶 | `msg pin/unpin <message_id>` | User |
 | 添加 Reaction | `msg reaction add <message_id> --emoji-type THUMBSUP` | User |
@@ -491,8 +558,10 @@ feishu-cli msg delete <message_id> --user-access-token <token>
 | `msg thread-messages` | ✅ | 获取话题回复，外部群正常工作 |
 | `msg search-chats` | ✅ | 搜索群聊，外部群正常工作 |
 | `chat get` / `chat member list` | ✅ | 查看群信息和成员 |
-| `msg get`（单条） | ❌ | 报错 230027 `no permission to operate external chats` |
-| `msg mget`（批量） | ❌ | 同上 |
+| `msg get`（merge_forward 容器） | ✅ | 自动展开走 raw_card_content 路径不触发 230027（实测 SEA AM 测试群通过） |
+| `msg get`（普通消息） | ❌ | 报错 230027 `no permission to operate external chats` |
+| `msg mget`（merge_forward 容器） | ✅ | 内部并发调 `msg get`，同样能展开 |
+| `msg mget`（普通消息） | ❌ | 同 `msg get` 普通消息 |
 | `user info`（查发送者名字） | ❌ | 需要 `contact` 权限，外部租户用户无法查询 |
 
 **实际影响**：获取群聊内容**完全不依赖 `msg get`/`msg mget`**，`msg history` + `msg thread-messages` 已经覆盖所有需求。如果遇到 230027 错误，说明使用了错误的 API，应改用 `msg history`。
@@ -534,6 +603,7 @@ for line in content.get('content', []):
 5. **时间戳**：`create_time` 是毫秒级时间戳，需除以 1000 转为秒
 6. **话题群并发获取线程**：话题群需要对每个 `thread_id` 单独调用 `msg history --container-id-type thread`，建议**并行调用**多个话题以提高效率（实测 10-20 个并发无问题）
 7. **已撤回消息**：`deleted: true` 的消息内容为 `"This message was recalled"`，汇总时应跳过
+8. **合并转发处理**：list/history/mget 自动展开到顶层 `merge_forward_sub_messages[<container_message_id>]`；`msg get` 单条则放在 `sub_messages` 数组里（均递归到底）。无需手动二次调用。性能：list 内并发上限 5，单 page 含 5 条 merge_forward 大约多 200-500ms。如需禁用可设 `FEISHU_DISABLE_MERGE_FORWARD_EXPAND=1`
 
 ```python
 import json

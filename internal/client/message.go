@@ -193,6 +193,10 @@ type ListMessagesResult struct {
 	Items     []*larkim.Message
 	PageToken string
 	HasMore   bool
+	// MergeForwardSubMessages 当 Items 中存在 msg_type=merge_forward 容器时，
+	// 此 map 以容器 message_id 为 key，value 是该容器递归展开后的平铺子消息列表
+	// （每条子消息带 upper_message_id 可重建嵌套树）。无展开时为 nil。
+	MergeForwardSubMessages map[string][]*larkim.Message
 }
 
 // ListMessages lists messages in a container (chat).
@@ -203,7 +207,18 @@ type ListMessagesResult struct {
 //
 // 当 opts.CardContentType 非空时，SDK builder 不识别该字段，统一走 raw HTTP / SDK raw request
 // 路径，把 card_msg_content_type 加到 query params。
-func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken string) (*ListMessagesResult, error) {
+func ListMessages(containerID string, opts ListMessagesOptions, userAccessToken string) (result *ListMessagesResult, err error) {
+	// merge_forward 自动并发展开：在所有 fetch 路径成功返回后统一处理。
+	// 命名返回值 + defer 让三个分支共享展开逻辑且改动最小。
+	defer func() {
+		if err != nil || result == nil {
+			return
+		}
+		if subMap := expandMergeForwardForContainers(result.Items, userAccessToken); len(subMap) > 0 {
+			result.MergeForwardSubMessages = subMap
+		}
+	}()
+
 	// When user access token is provided, use raw HTTP to bypass SDK token type restriction
 	if userAccessToken != "" {
 		return listMessagesWithUserToken(containerID, opts, userAccessToken)
@@ -530,6 +545,9 @@ func ResolveP2PChatID(openID, userAccessToken string) (string, error) {
 // GetMessageResult contains the result of getting a message
 type GetMessageResult struct {
 	Message *larkim.Message
+	// SubMessages 仅当 Message.MsgType == "merge_forward" 且自动展开成功时填充。
+	// 平铺所有递归展开的子消息，每条带 upper_message_id 可重建父子树。
+	SubMessages []*larkim.Message
 }
 
 // GetMessage gets a message by message ID.
@@ -540,7 +558,15 @@ type GetMessageResult struct {
 //
 // 当 cardContentType 非空时（user_card_content / raw_card_content），SDK builder 不识别该
 // 字段，统一走 raw 路径把 card_msg_content_type 加到 query params。
-func GetMessage(messageID, userAccessToken, cardContentType string) (*GetMessageResult, error) {
+func GetMessage(messageID, userAccessToken, cardContentType string) (result *GetMessageResult, err error) {
+	// merge_forward 自动展开：在所有 fetch 路径成功返回后统一处理。
+	// 命名返回值 + defer 让三个分支共享展开逻辑且改动最小。
+	defer func() {
+		if err == nil {
+			applyMergeForwardExpansion(result, messageID, userAccessToken)
+		}
+	}()
+
 	if userAccessToken != "" {
 		return getMessageWithUserToken(messageID, userAccessToken, cardContentType)
 	}
@@ -1216,13 +1242,27 @@ func DownloadMessageResource(messageID, fileKey, resourceType, outputPath, userA
 	return nil
 }
 
+// BatchGetMessagesResult 是 BatchGetMessages 的返回值。
+//
+// Messages 保持入参顺序，与 messageIDs 一一对应。
+// MergeForwardSubMessages 收集本批所有 merge_forward 容器的递归展开子消息，
+// 以容器 message_id 为 key；无展开时为 nil。
+type BatchGetMessagesResult struct {
+	Messages                []*larkim.Message
+	MergeForwardSubMessages map[string][]*larkim.Message
+}
+
 // BatchGetMessages 批量获取消息详情，并发调用 GetMessage（限 5 并发，保持入参顺序）。
 //
 // cardContentType 透传给每次 GetMessage 调用；空字符串则维持原渲染版返回。
-func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType string) ([]*larkim.Message, error) {
+// 每次 GetMessage 内部会自动展开 merge_forward 子消息，结果聚合到返回值的 map 中。
+func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType string) (*BatchGetMessagesResult, error) {
 	const batchGetMessagesConcurrency = 5
 	results := make([]*larkim.Message, len(messageIDs))
 	errs := make([]error, len(messageIDs))
+	subMap := make(map[string][]*larkim.Message)
+	var subMu sync.Mutex
+
 	sem := make(chan struct{}, batchGetMessagesConcurrency)
 	var wg sync.WaitGroup
 	for i, id := range messageIDs {
@@ -1238,6 +1278,14 @@ func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType stri
 				return
 			}
 			results[i] = msgResult.Message
+			if msgResult.Message != nil && len(msgResult.SubMessages) > 0 {
+				containerID := StringVal(msgResult.Message.MessageId)
+				if containerID != "" {
+					subMu.Lock()
+					subMap[containerID] = msgResult.SubMessages
+					subMu.Unlock()
+				}
+			}
 		}()
 	}
 	wg.Wait()
@@ -1246,7 +1294,11 @@ func BatchGetMessages(messageIDs []string, userAccessToken, cardContentType stri
 			return nil, err
 		}
 	}
-	return results, nil
+	out := &BatchGetMessagesResult{Messages: results}
+	if len(subMap) > 0 {
+		out.MergeForwardSubMessages = subMap
+	}
+	return out, nil
 }
 
 // ListThreadMessages 列出线程/话题中的消息

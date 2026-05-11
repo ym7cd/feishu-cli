@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
 	"github.com/riba2534/feishu-cli/internal/client"
 	"github.com/riba2534/feishu-cli/internal/config"
 	"github.com/spf13/cobra"
@@ -97,11 +99,22 @@ var listMessagesCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		if output == "json" {
-			if err := printJSON(map[string]any{
-				"items":      result.Items,
-				"page_token": result.PageToken,
-				"has_more":   result.HasMore,
-			}); err != nil {
+			// 合并主消息 + merge_forward 子消息，统一解析 sender_names
+			allMsgs := append([]*larkim.Message{}, result.Items...)
+			for _, subs := range result.MergeForwardSubMessages {
+				allMsgs = append(allMsgs, subs...)
+			}
+			senderNames := client.ResolveSenderNames(allMsgs, token)
+			payload := map[string]any{
+				"items":        result.Items,
+				"page_token":   result.PageToken,
+				"has_more":     result.HasMore,
+				"sender_names": senderNames,
+			}
+			if len(result.MergeForwardSubMessages) > 0 {
+				payload["merge_forward_sub_messages"] = result.MergeForwardSubMessages
+			}
+			if err := printJSON(payload); err != nil {
 				return err
 			}
 		} else {

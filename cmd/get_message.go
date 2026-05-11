@@ -57,11 +57,19 @@ var getMessageCmd = &cobra.Command{
 
 		output, _ := cmd.Flags().GetString("output")
 		msg := result.Message
-		senderNames := client.ResolveSenderNames([]*larkim.Message{msg}, token)
+		// 合并主消息 + merge_forward 子消息，统一解析 sender_names
+		allMsgs := []*larkim.Message{msg}
+		if len(result.SubMessages) > 0 {
+			allMsgs = append(allMsgs, result.SubMessages...)
+		}
+		senderNames := client.ResolveSenderNames(allMsgs, token)
 		if output == "json" {
 			enriched := map[string]any{
 				"message":      msg,
 				"sender_names": senderNames,
+			}
+			if len(result.SubMessages) > 0 {
+				enriched["sub_messages"] = result.SubMessages
 			}
 			if err := printJSON(enriched); err != nil {
 				return err
@@ -109,6 +117,9 @@ var getMessageCmd = &cobra.Command{
 			}
 			if msg.Body != nil && msg.Body.Content != nil {
 				fmt.Printf("  消息内容: %s\n", *msg.Body.Content)
+			}
+			if len(result.SubMessages) > 0 {
+				fmt.Printf("  嵌套子消息: %d 条（含递归展开，使用 --output json 查看完整内容）\n", len(result.SubMessages))
 			}
 		}
 

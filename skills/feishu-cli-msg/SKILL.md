@@ -564,6 +564,8 @@ feishu-cli msg merge-forward \
 | `--receive-id-type` | 接收者类型 | `email` |
 | `--message-ids` | 消息 ID 列表（逗号分隔） | 必填 |
 
+> **读取合并转发的子内容** 走 **feishu-cli-chat** 技能：`msg get/list/history/mget` 已默认自动展开 `merge_forward` 容器的子消息（递归到底）。
+
 ## Reaction / Pin / 获取消息详情 / 删除消息
 
 > 以下命令均已移至 **feishu-cli-chat** 技能。Token 要求各异：
