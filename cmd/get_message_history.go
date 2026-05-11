@@ -154,9 +154,9 @@ var getMessageHistoryCmd = &cobra.Command{
 
 		if output == "json" {
 			enriched := map[string]any{
-				"Items":        result.Items,
-				"HasMore":      result.HasMore,
-				"PageToken":    result.PageToken,
+				"items":        result.Items,
+				"has_more":     result.HasMore,
+				"page_token":   result.PageToken,
 				"sender_names": senderNames,
 			}
 			if len(result.MergeForwardSubMessages) > 0 {

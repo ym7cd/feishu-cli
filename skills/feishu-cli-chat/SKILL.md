@@ -298,7 +298,7 @@ feishu-cli search messages "关键词" --chat-type p2p_chat --from-ids ou_xxx -o
 
 ### 限制说明
 
-- P2P 场景下 **不要用 `msg get`**：飞书 API 对 p2p 消息详情有硬限制（230013 / 230001），拿不到完整内容。`msg history` 走的是 list 端点，不受此限制
+- P2P 场景下 `msg get` 仅在 **User Token** 下可用（能拿到完整 body + sender_names）；**App Token** 走 `msg get` 会触发 230013 / 230001 硬限制（Bot 不在 P2P 会话），此时改用 `msg history` 走 list 端点
 - 搜索 API 的 `query` 参数不能为空，至少一个空格 `" "`
 - P2P 聊天无法通过 `msg search-chats` 搜索（该 API 只搜索群聊）
 
