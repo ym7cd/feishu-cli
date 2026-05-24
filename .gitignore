@@ -1,6 +1,7 @@
 # 编译产物
 feishu-cli
 bin/
+dist/
 *.exe
 *.exe~
 *.dll
