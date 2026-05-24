@@ -117,7 +117,11 @@ feishu-cli comment resolve <file_token> <comment_id> --type docx
 feishu-cli wiki spaces
 feishu-cli wiki nodes <space_id>
 feishu-cli wiki get <node_token>
+feishu-cli wiki space-get <space_id>                              # 知识库基础信息（名称/类型/可见性/分享状态）
 feishu-cli wiki member list <space_id>
+
+# 高危：删除整个知识库（需 --yes 才会真删，缺 --yes 直接拒绝）
+feishu-cli wiki delete-space <space_id> --yes                     # 自动轮询异步任务直至完成 / 超时
 
 # v1.29+ 新增 ⭐
 feishu-cli wiki space-create --name "新知识库" [--description "..."]      # 创建知识库
@@ -125,6 +129,14 @@ feishu-cli wiki space-list [--page-all] [--page-limit N] [-o json]         # 列
 feishu-cli wiki node-copy --space-id <src> --node-token <node> \
   --target-space-id <dst> [--title "副本标题"]                              # 复制节点（也可用 --target-parent-node-token）
 ```
+
+### Comment 避坑
+
+- **报 `1069302/1069303 forbidden`** = 当前 token 看不到这个文档的评论。
+  - 个人云文档（owner 是 user）必须用 User Token：`feishu-cli comment list <token> --type docx --user-access-token "u-xxxxx"` 或先 `feishu-cli auth login`
+  - 应用云文档（owner 是 App）可用 tenant token，但 App 必须是协作者
+  - 外部群里的文档可能 232033（见 `feishu-cli-chat/references/external-chat.md`）
+- `--user-access-token` 是 comment 子命令的**全局 flag**（list/add/get/reply/resolve/unresolve 都支持），传入后所有 comment 操作走用户身份。
 
 需要富文本评论、wiki URL 自动解析、局部评论时使用 `feishu-cli-drive`。
 

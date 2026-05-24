@@ -40,10 +40,35 @@ feishu-cli auth status -o json --verify
 feishu-cli auth check --scope "REQ_SCOPES"
 feishu-cli auth login --domain <domain> --recommend
 feishu-cli auth logout
+feishu-cli auth token --as user|bot|auto    # v1.29+ 导出 token 给 curl/Python 用
 feishu-cli config create-app --save
 feishu-cli doctor --json
 feishu-cli profile current
 ```
+
+### `auth token` 导出 Token 给外部工具用（v1.29+）
+
+让 curl / Python requests / 任何 HTTP 工具复用本 CLI 的 Token 全生命周期管理
+（Device Flow 登录、2 小时自动刷新、多 profile），不再各自实现 OAuth 流程。
+
+| `--as` | 输出 | 适用场景 |
+|---|---|---|
+| `user` | User Access Token（`eyJhbGc...`，自动刷新） | 真人身份调 API，含 `auth login` 授权过的 scope |
+| `bot` | Tenant Access Token（`t-g10...`，2h 有效） | App 身份，调 tenant scope API |
+| `auto`（默认） | 优先 user，没有再回退 bot | 兼容兜底 |
+
+```bash
+# 给 curl 用
+TOKEN=$(feishu-cli auth token --as user)
+curl -H "Authorization: Bearer $TOKEN" \
+  https://open.feishu.cn/open-apis/authen/v1/user_info
+
+# 给 Python 用
+TOKEN=$(feishu-cli auth token --as bot)
+python3 -c "import requests; print(requests.get('https://open.feishu.cn/open-apis/im/v1/chats', headers={'Authorization': f'Bearer $TOKEN'}).json())"
+```
+
+> 想直接调任意 OpenAPI 而不写 curl？用 `feishu-cli api <method> <path>`（详见 `feishu-cli-schema` skill）。
 
 `auth status -o json` 未登录时会包含：
 

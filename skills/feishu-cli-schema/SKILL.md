@@ -1,23 +1,25 @@
 ---
 name: feishu-cli-schema
 description: >-
-  飞书 OpenAPI 方法本地浏览。schema `service.resource.method` 三段式查路径/参数/scope（无需联网）；
-  schema list 列出所有可用 service。复用 feishu-cli 内置 OpenAPI 元数据（embed 746KB）。
+  飞书 OpenAPI 方法本地浏览 + 通用 API 透传调用。schema `service.resource.method` 三段式查路径/参数/scope（无需联网）；
+  `feishu-cli api <method> <path>` 直接调任意端点（v1.29+，覆盖 2500+ 未封装 API）。
   当用户请求"飞书有没有 XX API"、"X API 的参数是什么"、"X 方法需要什么 scope"、
-  "OpenAPI 方法浏览"、"看 SDK 怎么调用"时使用。
-  不适用：调用 API（请用 lark-cli api）、查在线最新 schema（请用 OpenAPI Explorer）。
+  "OpenAPI 方法浏览"、"看 SDK 怎么调用"、"调一个没封装的飞书 API"时使用。
+  不适用：查在线最新 schema（请用 OpenAPI Explorer，本地元数据可能落后于飞书开放平台）。
 argument-hint: <service.resource.method>
 user-invocable: true
-allowed-tools: Bash(feishu-cli schema:*), Read
+allowed-tools: Bash(feishu-cli schema:*), Bash(feishu-cli api:*), Bash(feishu-cli auth:*), Read
 ---
 
-# 飞书 OpenAPI 方法浏览技能
+# 飞书 OpenAPI 浏览 + 调用技能
 
-通过 `feishu-cli schema` 在本地查询飞书开放平台 OpenAPI 方法的 HTTP path / 动词 / 参数 / 请求体 / 响应体 / scope / 文档链接。**纯本地**、无需 Token、无需网络。
+两个命令的组合拳：
+- **`feishu-cli schema`** —— 本地查询 OpenAPI 方法的 path/动词/参数/scope/文档链接（纯本地，无需 Token / 无需网络）
+- **`feishu-cli api`** —— 直接调用任意飞书 OpenAPI 端点（v1.29+，自动鉴权 + 错误码翻译，覆盖未封装的 2500+ 端点）
+
+典型工作流：`schema list 发现` → `schema get 看参数 + scope` → `feishu-cli auth check/login` 补 scope → `feishu-cli api` 调用。
 
 > **feishu-cli**：如尚未安装，请前往 [riba2534/feishu-cli](https://github.com/riba2534/feishu-cli) 获取安装方式。
-
-> **要真正调用 API？** 本技能只查 schema，不发请求。拿到 path + scope 后用 `lark-cli api` 或对应 `feishu-cli <模块>` 命令调用。
 
 ---
 
@@ -133,6 +135,77 @@ feishu-cli schema vc.notes.get
 
 ---
 
+## 🔥 黄金搭档：schema 查 → api 调（v1.29+）
+
+`feishu-cli api <method> <path>` 是 v1.29+ 的通用 OpenAPI 透传命令，配合 schema 形成完整闭环。
+
+### 完整工作流
+
+```bash
+# Step 1: schema 查 path + scope + token 类型
+feishu-cli schema im.messages.create
+# 输出: POST /open-apis/im/v1/messages
+#       Identity: tenant (bot), user
+#       Scopes:   im:message, im:message:send_as_bot
+
+# Step 2: scope 不够时补
+feishu-cli auth check --scope "im:message"
+feishu-cli auth login --scope "im:message"       # 缺则补
+
+# Step 3: 直接调（无需写代码 / 无需 curl）
+feishu-cli api POST /open-apis/im/v1/messages \
+  --params '{"receive_id_type":"email"}' \
+  --data '{"receive_id":"user@example.com","msg_type":"text","content":"{\"text\":\"hi\"}"}' \
+  --as bot
+```
+
+### `feishu-cli api` 关键 flag
+
+| Flag | 用途 |
+|---|---|
+| `--params '<json>'` | Query 参数 |
+| `--data '<json>'` | Body（POST/PUT/PATCH） |
+| `--data-file <path>` | Body 从文件读（`-` 表示 stdin） |
+| `--as bot\|user\|auto` | 强制身份；auto = user 优先回退 bot |
+| `--dry-run` | 仅打印请求，不实际调 |
+| `--raw` | 原样输出（默认 pretty JSON） |
+| `--include-headers` | stderr 打印响应头 |
+| `--output <file>` | 写入文件而非 stdout |
+| `--timeout <seconds>` | 自定义超时（默认 30s） |
+
+### 内置错误码翻译（v1.29+）
+
+`feishu-cli api` 收到飞书业务错误时会自动打印中文解决方案，覆盖：
+
+- **99991661/99991663/99991668/99991672/99991679/99991677** → Token 失效或权限不足
+- **99991400** → 限流
+- **230001/230002/230020** → scope 不足，提示 `auth check --scope`
+- **232033** → 外部群权限不足（提示切对外共享 App）
+- **232011** → Bot/用户不在群
+- **232006** → chat_id 无效
+- **232025** → App 未启用 Bot 能力
+
+### URL 智能处理
+
+- 自动剥 `https://open.feishu.cn` / `larksuite.com` / `larkoffice.com` 前缀
+- 自动补 `/open-apis/` 前缀
+- 自动拆 URL 里内嵌的 `?query=string` 到 query 参数
+- 自动忽略 `#fragment`
+
+```bash
+# 这几种等价：
+feishu-cli api GET /open-apis/authen/v1/user_info --as user
+feishu-cli api GET /authen/v1/user_info --as user
+feishu-cli api GET https://open.feishu.cn/open-apis/authen/v1/user_info --as user
+feishu-cli api GET 'https://xxx.feishu.cn/open-apis/authen/v1/user_info?foo=bar#hash' --as user
+```
+
+### 与 `feishu-cli-shared` skill 的关系
+
+如要让其他工具（curl/Python）复用 token 而不通过本命令，用 `feishu-cli auth token --as user/bot` 导出 token 字符串（见 `feishu-cli-auth` skill）。
+
+---
+
 ## 踩坑
 
 1. **路径过深会报错**：`schema im.messages.delete.foo` → `路径过深: ...（多余片段: foo）`。多写一层不会被静默吞掉。
@@ -148,7 +221,10 @@ feishu-cli schema vc.notes.get
 
 | 需求 | 该用什么 |
 |------|---------|
-| 真的要调 API | `lark-cli api` 通用调用 / `feishu-cli <模块>` 对应命令（msg / doc / bitable / drive…） |
+| 调 API 而且本项目有对应业务命令 | `feishu-cli <模块>` 对应命令（msg / doc / bitable / drive…）—— 体验更好 |
+| 调 API 但没对应业务命令 / 想直接走 OpenAPI | **本 skill 介绍的 `feishu-cli api <method> <path>`**（v1.29+）|
+| 给 curl/Python 拿 token | `feishu-cli auth token --as user/bot`（详见 `feishu-cli-auth` skill） |
 | 查在线最新 schema、本地没收录 | 飞书 [OpenAPI Explorer](https://open.feishu.cn/api-explorer) |
+| 调"埋藏 API"（飞书文档站未收录） | 见 `feishu-cli-toolkit/references/embedded-api-discovery.md`，已知 6 个埋藏 API |
 | 申请 scope / 登录拿 User Token | `/feishu-cli-auth`（`auth check --scope` 预检、`auth login --domain --recommend` 按业务域申请） |
 | 发消息/文档/卡片等具体业务 | `/feishu-cli-msg` / `/feishu-cli-read` / `/feishu-cli-card` 等专用技能 |

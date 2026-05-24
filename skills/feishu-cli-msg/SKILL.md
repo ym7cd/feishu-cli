@@ -410,6 +410,10 @@ CLI flag 用字符串，底层映射到 OpenAPI 整数枚举：
 | --flag-type | message | 2 | 消息层书签（默认） |
 | --flag-type | feed | 1 | feed 层（侧边栏书签） |
 
+> ⚠️ **反向陷阱**：网上某些第三方教程（含部分 lark-cli 旧版示例）把 `flag_type: 1=message / 2=feed` 写反了。本项目以**飞书 OpenAPI 官方真值**为准（`1=feed / 2=message`，见上表）。`list` 命令输出里也是这套真值，写代码处理 JSON 时认上面这张表。
+>
+> `list` 命令不接受 `--flag-type/--item-type` 作为入参（list 是全量返回），只能在输出 `flag_items[*].flag_type` 字段上过滤。要看自己有哪些书签直接 `feishu-cli msg flag list -o json`。
+
 支持的组合（其余服务端拒绝）：
 - `default + message`：消息层书签，最常见
 - `thread + feed`：topic-style 话题群 feed 层
