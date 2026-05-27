@@ -3,7 +3,8 @@ name: feishu-cli-auth
 description: >-
   飞书 OAuth 认证和 User Access Token 管理（Device Flow，RFC 8628）。
   支持一键创建飞书应用、按域申请推荐权限、auth check 预检 scope、auth login 登录、Token 自动刷新。
-  当用户请求登录飞书、获取 Token、OAuth 授权、权限缺失、Token 过期、create-app、99991672、99991679，
+  覆盖 AI Agent 两步授权（--no-wait 拿链接 → --device-code 续轮询）、JSON 事件流解析、部分 scope 未授予（missing_scopes）的判读与补授。
+  当用户请求登录飞书、获取 Token、OAuth 授权、用户身份授权、device flow、权限缺失、Token 过期、create-app、99991672、99991679，
   或其他飞书技能遇到 User Access Token 问题时使用。
   本技能同时承载两个相关子命令：doctor 做配置/网络/代理体检（错误信息不指向 scope/token 时用），
   profile 管理多 App / 多账号独立配置（多租户切换）。
@@ -17,20 +18,84 @@ allowed-tools: Bash(feishu-cli auth:*), Bash(feishu-cli config:*), Bash(feishu-c
 
 本项目默认使用 App Token。只有搜索、消息历史/互动、审批任务、会议/妙记、邮箱等用户身份场景需要 User Access Token。
 
-## 推荐流程
+## 推荐流程（人工 / 交互终端）
 
 ```bash
-# 预检 scope
+# 1. 预检：缺什么 scope 一目了然（auth check 返回 missing 时先到开放平台开通）
 feishu-cli auth check --scope "search:docs:read search:message"
 
-# 按业务域登录，自动带推荐 scope
+# 2a. 按业务域登录，自动带该域推荐 scope
 feishu-cli auth login --domain search --recommend
 
-# AI Agent 后台模式：输出 JSON 事件流，展示 verification_uri_complete 给用户
-feishu-cli auth login --scope "search:docs:read search:message" --json
+# 2b. 一次授全：对全部业务域申请推荐 scope（单独用 --recommend，不带 --domain）
+feishu-cli auth login --recommend
+
+# 2c. 精确控制：显式指定 scope（与 --domain/--recommend 互斥）
+feishu-cli auth login --scope "search:docs:read search:message"
 ```
 
-如果 `auth check` 返回 `missing`，先到飞书开放平台开通缺失 scope，再重新 `auth login`。
+`--recommend` 三种用法：单独用 = 全部 20 个业务域的推荐 scope；配 `--domain X` = 仅该域推荐 scope；都不传且在交互终端下 = 弹出选择提示。**非交互环境（无 tty）必须显式指定范围**，否则报错。
+
+> 💡 `auth login` 是**增量授权**：多次登录申请的 scope 在飞书服务端累积，补授新 scope 不会丢掉之前已授的。（本地 `token.json` 虽被新 token 覆盖，但其 `scope` 是服务端返回的累积值。）
+
+## AI Agent 授权（两步模式 ⭐）
+
+AI Agent 的 harness 通常**只把最终回复发给用户、且单轮有 timeout**，不适合在同一轮里阻塞等授权。用两步模式：第一步拿链接发给用户并结束本轮，用户授权后下一轮再续轮询。
+
+```bash
+# 第一步：只取 device_code + 授权链接，立即返回不轮询
+feishu-cli auth login --recommend --no-wait --json
+# → 输出一行 device_authorization 事件，把 verification_uri_complete 发给用户后结束本轮
+
+# 第二步（用户回复已授权后）：用 device_code 续上轮询
+feishu-cli auth login --device-code <device_code> --json
+```
+
+要点：
+- **scope 自动恢复**：第二步从 device_code 缓存读回第一步申请的 scope，**不用也不能**再传 `--scope/--domain/--recommend`（重传会报错）。
+- **device_code 有效期约 10 分钟**，超时需从第一步重来；每次重新跑第一步都会作废上一个链接。
+- **不要用短 timeout 反复重试**第一步——每次重启都会让上一个授权链接失效。
+
+若 harness 支持后台任务，也可一步阻塞 + 后台运行：
+
+```bash
+# run_in_background 跑：阻塞轮询最长约 10 分钟，stdout 逐行出 JSON 事件
+feishu-cli auth login --recommend --json
+```
+
+阻塞模式务必 `run_in_background`，或把单命令 timeout 设到 ≥ 600s。
+
+### JSON 事件 schema
+
+`--json` 模式按 JSONL 逐行输出事件，Agent 解析这两个即可：
+
+**`device_authorization`**（第一步 / 阻塞模式开头）：
+
+```json
+{"event":"device_authorization","verification_uri_complete":"https://accounts.feishu.cn/oauth/v1/device/verify?flow_id=...&user_code=XXXX-XXXX","user_code":"XXXX-XXXX","device_code":"...","expires_in":600,"interval":5,"requested_scopes":["..."]}
+```
+
+→ 把 `verification_uri_complete`（已含 user_code，可直接点开）**原样**发给用户，不要做任何 URL 编码/改写。
+
+**`authorization_complete`**（授权成功，token 已落盘）：
+
+```json
+{"event":"authorization_complete","expires_at":"...","scope":"...","refresh_token_present":true,"granted_scopes":["..."],"missing_scopes":["..."],"requested_scopes":["..."]}
+```
+
+→ 上述 6 个字段常驻（`scope` 即落盘 `token.json` 的累积 scope 值）；`refresh_expires_at`（拿到 refresh token 时）、`warnings`/`hints`（refresh 缺失或 scope 未授予时）为条件字段，无对应情况时 key 不出现——解析勿假设必存。
+
+## 授权结果判读
+
+收到 `authorization_complete` 即代表**登录成功、token 已写入 `token.json`**——但还要看这几个字段：
+
+| 字段 | 含义 | 处理 |
+|---|---|---|
+| `refresh_token_present: false` | 没拿到 refresh token | 应用未开通 `offline_access`，开通后 `auth logout && auth login` |
+| `missing_scopes` 非空 | 部分申请的 scope 未授予（**warning，不是失败**） | 这些 scope 没在开放平台开通；其余 `granted_scopes` 照常可用 |
+| `granted_scopes` | 实际拿到的 scope | 以此为准，可 `auth check` 复核 |
+
+**补授权（增量）**：`missing_scopes` 非空时，先到飞书开放平台开通这些 scope，再照 CLI 的 hint 执行 `auth login --scope "<缺失的>"` 即可。多次 login 的 scope 在服务端累积，补授只需带缺失的那几个，**不会丢掉**之前已授的，无需重跑全量。
 
 ## 常用命令
 
@@ -70,13 +135,35 @@ python3 -c "import requests; print(requests.get('https://open.feishu.cn/open-api
 
 > 想直接调任意 OpenAPI 而不写 curl？用 `feishu-cli api <method> <path>`（详见 `feishu-cli-schema` skill）。
 
-`auth status -o json` 未登录时会包含：
+### Agent 判读：auth check / auth status 的 JSON 契约
 
-```json
-{"logged_in": false, "identity": "bot", "note": "未登录，当前将使用 App Token"}
+**`auth check --scope "..."`** —— 执行业务前预检某组 scope 够不够。退出码 `0`=满足、非 `0`=缺失或未登录；stdout 出 JSON：
+
+| 字段 | 说明 |
+|---|---|
+| `ok` | `true` 表示所有 required scope 都已授权 |
+| `granted` / `missing` | 已有 / 缺失的 scope 列表 |
+| `error` | 仅失败时出现：`not_logged_in`（没登录）/ `token_expired`（access + refresh 都失效） |
+| `suggestion` | `ok=false` 时给出的修复命令（已拼好 `auth login --scope`） |
+
+```bash
+# 满足才往下执行业务命令
+feishu-cli auth check --scope "search:docs:read" && feishu-cli search docs --query "..."
 ```
 
-AI Agent 判断是否满足某个任务，优先用 `auth check`，不要只看 `auth status`。
+**`auth status -o json`** —— 看本地 token 现状（默认不连服务端，加 `--verify` 才在线核验）。已登录时关键字段：
+
+| 字段 | 说明 |
+|---|---|
+| `token_status` | `valid` / `needs_refresh`（access 过期但 refresh 可用，下次调用自动刷新）/ `expired` |
+| `health` | `healthy` / `missing_refresh_token`（没拿到 refresh，对应未开 `offline_access`）/ `needs_relogin`（refresh 也过期） |
+| `refresh_token_present` | 是否拿到 refresh token |
+| `cached_user.open_id` / `.name` | **当前登录的是谁**——需要本人 open_id（发消息给自己、查自己任务）时从这里取 |
+| `verified` / `verify_error` | 仅 `--verify`：在线调 `user_info` 核验 token 是否仍被服务端接受 |
+
+未登录时返回 `{"logged_in": false, "identity": "bot", "note": "..."}`。
+
+> 判断"任务能不能干"优先用 `auth check`（按 scope 精确判定）；`auth status` 看整体健康度和当前身份。下面「排错」表的状态值即来自这两个命令（`auth check` 的 `error` / `auth status` 的 `health`）。
 
 ## Token 解析策略
 
@@ -113,7 +200,7 @@ CLI 把命令分成三类，对应 `cmd/utils.go` 里三个 helper：
 | `search docs / messages / apps` | `search:docs:read` / `search:message` |
 | `msg pin/unpin/pins` | `im:message.pins` |
 | `msg reaction add/remove/list` | `im:message.reactions` |
-| `msg search-chats` | `im:chat:readonly` |
+| `msg search-chats` | `im:chat:read` |
 | `msg flag create/cancel/list` | `im:feed.flag:read/write` |
 | `chat get/update/delete`、`chat member list/add/remove` | `im:chat:*`、`im:chat.members:*` |
 | `approval task query/approve/reject/transfer` + `instance get/cancel/cc` | `approval:task` / `approval:instance:*` |
@@ -130,14 +217,15 @@ CLI 把命令分成三类，对应 `cmd/utils.go` 里三个 helper：
 
 ## 业务域登录
 
+`--domain` 可重复或逗号分隔。可选域：`approval attendance bitable calendar chat contact doc_access docs drive event im mail minutes search sheets slides task vc whiteboard wiki`，或 `all`。
+
 ```bash
-feishu-cli auth login --domain search --recommend
-feishu-cli auth login --domain chat --recommend
-feishu-cli auth login --domain vc --recommend
-feishu-cli auth login --domain mail --recommend
+feishu-cli auth login --domain search --recommend                # 单域
+feishu-cli auth login --domain vc --domain minutes --recommend   # 多域
+feishu-cli auth login --recommend                                # 全部域（等价 --domain all --recommend）
 ```
 
-多域可以显式传 scope；最终以 `auth check --scope` 结果为准。
+`--scope` 与 `--domain/--recommend` 互斥；最终以 `auth check --scope` 结果为准。
 
 ## 排错
 
@@ -231,6 +319,7 @@ profile 名校验规则 `[A-Za-z0-9_-]{1,64}`（禁止 `.` / `..` / `profiles` /
 ## Agent 约定
 
 1. 执行业务前先 `auth check --scope`，缺什么报什么。
-2. 登录用 `--json` 事件流，把 `verification_uri_complete` 给用户。
-3. 不把 `user_access_token` 写入文档、代码或日志。
-4. 错误信息明确指向 scope/token 时直接 `auth check`；只有错误不明确（"突然不工作"/网络异常）才用 `doctor` 缩小问题面，不要混用。
+2. 登录优先用**两步模式**（`--no-wait --json` 拿链接 → 用户授权后 `--device-code --json` 续轮询）；能开后台任务时也可 `--json` 阻塞 + `run_in_background`。把 `verification_uri_complete` 原样发给用户，不改写 URL。
+3. 授权成功后读 `authorization_complete` 的 `missing_scopes`：非空只是 warning，开通后按需补授（增量授权，补缺失的几个即可，不会丢已授 scope）。
+4. 不把 `user_access_token` / `device_code` 写入文档、代码或日志。
+5. 错误信息明确指向 scope/token 时直接 `auth check`；只有错误不明确（"突然不工作"/网络异常）才用 `doctor` 缩小问题面，不要混用。
