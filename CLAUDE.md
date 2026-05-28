@@ -326,7 +326,7 @@ FEISHU_APP_ID=cli_对外共享App FEISHU_APP_SECRET=xxx feishu-cli <命令> --as
 `feishu-cli chat member list/add/remove` 已支持 `--as bot|user|auto`，外部群推荐用 `--as bot`。
 完整路径与排错见 `skills/feishu-cli-chat/references/external-chat.md`。
 
-> 不受外部群限制的：`msg history`、`msg search-chats`、`msg send/reply`、`chat list/search` 等"消息侧"和"列表侧"API 都可以正常调。受限的是"群内信息/成员/配置"侧。
+> 不受外部群限制的：`msg history`、`msg search-chats`、`msg send/reply` 等"消息侧"和"列表侧"API 都可以正常调。受限的是"群内信息/成员/配置"侧。
 
 ## 已知问题
 

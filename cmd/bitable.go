@@ -35,7 +35,7 @@ var bitableCmd = &cobra.Command{
   feishu-cli bitable create --name "项目管理"
   feishu-cli bitable table list --base-token bscnxxxx
   feishu-cli bitable record list --base-token bscnxxxx --table-id tblxxx
-  feishu-cli bitable view set-sort --base-token bscnxxxx --table-id tblxxx --view-id viewxxx --config '{"sort_info":[{"field_id":"fld1","desc":false}]}'`,
+  feishu-cli bitable view view-sort-set --base-token bscnxxxx --table-id tblxxx --view-id viewxxx --config '[{"field_id":"fld1","desc":false}]'`,
 }
 
 func init() {
