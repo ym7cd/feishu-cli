@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
 )
@@ -195,7 +194,8 @@ func GetBlock(documentID string, blockID string, userAccessToken ...string) (*la
 	return resp.Data.Block, nil
 }
 
-// CreateBlock creates a new block under a parent block
+// CreateBlock creates a new block under a parent block.
+// 受单文档 3 QPS 写限制：调用 SDK 之前先过 docWriteLimiter（issue #159）。
 func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, index int, userAccessToken ...string) ([]*larkdocx.Block, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -212,6 +212,9 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 			Build()).
 		Build()
 
+	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+		return nil, nil, fmt.Errorf("等待文档写入配额失败: %w", err)
+	}
 	resp, err := client.Docx.DocumentBlockChildren.Create(Context(), req, UserTokenOption(firstString(userAccessToken))...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("创建块失败: %w", err)
@@ -225,7 +228,9 @@ func CreateBlock(documentID string, blockID string, children []*larkdocx.Block, 
 	return resp.Data.Children, headers, nil
 }
 
-// UpdateBlock updates an existing block
+// UpdateBlock updates an existing block.
+// 受单文档 3 QPS 写限制：调用 SDK 之前先过 docWriteLimiter（issue #159）。
+// InsertTableRow/InsertTableColumn/Delete/MergeTableCells 等都委托到本函数，因此自动受限。
 func UpdateBlock(documentID string, blockID string, updateContent any, userAccessToken ...string) (http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
@@ -250,6 +255,9 @@ func UpdateBlock(documentID string, blockID string, updateContent any, userAcces
 		UpdateBlockRequest(&updateBody).
 		Build()
 
+	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+		return nil, fmt.Errorf("等待文档写入配额失败: %w", err)
+	}
 	resp, err := client.Docx.DocumentBlock.Patch(Context(), req, UserTokenOption(firstString(userAccessToken))...)
 	if err != nil {
 		return nil, fmt.Errorf("更新块失败: %w", err)
@@ -273,7 +281,8 @@ func ReplaceImage(documentID, imageBlockID, fileToken string, userAccessToken ..
 	}, userAccessToken...)
 }
 
-// DeleteBlocks deletes child blocks from a parent block by index range
+// DeleteBlocks deletes child blocks from a parent block by index range.
+// 受单文档 3 QPS 写限制：调用 SDK 之前先过 docWriteLimiter（issue #159）。
 // startIndex is the starting index (0-based), endIndex is exclusive
 func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex int, userAccessToken ...string) (http.Header, error) {
 	client, err := GetClient()
@@ -291,6 +300,9 @@ func DeleteBlocks(documentID string, blockID string, startIndex int, endIndex in
 			Build()).
 		Build()
 
+	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+		return nil, fmt.Errorf("等待文档写入配额失败: %w", err)
+	}
 	resp, err := client.Docx.DocumentBlockChildren.BatchDelete(Context(), req, UserTokenOption(firstString(userAccessToken))...)
 	if err != nil {
 		return nil, fmt.Errorf("删除块失败: %w", err)
@@ -318,11 +330,13 @@ type BatchUpdateBlocksResult struct {
 	DocumentRevision int      `json:"document_revision_id"`
 }
 
-// BatchUpdateBlocks batch updates blocks in a document
-func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateBlocksOptions) (*BatchUpdateBlocksResult, error) {
+// BatchUpdateBlocks batch updates blocks in a document.
+// 受单文档 3 QPS 写限制：调用 SDK 之前先过 docWriteLimiter（issue #159）。
+// 返回 http.Header 让 retry 层拿到 x-ogw-ratelimit-reset，做精确退避而非随机 jitter。
+func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateBlocksOptions) (*BatchUpdateBlocksResult, http.Header, error) {
 	client, err := GetClient()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Default values
@@ -336,7 +350,7 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 	// Parse requests
 	var requests []*larkdocx.UpdateBlockRequest
 	if err := json.Unmarshal([]byte(requestsJSON), &requests); err != nil {
-		return nil, fmt.Errorf("解析请求 JSON 失败: %w", err)
+		return nil, nil, fmt.Errorf("解析请求 JSON 失败: %w", err)
 	}
 
 	reqBuilder := larkdocx.NewBatchUpdateDocumentBlockReqBuilder().
@@ -351,13 +365,17 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 		reqBuilder.ClientToken(opts.ClientToken)
 	}
 
+	if err := AcquireDocWriteSlot(Context(), documentID); err != nil {
+		return nil, nil, fmt.Errorf("等待文档写入配额失败: %w", err)
+	}
 	resp, err := client.Docx.DocumentBlock.BatchUpdate(Context(), reqBuilder.Build(), UserTokenOption(opts.UserAccessToken)...)
 	if err != nil {
-		return nil, fmt.Errorf("批量更新块失败: %w", err)
+		return nil, nil, fmt.Errorf("批量更新块失败: %w", err)
 	}
 
+	headers := resp.ApiResp.Header
 	if !resp.Success() {
-		return nil, fmt.Errorf("批量更新块失败: code=%d, msg=%s", resp.Code, resp.Msg)
+		return nil, headers, fmt.Errorf("批量更新块失败: code=%d, msg=%s", resp.Code, resp.Msg)
 	}
 
 	result := &BatchUpdateBlocksResult{}
@@ -368,7 +386,7 @@ func BatchUpdateBlocks(documentID string, requestsJSON string, opts BatchUpdateB
 	}
 	result.DocumentRevision = IntVal(resp.Data.DocumentRevisionId)
 
-	return result, nil
+	return result, headers, nil
 }
 
 // GetBlockChildren retrieves children of a block (first page only)
@@ -506,7 +524,7 @@ func FillTableCells(documentID string, cellIDs []string, contents []string, user
 		}
 	}
 
-	return fillTableCellsInternal(documentID, cellIDs[:cellCount], cellElements, firstString(userAccessToken))
+	return fillTableCellsInternal(documentID, cellIDs[:cellCount], cellElements, nil, firstString(userAccessToken))
 }
 
 // FillTableCellsRich fills table cells with rich text elements (preserving links, styles, etc.)
@@ -531,12 +549,59 @@ func FillTableCellsRich(documentID string, cellIDs []string, cellElements [][]*l
 		}
 	}
 
-	return fillTableCellsInternal(documentID, cellIDs, merged, firstString(userAccessToken))
+	return fillTableCellsInternal(documentID, cellIDs, merged, nil, firstString(userAccessToken))
 }
 
-// fillTableCellsInternal 是 FillTableCells 和 FillTableCellsRich 的统一实现
-func fillTableCellsInternal(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, userAccessToken string) error {
+// FillTableCellsRichWithMap 是 FillTableCellsRich 的扩展版本，
+// 接受预构建的 cellID -> textBlockID 映射（cmd 层在 import 阶段二开头一次性 GetAllBlocks 后传入），
+// 让单 cell 路径直接走 batch_update，避免逐 cell GetBlockChildren。
+// 当 cellMap == nil 或缺失某个 cellID 时，对应 cell 自动降级到旧路径。
+func FillTableCellsRichWithMap(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, fallbackContents []string, cellMap map[string]string, userAccessToken ...string) error {
+	if len(cellIDs) == 0 {
+		return nil
+	}
+
+	merged := make([][]*larkdocx.TextElement, len(cellIDs))
+	for i := range cellIDs {
+		if i < len(cellElements) && len(cellElements[i]) > 0 {
+			merged[i] = cellElements[i]
+		} else if i < len(fallbackContents) && fallbackContents[i] != "" {
+			content := fallbackContents[i]
+			merged[i] = []*larkdocx.TextElement{
+				{TextRun: &larkdocx.TextRun{Content: &content}},
+			}
+		}
+	}
+
+	return fillTableCellsInternal(documentID, cellIDs, merged, cellMap, firstString(userAccessToken))
+}
+
+// fillBatchSize 是 batch_update 单次请求最多包含的 cell 个数。
+// 飞书官方上限是 200，但每个 update_text_elements 体积可能很大，
+// 加上单文档 3 QPS 限制，30 是经验上的甜蜜点（请求体小、批次粒度细、失败回滚损失小）。
+const fillBatchSize = 30
+
+// fillTableCellsInternal 是 FillTableCells / FillTableCellsRich / FillTableCellsRichWithMap 的统一实现。
+//
+// 改造前（v1.28.x 及以前）：每个 cell 串行 1 次 GetBlockChildren + 1 次 UpdateBlock + throttlePer5 sleep，
+// 120 cells 大约 240 次 API + 20s 节流（issue #159 实测约 69s）。
+//
+// 改造后：
+//  1. 用 splitCellElements 把 cell 分桶为 single-group（占绝大多数）和 multi-group（含 <br/> 等）；
+//  2. single-group 优先走 BatchUpdateBlocks（≤30/批），整批失败时降级 per-cell；
+//  3. multi-group 仍走 fillCellMultiBlocks 旧路径；
+//  4. cellMap 命中时跳过 GetBlockChildren；缺失时自动 fallback；
+//  5. 所有写请求前过 AcquireDocWriteSlot 做文档级 3 QPS 节流，多 worker 共用。
+func fillTableCellsInternal(documentID string, cellIDs []string, cellElements [][]*larkdocx.TextElement, cellMap map[string]string, userAccessToken string) error {
 	const maxRetries = 5
+
+	var singles []singleCellTask
+	type multiTask struct {
+		cellID string
+		groups []cellBlockGroup
+		index  int
+	}
+	var multis []multiTask
 
 	for i, cellID := range cellIDs {
 		var elements []*larkdocx.TextElement
@@ -548,26 +613,126 @@ func fillTableCellsInternal(documentID string, cellIDs []string, cellElements []
 		}
 
 		groups := splitCellElements(elements)
-
-		var err error
 		if len(groups) > 1 {
-			// 多块：删除已有空块后创建多个正确类型的块（支持标题、列表等）
-			err = fillCellMultiBlocks(documentID, cellID, groups, maxRetries, userAccessToken)
-		} else {
-			// 单块：更新已有空块（飞书创建表格时自动生成）
-			err = fillCellSingleBlock(documentID, cellID, elements, maxRetries, userAccessToken)
+			multis = append(multis, multiTask{cellID: cellID, groups: groups, index: i})
+			continue
 		}
-		if err != nil {
-			return fmt.Errorf("填充单元格 %d 失败: %w", i, err)
+		tb := ""
+		if cellMap != nil {
+			tb = cellMap[cellID]
 		}
+		singles = append(singles, singleCellTask{
+			cellID:      cellID,
+			textBlockID: tb,
+			elements:    elements,
+			index:       i,
+		})
+	}
 
-		throttlePer5(i)
+	// 1) single-group：批量优先；缺映射或批量失败时降级 per-cell
+	if err := fillSingleCellsBatched(documentID, singles, maxRetries, userAccessToken); err != nil {
+		return err
+	}
+
+	// 2) multi-group：保留旧路径（element 含 \n 的占比极少）
+	for _, m := range multis {
+		if err := fillCellMultiBlocks(documentID, m.cellID, m.groups, maxRetries, userAccessToken); err != nil {
+			return fmt.Errorf("填充单元格 %d 失败: %w", m.index, err)
+		}
 	}
 
 	return nil
 }
 
-// fillCellSingleBlock 用单个文本块填充单元格（优先更新已有空块）
+// fillSingleCellsBatched 把 single-group cell 分批走 batch_update；
+// 缺映射或整批失败时退回单 cell 路径，保留旧的 update-first-empty 语义。
+//
+// 限流：每次写 API（BatchUpdateBlocks/UpdateBlock/CreateBlock）在底层会自带 docLimiter，
+// 本函数本身不再 acquire，避免 double。
+func fillSingleCellsBatched(documentID string, tasks []singleCellTask, maxRetries int, userAccessToken string) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	// 分桶：有 textBlockID 走 batch；缺 textBlockID 立即走单 cell 路径
+	batchable, fallbackOnly := partitionSingleCellTasks(tasks)
+
+	for start := 0; start < len(batchable); start += fillBatchSize {
+		end := min(start+fillBatchSize, len(batchable))
+		chunk := batchable[start:end]
+
+		if err := batchUpdateSingleCells(documentID, chunk, maxRetries, userAccessToken); err == nil {
+			continue
+		}
+		// 整批失败：降级 per-cell（fillCellSingleBlock 走底层 UpdateBlock/CreateBlock，自带 acquire）
+		fallbackOnly = append(fallbackOnly, chunk...)
+	}
+
+	for _, t := range fallbackOnly {
+		if err := fillCellSingleBlock(documentID, t.cellID, t.elements, maxRetries, userAccessToken); err != nil {
+			return fmt.Errorf("填充单元格 %d 失败: %w", t.index, err)
+		}
+	}
+	return nil
+}
+
+// partitionSingleCellTasks 把 single-group cell 分为可批量（有 textBlockID）和必须降级（缺映射）两桶。
+// 抽成纯函数便于单测验证分桶逻辑。
+func partitionSingleCellTasks(tasks []singleCellTask) (batchable, fallback []singleCellTask) {
+	for _, t := range tasks {
+		if t.textBlockID != "" {
+			batchable = append(batchable, t)
+		} else {
+			fallback = append(fallback, t)
+		}
+	}
+	return
+}
+
+// singleCellTask 与 fillTableCellsInternal 内的 singleTask 同形，
+// 抽出一个包级类型给 fillSingleCellsBatched / batchUpdateSingleCells 共用，避免函数签名里塞匿名 struct。
+type singleCellTask struct {
+	cellID      string
+	textBlockID string
+	elements    []*larkdocx.TextElement
+	index       int
+}
+
+// batchUpdateSingleCells 调用 BatchUpdateBlocks 一次更新多个 cell 的文本块。
+// 飞书 batch_update 限制：同一 block_id 不能重复出现 —— textBlockID 天然唯一，OK。
+func batchUpdateSingleCells(documentID string, tasks []singleCellTask, maxRetries int, userAccessToken string) error {
+	if len(tasks) == 0 {
+		return nil
+	}
+
+	requests := make([]map[string]any, 0, len(tasks))
+	for _, t := range tasks {
+		requests = append(requests, map[string]any{
+			"block_id":             t.textBlockID,
+			"update_text_elements": map[string]any{"elements": buildElementsJSON(t.elements)},
+		})
+	}
+	payload, err := json.Marshal(requests)
+	if err != nil {
+		return fmt.Errorf("序列化批量更新请求失败: %w", err)
+	}
+
+	cfg := RetryConfig{
+		MaxRetries:       maxRetries,
+		MaxTotalAttempts: maxRetries + 5,
+		RetryOnRateLimit: true,
+	}
+	res := DoVoidWithRetry(func() (http.Header, error) {
+		_, headers, err := BatchUpdateBlocks(documentID, string(payload), BatchUpdateBlocksOptions{
+			UserAccessToken: userAccessToken,
+		})
+		return headers, err
+	}, cfg)
+	return res.Err
+}
+
+// fillCellSingleBlock 用单个文本块填充单元格（优先更新已有空块）。
+// 限流由底层 UpdateBlock / CreateBlock 自动接管，本函数不再 acquire。
 func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextElement, maxRetries int, userAccessToken string) error {
 	retryCfg := RetryConfig{
 		MaxRetries:       maxRetries,
@@ -603,7 +768,8 @@ func fillCellSingleBlock(documentID, cellID string, elements []*larkdocx.TextEle
 	return result.Err
 }
 
-// fillCellMultiBlocks 用多个块填充单元格（支持 bullet/heading/text 混合）
+// fillCellMultiBlocks 用多个块填充单元格（支持 bullet/heading/text 混合）。
+// 限流由底层 UpdateBlock / CreateBlock 自动接管，本函数不再 acquire。
 func fillCellMultiBlocks(documentID, cellID string, groups []cellBlockGroup, maxRetries int, userAccessToken string) error {
 	retryCfg := RetryConfig{
 		MaxRetries:       maxRetries,
@@ -702,8 +868,7 @@ func classifyCellGroup(elements []*larkdocx.TextElement) cellBlockGroup {
 	content := *first.TextRun.Content
 
 	// 无序列表 "- "
-	if strings.HasPrefix(content, "- ") {
-		trimmed := strings.TrimPrefix(content, "- ")
+	if trimmed, ok := strings.CutPrefix(content, "- "); ok {
 		newFirst := cloneTextElement(first)
 		*newFirst.TextRun.Content = trimmed
 		return cellBlockGroup{blockType: blockTypeBullet, elements: append([]*larkdocx.TextElement{newFirst}, elements[1:]...)}
@@ -712,8 +877,7 @@ func classifyCellGroup(elements []*larkdocx.TextElement) cellBlockGroup {
 	// 标题 "### " 等（heading1=3, heading2=4, ..., heading6=8）
 	for level := 6; level >= 1; level-- {
 		prefix := strings.Repeat("#", level) + " "
-		if strings.HasPrefix(content, prefix) {
-			trimmed := strings.TrimPrefix(content, prefix)
+		if trimmed, ok := strings.CutPrefix(content, prefix); ok {
 			newFirst := cloneTextElement(first)
 			*newFirst.TextRun.Content = trimmed
 			return cellBlockGroup{blockType: 2 + level, elements: append([]*larkdocx.TextElement{newFirst}, elements[1:]...)}
@@ -782,13 +946,6 @@ func buildCellUpdateContent(elements []*larkdocx.TextElement) map[string]any {
 		"update_text_elements": map[string]any{
 			"elements": buildElementsJSON(elements),
 		},
-	}
-}
-
-// throttlePer3 每 3 个单元格暂停 500ms，避免触发频率限制
-func throttlePer5(index int) {
-	if index%3 == 2 {
-		time.Sleep(500 * time.Millisecond)
 	}
 }
 

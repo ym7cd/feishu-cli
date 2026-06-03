@@ -68,6 +68,8 @@ func init() {
 	docContentUpdateCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	docContentUpdateCmd.Flags().String("user-access-token", "", "User Access Token")
 	docContentUpdateCmd.Flags().Bool("upload-images", false, "上传 Markdown 中的本地图片")
+	docContentUpdateCmd.Flags().String("table-column-width", "auto",
+		"Markdown 表格列宽策略：auto | fixed | 像素列表如 80,200,*,120（* 表示该列走 auto）")
 	mustMarkFlagRequired(docContentUpdateCmd, "mode")
 }
 
@@ -85,6 +87,11 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 	selWithEllipsis, _ := cmd.Flags().GetString("selection-with-ellipsis")
 	output, _ := cmd.Flags().GetString("output")
 	uploadImages, _ := cmd.Flags().GetBool("upload-images")
+	colWidthRaw, _ := cmd.Flags().GetString("table-column-width")
+	colWidthMode, colWidthValues, errFlag := parseTableColumnWidthFlag(colWidthRaw)
+	if errFlag != nil {
+		return errFlag
+	}
 	userAccessToken := resolveOptionalUserToken(cmd)
 
 	// 解析 Markdown 内容
@@ -100,17 +107,17 @@ func runDocContentUpdate(cmd *cobra.Command, args []string) error {
 
 	switch mode {
 	case "append":
-		return doAppend(documentID, markdownContent, uploadImages, output, userAccessToken)
+		return doAppend(documentID, markdownContent, uploadImages, output, userAccessToken, colWidthMode, colWidthValues)
 	case "overwrite":
-		return doOverwrite(documentID, markdownContent, uploadImages, output, userAccessToken)
+		return doOverwrite(documentID, markdownContent, uploadImages, output, userAccessToken, colWidthMode, colWidthValues)
 	case "replace_range":
-		return doReplaceRange(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken)
+		return doReplaceRange(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken, colWidthMode, colWidthValues)
 	case "replace_all":
-		return doReplaceAll(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken)
+		return doReplaceAll(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken, colWidthMode, colWidthValues)
 	case "insert_before":
-		return doInsertBefore(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken)
+		return doInsertBefore(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken, colWidthMode, colWidthValues)
 	case "insert_after":
-		return doInsertAfter(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken)
+		return doInsertAfter(documentID, markdownContent, selByTitle, selWithEllipsis, uploadImages, output, userAccessToken, colWidthMode, colWidthValues)
 	case "delete_range":
 		return doDeleteRange(documentID, selByTitle, selWithEllipsis, output, userAccessToken)
 	}
@@ -394,8 +401,8 @@ func getPageChildren(documentID, userAccessToken string) ([]*larkdocx.Block, err
 // ============================================================
 
 // doAppend 追加到文档末尾
-func doAppend(documentID, markdown string, uploadImages bool, output, userAccessToken string) error {
-	err := addContentMarkdown(documentID, documentID, markdown, "", uploadImages, -1, output, userAccessToken)
+func doAppend(documentID, markdown string, uploadImages bool, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
+	err := addContentMarkdownWithOptions(documentID, documentID, markdown, "", uploadImages, -1, output, userAccessToken, colWidthMode, colWidthValues)
 	if err != nil {
 		return fmt.Errorf("追加内容失败: %w", err)
 	}
@@ -406,7 +413,7 @@ func doAppend(documentID, markdown string, uploadImages bool, output, userAccess
 }
 
 // doOverwrite 完全覆盖文档内容
-func doOverwrite(documentID, markdown string, uploadImages bool, output, userAccessToken string) error {
+func doOverwrite(documentID, markdown string, uploadImages bool, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
 	// 1. 获取根块，仅需子块 ID 列表（避免获取所有子块的完整内容）
 	rootBlock, err := client.GetBlock(documentID, documentID, userAccessToken)
 	if err != nil {
@@ -421,7 +428,7 @@ func doOverwrite(documentID, markdown string, uploadImages bool, output, userAcc
 	}
 
 	// 3. 创建新内容
-	err = addContentMarkdown(documentID, documentID, markdown, "", uploadImages, -1, output, userAccessToken)
+	err = addContentMarkdownWithOptions(documentID, documentID, markdown, "", uploadImages, -1, output, userAccessToken, colWidthMode, colWidthValues)
 	if err != nil {
 		return fmt.Errorf("写入新内容失败: %w", err)
 	}
@@ -432,7 +439,7 @@ func doOverwrite(documentID, markdown string, uploadImages bool, output, userAcc
 }
 
 // doReplaceRange 按定位替换一段内容
-func doReplaceRange(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken string) error {
+func doReplaceRange(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
 	children, err := getPageChildren(documentID, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("获取文档内容失败: %w", err)
@@ -452,7 +459,7 @@ func doReplaceRange(documentID, markdown, selByTitle, selWithEllipsis string, up
 	}
 
 	// 在删除位置插入新内容
-	err = addContentMarkdown(documentID, documentID, markdown, "", uploadImages, r.startIndex, output, userAccessToken)
+	err = addContentMarkdownWithOptions(documentID, documentID, markdown, "", uploadImages, r.startIndex, output, userAccessToken, colWidthMode, colWidthValues)
 	if err != nil {
 		return fmt.Errorf("插入替换内容失败: %w", err)
 	}
@@ -463,7 +470,7 @@ func doReplaceRange(documentID, markdown, selByTitle, selWithEllipsis string, up
 }
 
 // doReplaceAll 全文查找替换所有匹配
-func doReplaceAll(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken string) error {
+func doReplaceAll(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
 	children, err := getPageChildren(documentID, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("获取文档内容失败: %w", err)
@@ -485,7 +492,7 @@ func doReplaceAll(documentID, markdown, selByTitle, selWithEllipsis string, uplo
 		}
 
 		// 在删除位置插入新内容
-		err = addContentMarkdown(documentID, documentID, markdown, "", uploadImages, r.startIndex, "", userAccessToken)
+		err = addContentMarkdownWithOptions(documentID, documentID, markdown, "", uploadImages, r.startIndex, "", userAccessToken, colWidthMode, colWidthValues)
 		if err != nil {
 			return fmt.Errorf("插入第 %d 个替换内容失败: %w", i+1, err)
 		}
@@ -503,7 +510,7 @@ func doReplaceAll(documentID, markdown, selByTitle, selWithEllipsis string, uplo
 }
 
 // doInsertBefore 在定位内容前插入
-func doInsertBefore(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken string) error {
+func doInsertBefore(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
 	children, err := getPageChildren(documentID, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("获取文档内容失败: %w", err)
@@ -516,7 +523,7 @@ func doInsertBefore(documentID, markdown, selByTitle, selWithEllipsis string, up
 
 	// 取第一个匹配范围，在其前面插入
 	r := ranges[0]
-	err = addContentMarkdown(documentID, documentID, markdown, "", uploadImages, r.startIndex, output, userAccessToken)
+	err = addContentMarkdownWithOptions(documentID, documentID, markdown, "", uploadImages, r.startIndex, output, userAccessToken, colWidthMode, colWidthValues)
 	if err != nil {
 		return fmt.Errorf("插入内容失败: %w", err)
 	}
@@ -527,7 +534,7 @@ func doInsertBefore(documentID, markdown, selByTitle, selWithEllipsis string, up
 }
 
 // doInsertAfter 在定位内容后插入
-func doInsertAfter(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken string) error {
+func doInsertAfter(documentID, markdown, selByTitle, selWithEllipsis string, uploadImages bool, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
 	children, err := getPageChildren(documentID, userAccessToken)
 	if err != nil {
 		return fmt.Errorf("获取文档内容失败: %w", err)
@@ -540,7 +547,7 @@ func doInsertAfter(documentID, markdown, selByTitle, selWithEllipsis string, upl
 
 	// 取第一个匹配范围，在其后面插入
 	r := ranges[0]
-	err = addContentMarkdown(documentID, documentID, markdown, "", uploadImages, r.endIndex, output, userAccessToken)
+	err = addContentMarkdownWithOptions(documentID, documentID, markdown, "", uploadImages, r.endIndex, output, userAccessToken, colWidthMode, colWidthValues)
 	if err != nil {
 		return fmt.Errorf("插入内容失败: %w", err)
 	}

@@ -63,6 +63,11 @@ var addContentCmd = &cobra.Command{
 		index, _ := cmd.Flags().GetInt("index")
 		uploadImages, _ := cmd.Flags().GetBool("upload-images")
 		output, _ := cmd.Flags().GetString("output")
+		colWidthRaw, _ := cmd.Flags().GetString("table-column-width")
+		colWidthMode, colWidthValues, errFlag := parseTableColumnWidthFlag(colWidthRaw)
+		if errFlag != nil {
+			return errFlag
+		}
 		userAccessToken := resolveOptionalUserToken(cmd)
 
 		// Get source from args or flags
@@ -105,7 +110,7 @@ var addContentCmd = &cobra.Command{
 		}
 
 		if contentType == "markdown" {
-			return addContentMarkdown(documentID, blockID, contentData, basePath, uploadImages, index, output, userAccessToken)
+			return addContentMarkdownWithOptions(documentID, blockID, contentData, basePath, uploadImages, index, output, userAccessToken, colWidthMode, colWidthValues)
 		}
 
 		// JSON 模式
@@ -208,12 +213,14 @@ func deleteContainerAutoEmptyBlock(documentID, parentID string, blockType int, u
 	}
 }
 
-// addContentMarkdown 处理 Markdown 模式的内容添加，支持嵌套结构、分批创建、表格 429 重试
-func addContentMarkdown(documentID, blockID, contentData, basePath string, uploadImages bool, index int, output, userAccessToken string) error {
+// addContentMarkdownWithOptions 处理 Markdown 模式的内容添加，支持嵌套结构、分批创建、表格 429 重试。
+// colWidthMode/colWidthValues 来自 --table-column-width flag（见 cmd/table_column_width.go）。
+func addContentMarkdownWithOptions(documentID, blockID, contentData, basePath string, uploadImages bool, index int, output, userAccessToken, colWidthMode string, colWidthValues []int) error {
 	opts := converter.ConvertOptions{
 		DocumentID:   documentID,
 		UploadImages: uploadImages,
 	}
+	applyColumnWidthOptions(&opts, colWidthMode, colWidthValues)
 	conv := converter.NewMarkdownToBlock([]byte(contentData), opts, basePath)
 	result, err := conv.ConvertWithTableData()
 	if err != nil {
@@ -373,7 +380,7 @@ func fillTableWithRetry(documentID, tableBlockID string, td *converter.TableData
 	})
 
 	result := client.DoVoidWithRetry(func() (http.Header, error) {
-		return nil, fillTableWithExtraRows(documentID, tableBlockID, td, userAccessToken, onProgress)
+		return nil, fillTableWithExtraRows(documentID, tableBlockID, td, userAccessToken, onProgress, nil)
 	}, client.RetryConfig{
 		MaxRetries:       5,
 		RetryOnRateLimit: true,
@@ -397,4 +404,6 @@ func init() {
 	addContentCmd.Flags().Bool("upload-images", false, "上传 Markdown 中的本地图片")
 	addContentCmd.Flags().StringP("output", "o", "", "输出格式 (json)")
 	addContentCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文档）")
+	addContentCmd.Flags().String("table-column-width", "auto",
+		"Markdown 表格列宽策略：auto | fixed | 像素列表如 80,200,*,120（仅 markdown 内容类型生效）")
 }

@@ -215,6 +215,7 @@ type tableTask struct {
 	index        int // 序号 (1-based)
 	tableBlockID string
 	tableData    *converter.TableData
+	cellMap      map[string]string // 文档级 cellID->textBlockID 映射，多个 worker 共享只读
 }
 
 // tableResult 表示表格填充的结果
@@ -323,6 +324,11 @@ var importMarkdownCmd = &cobra.Command{
 		tableWorkers, _ := cmd.Flags().GetInt("table-workers")
 		imageWorkers, _ := cmd.Flags().GetInt("image-workers")
 		diagramRetries, _ := cmd.Flags().GetInt("diagram-retries")
+		colWidthRaw, _ := cmd.Flags().GetString("table-column-width")
+		colWidthMode, colWidthValues, err := parseTableColumnWidthFlag(colWidthRaw)
+		if err != nil {
+			return err
+		}
 		output, _ := cmd.Flags().GetString("output")
 		userAccessToken := resolveOptionalUserToken(cmd)
 		var progressOut io.Writer = os.Stdout
@@ -427,7 +433,7 @@ var importMarkdownCmd = &cobra.Command{
 		fmt.Fprintln(progressOut, "=== 阶段 1/3: 创建文档块 ===")
 		phase1Start := time.Now()
 
-		dTasks, tTasks, iTasks, vTasks, err := phase1CreateBlocks(documentID, segments, uploadImages, basePath, stats, verbose, userAccessToken)
+		dTasks, tTasks, iTasks, vTasks, err := phase1CreateBlocks(documentID, segments, uploadImages, basePath, stats, verbose, userAccessToken, colWidthMode, colWidthValues)
 		if err != nil {
 			return err
 		}
@@ -594,6 +600,8 @@ func phase1CreateBlocks(
 	stats *importStats,
 	verbose bool,
 	userAccessToken string,
+	colWidthMode string,
+	colWidthValues []int,
 ) ([]diagramTask, []tableTask, []imageTask, []videoTask, error) {
 	var dTasks []diagramTask
 	var tTasks []tableTask
@@ -611,6 +619,7 @@ func phase1CreateBlocks(
 				UploadImages: uploadImages,
 				DocumentID:   documentID,
 			}
+			applyColumnWidthOptions(&options, colWidthMode, colWidthValues)
 
 			conv := converter.NewMarkdownToBlock([]byte(seg.content), options, basePath)
 			result, err := conv.ConvertWithTableData()
@@ -795,6 +804,23 @@ func phase2ConcurrentProcess(
 	var wg sync.WaitGroup
 	diagramResults := make([]diagramResult, len(dTasks))
 
+	// 表格 cellMap 预热（issue #159）：阶段一已经创建了所有表格 block 与默认空 cell，
+	// 这里一次性拉全文档块树，建立 cellID(BlockType=32) -> textBlockID(children[0]) 映射，
+	// 多个 table worker 只读共享，避免逐 cell 调 GetBlockChildren。
+	// 失败不致命：tTasks 留空 cellMap 时，FillTableCellsRichWithMap 自动降级到旧路径。
+	if len(tTasks) > 0 {
+		if cellMap, err := buildCellTextBlockMap(documentID, userAccessToken); err == nil {
+			for i := range tTasks {
+				tTasks[i].cellMap = cellMap
+			}
+			if verbose {
+				stats.progressf("[阶段2] 预热 cellMap: %d cells\n", len(cellMap))
+			}
+		} else if verbose {
+			stats.progressf("[阶段2] cellMap 预热失败，降级逐 cell 路径: %v\n", err)
+		}
+	}
+
 	// 图表信号量
 	diagramSem := make(chan struct{}, diagramWorkers)
 	// 表格信号量
@@ -969,6 +995,35 @@ func processDiagramTask(task diagramTask, maxRetries int, verbose bool, userAcce
 	return diagramResult{task: task, success: false, err: result.Err, retries: retries}
 }
 
+// buildCellTextBlockMap 拉一次全文档块树，把 BlockType==32（TableCell）的
+// cellID -> 默认空 text 块 ID（Children[0]）建成只读映射，供 phase2 多个 table worker
+// 共享。返回的 map 在 import 流程内只读，调用方不要改。
+//
+// 设计权衡：单次 GetAllBlocksWithToken 的成本是 ceil(blocks/500) 次 List，
+// 远低于逐 cell 调 GetBlockChildren 的 N 次往返；阶段一刚跑完 CreateBlock，
+// 飞书侧块树已就绪，无一致性风险。
+func buildCellTextBlockMap(documentID, userAccessToken string) (map[string]string, error) {
+	blocks, err := client.GetAllBlocksWithToken(documentID, userAccessToken)
+	if err != nil {
+		return nil, err
+	}
+	cellMap := make(map[string]string, len(blocks)/4) // cell 占比经验值
+	for _, b := range blocks {
+		if b == nil || b.BlockType == nil || *b.BlockType != int(converter.BlockTypeTableCell) {
+			continue
+		}
+		if len(b.Children) == 0 {
+			continue
+		}
+		cellID := client.StringVal(b.BlockId)
+		if cellID == "" {
+			continue
+		}
+		cellMap[cellID] = b.Children[0]
+	}
+	return cellMap, nil
+}
+
 // processTableTask 处理单个表格填充任务（带重试）
 func processTableTask(documentID string, task tableTask, verbose bool, userAccessToken string) tableResult {
 	extraRowCount := len(task.tableData.ExtraRowContents)
@@ -992,7 +1047,7 @@ func processTableTask(documentID string, task tableTask, verbose bool, userAcces
 	}
 
 	result := client.DoVoidWithRetry(func() (http.Header, error) {
-		return nil, fillTableWithExtraRows(documentID, task.tableBlockID, task.tableData, userAccessToken, onProgress)
+		return nil, fillTableWithExtraRows(documentID, task.tableBlockID, task.tableData, userAccessToken, onProgress, task.cellMap)
 	}, client.RetryConfig{
 		MaxRetries:       maxRetries,
 		RetryOnRateLimit: true,
@@ -1548,6 +1603,8 @@ func init() {
 	importMarkdownCmd.Flags().Int("image-workers", 2, "图片并发上传数 (API 限制 5 QPS)")
 	importMarkdownCmd.Flags().Int("diagram-retries", 10, "图表最大重试次数")
 	importMarkdownCmd.Flags().String("user-access-token", "", "User Access Token（可选，使用用户身份访问文档）")
+	importMarkdownCmd.Flags().String("table-column-width", "auto",
+		"Markdown 表格列宽策略：auto（按内容启发式）| fixed（按文档宽度均分）| 像素列表如 80,200,*,120（* 表示该列走 auto）")
 	// 向后兼容别名
 	importMarkdownCmd.Flags().Int("mermaid-workers", 5, "图表并发导入数 (--diagram-workers 别名)")
 	importMarkdownCmd.Flags().Int("mermaid-retries", 10, "图表最大重试次数 (--diagram-retries 别名)")

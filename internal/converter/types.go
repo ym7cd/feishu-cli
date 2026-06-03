@@ -108,6 +108,16 @@ type ConvertOptions struct {
 	ExpandMentions      bool   // 导出时展开 @用户为友好格式（默认 false，CLI 默认 true）
 	ExpandSheets        bool   // 导出时展开内嵌电子表格为 Markdown 表格
 	SheetDataProvider   SheetDataProvider
+
+	// ColumnWidthMode 控制 Markdown 表格转飞书表格时的列宽策略：
+	//   - "" 或 "auto"：保留默认启发式（按字符宽度估算，CJK 14px / ASCII 8px）
+	//   - "fixed"：所有列等分 defaultDocWidth/cols 像素
+	//   - "explicit"：使用 ColumnWidthValues 指定每列宽度（不足补 minColumnWidth，超出截断）
+	// 单表注释 <!-- feishu-colwidth: ... --> 优先级最高，可临时覆盖该字段。
+	ColumnWidthMode string
+	// ColumnWidthValues 仅在 ColumnWidthMode == "explicit" 时使用。
+	// 单位：像素整数；0 表示该列走 auto；最终结果会过 [minColumnWidth, maxColumnWidth] clamp。
+	ColumnWidthValues []int
 }
 
 // ConvertResult contains converted blocks and table data

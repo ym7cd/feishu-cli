@@ -15,11 +15,16 @@ import (
 //
 // 被 doc import（processTableTask）和 doc add/content-update（fillTableWithRetry）共用。
 // onAppendProgress 可为 nil；由调用方决定如何展示（syncPrintf / fmt.Printf）。
+//
+// cellMap 为可选的 cellID -> textBlockID 映射（cmd 层在 import 阶段二开头一次性
+// GetAllBlocksWithToken 构建，三个 table worker 共享）。命中时跳过 GetBlockChildren，
+// 直接走 batch_update 路径；缺映射或追加行新增的 cell 自动降级到旧路径。
 func fillTableWithExtraRows(
 	documentID, tableBlockID string,
 	td *converter.TableData,
 	userAccessToken string,
 	onAppendProgress client.InsertRowProgressFunc,
+	cellMap map[string]string,
 ) error {
 	if td.Cols <= 0 {
 		return fmt.Errorf("表格列数 Cols=%d 不合法", td.Cols)
@@ -52,7 +57,7 @@ func fillTableWithExtraRows(
 	}
 	initialCellIDs := cellIDs[:initialCellCount]
 	if len(td.CellElements) > 0 {
-		if err := client.FillTableCellsRich(documentID, initialCellIDs, td.CellElements, td.CellContents, userAccessToken); err != nil {
+		if err := client.FillTableCellsRichWithMap(documentID, initialCellIDs, td.CellElements, td.CellContents, cellMap, userAccessToken); err != nil {
 			return fmt.Errorf("填充初始内容失败: %w", err)
 		}
 	} else if err := client.FillTableCells(documentID, initialCellIDs, td.CellContents, userAccessToken); err != nil {
@@ -64,6 +69,9 @@ func fillTableWithExtraRows(
 	}
 
 	// 扁平化扩展行内容 + 填充
+	// 注意：追加行新增的 cell 不在 cellMap（map 是阶段一创建表后构建的，新行 cell 不在其中），
+	// FillTableCellsRichWithMap 内部对缺映射的 cell 自动降级到 GetBlockChildren 路径，
+	// 行为与改造前一致，只是少了 batch 加速。
 	extraContents, extraElements := flattenExtraRows(td)
 	newCellIDs := cellIDs[initialCellCount:]
 	if len(newCellIDs) < len(extraContents) {
@@ -72,7 +80,7 @@ func fillTableWithExtraRows(
 	newCellIDs = newCellIDs[:len(extraContents)]
 
 	if len(extraElements) > 0 {
-		if err := client.FillTableCellsRich(documentID, newCellIDs, extraElements, extraContents, userAccessToken); err != nil {
+		if err := client.FillTableCellsRichWithMap(documentID, newCellIDs, extraElements, extraContents, nil, userAccessToken); err != nil {
 			return fmt.Errorf("填充扩展行失败: %w", err)
 		}
 		return nil

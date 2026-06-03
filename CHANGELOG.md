@@ -6,6 +6,40 @@
 
 ## [Unreleased]
 
+### 性能与功能 — 表格批量填充提速 25-30x，列宽可自定义
+
+**① 表格填充 batch_update 优化（issue #159）**
+
+`doc import` / `doc add` / `doc content-update` 三个入口的 Markdown 表格填充重写：
+
+- 阶段二开始预热文档级 cellID → textBlockID 映射（一次 `GetAllBlocks` 替代 N 次 `GetBlockChildren`）
+- single-group cell（占绝大多数）走 `batch_update` API，每批 ≤30 个一次写入；多块 cell（含 `<br/>`）保留原 update-first-empty 路径作为兜底
+- 整批失败自动降级 per-cell，避免一颗坏 cell 污染整张表
+- 新增文档级 3 QPS 写限流器（`docWriteLimiter`），下沉到 `CreateBlock`/`UpdateBlock`/`DeleteBlocks`/`BatchUpdateBlocks` 4 个底层写函数，所有间接调用者（`InsertTableRow`/`AppendTableRows`/`ReplaceImage` 等）自动受限，避免触发 99991400
+
+**典型场景**：4 张 6×8 表（共 ~120 cells）从 ~70s 降到 ~3s（25-30x），与 issue #159 实测数据吻合。`BatchUpdateBlocks` 改为返回 `(*BatchUpdateBlocksResult, http.Header, error)`，让 retry 层拿到 `x-ogw-ratelimit-reset` 做精确退避。
+
+**② 表格列宽自定义（issue #156）**
+
+之前列宽完全由内容启发式计算（中文 14px / 英文 8px），用户无法干预。现在两种方式可覆盖：
+
+- **紧邻表格上方注释**（推荐，单表精控）：
+
+  ```markdown
+  <!-- feishu-colwidth: 80,200,120,* -->
+  | 列1 | 列2 | 列3 | 列4 |
+  |-----|-----|-----|-----|
+  ```
+
+  单位支持 `px` 整数、`30%` 百分比（按 700px 文档宽度换算）、`*` 或空（该列走 auto）。注释独占一行才生效；中间夹任何块（heading/段落/列表/代码块/link-ref-def）会清空注释，避免悬浮注释污染下游表格。
+
+- **CLI flag 全局覆盖**：`--table-column-width=auto|fixed|N1,N2,...`
+  - `auto`（默认）：保留启发式
+  - `fixed`：所有列等分文档宽度
+  - 像素列表（如 `80,200,*,120`）：显式声明每列宽度，`*` 表示该列走 auto
+
+**优先级**：注释 > CLI flag explicit > flag fixed > auto。所有路径最终都会过 `[80, 400]` 像素 clamp。注释/flag 列宽数量与表实际列数不一致时，stderr 打印警告（多写截断、少写补 auto）。
+
 ### 新增 — 消息搜索 enrich / 多维表格补全 / 输出工程化（jq + 表格/CSV）
 
 进一步对齐 lark-cli，补齐三类此前需回退 lark-cli 的场景。

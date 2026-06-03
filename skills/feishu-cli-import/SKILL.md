@@ -27,7 +27,7 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 2. **Mermaid/PlantUML → 飞书画板**：`mermaid`/`plantuml`/`puml` 代码块自动转换为飞书画板
 3. **图表故障容错**：语法错误自动降级为代码块展示，服务端错误自动重试（默认最多 10 次，可用 `--diagram-retries` 调整）
 4. **大表格智能处理**：行 > 9 时创建 9 行初始表 + `insert_table_row` API 追加到同一 block（视觉连贯，每行约 1 次 API 往返；verbose 模式 ≥ 5 行打印进度）；列 > 9 按列组拆分保留首列作为标识
-5. **表格列宽自动计算**：根据内容智能计算列宽（中英文区分，最小 80px，最大 400px）
+5. **表格列宽**：默认按内容启发式（中文 14px / 英文 8px，最小 80px，最大 400px）。可通过紧邻表格上方注释 `<!-- feishu-colwidth: 80,200,*,30% -->`（单位 px / 百分比 / `*` 走 auto）或 CLI flag `--table-column-width=auto|fixed|N1,N2,...` 全局覆盖；注释优先级高于 flag
 6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 10 次
 7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
 
@@ -112,6 +112,7 @@ feishu-cli doc import ./document.md --title "带图文档" --upload-images
 | --folder, -f | 新文档的目标文件夹 Token | 根目录 |
 | --diagram-workers | 图表 (Mermaid/PlantUML) 并发导入数 | 5 |
 | --table-workers | 表格并发填充数 | 3 |
+| --table-column-width | 列宽策略：`auto` / `fixed` / `N1,N2,...`（像素列表，`*` 走 auto） | auto |
 | --diagram-retries | 图表最大重试次数 | 10 |
 | --verbose | 显示详细进度信息 | 否 |
 

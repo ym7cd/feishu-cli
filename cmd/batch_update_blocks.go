@@ -77,7 +77,7 @@ var batchUpdateBlocksCmd = &cobra.Command{
 			UserAccessToken:    userAccessToken,
 		}
 
-		result, err := client.BatchUpdateBlocks(documentID, requestsJSON, opts)
+		result, _, err := client.BatchUpdateBlocks(documentID, requestsJSON, opts)
 		if err != nil {
 			return err
 		}

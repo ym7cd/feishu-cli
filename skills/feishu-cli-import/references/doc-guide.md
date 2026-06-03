@@ -63,6 +63,17 @@ Bob --> Alice: Hi
 - 行数 > 9：CLI 用 `insert_table_row` 追加到同一个 table block。
 - 列数 > 9：按列组拆分，保留首列用于识别行。
 - 数据表、长表和需要排序筛选的内容优先生成 Sheet：`feishu-cli sheet import-md`。
+- **自定义列宽**（v1.29+）：默认按内容启发式（中文 14px / 英文 8px / 最小 80 / 最大 400）。需要精控时两种方式可覆盖：
+  - 紧邻表格上方注释（**注释必须独占一行**，中间夹任何 heading/段落/列表/代码块/link-ref-def 都会丢弃注释）：
+    ```markdown
+    <!-- feishu-colwidth: 80,200,*,30% -->
+    | 列1 | 列2 | 列3 | 列4 |
+    |-----|-----|-----|-----|
+    ```
+    单位：`px` 整数、`30%` 百分比（按 700px 文档宽度换算）、`*` 或空（该列走 auto）
+  - CLI flag 全局覆盖：`feishu-cli doc import doc.md --table-column-width=80,200,*,120`
+  - 优先级：注释 > flag explicit > flag fixed > auto；最终都过 `[80, 400]` 像素 clamp
+  - 列宽数量与表实际列数不一致时 stderr 打印警告（多写截断、少写补 auto）
 
 ## Callout
 

@@ -5,8 +5,10 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	larkdocx "github.com/larksuite/oapi-sdk-go/v3/service/docx/v1"
@@ -146,6 +148,167 @@ func calculateColumnWidths(headerContents []string, dataRows [][]string, cols in
 	return maxWidths
 }
 
+// colWidthCommentRe 匹配独占一行的 `<!-- feishu-colwidth: 80, 200, *, 30% -->` 注释。
+// 单元支持：纯整数（像素，含负数 → parseColWidthList 容错为 0/auto）、`N%`（按
+// defaultDocWidth 换算）、`*` 或空（该列走 auto）。
+//
+// 捕获组用 `[^>]*` 而非 `[^-]+`：后者会让含 `-` 的 payload（包括用户笔误的负数）
+// 整体不匹配从而静默丢失，前者把所有非 `>` 字符交给 parseColWidthList 容错处理，
+// 配合 alignAndClampColumnWidths 的 clamp 仍能给出有意义结果，并由 warnColumnWidthMismatch
+// 在长度不匹配时提示。
+var colWidthCommentRe = regexp.MustCompile(`(?s)^\s*<!--\s*feishu-colwidth\s*:\s*([^>]*?)-->\s*$`)
+
+// parseColWidthList 解析逗号分隔的列宽片段。
+// 单元含义：
+//   - 整数 → 像素值
+//   - "N%" → defaultDocWidth * N / 100
+//   - "*" 或空 → 0，调用方应将该列回退到 auto 计算
+//
+// 单位识别失败的片段也返回 0（容错降级到 auto）。
+func parseColWidthList(s string) []int {
+	parts := strings.Split(s, ",")
+	out := make([]int, 0, len(parts))
+	for _, raw := range parts {
+		p := strings.TrimSpace(raw)
+		if p == "" || p == "*" {
+			out = append(out, 0)
+			continue
+		}
+		if rest, ok := strings.CutSuffix(p, "%"); ok {
+			if pct, err := strconv.Atoi(strings.TrimSpace(rest)); err == nil {
+				out = append(out, pct*defaultDocWidth/100)
+				continue
+			}
+			out = append(out, 0)
+			continue
+		}
+		if v, err := strconv.Atoi(p); err == nil {
+			out = append(out, v)
+			continue
+		}
+		out = append(out, 0)
+	}
+	return out
+}
+
+// resolveColumnWidths 综合 pendingColWidth、ConvertOptions、auto 启发式得到最终列宽数组。
+// 优先级：单表注释 > options.ColumnWidthMode == explicit > options.ColumnWidthMode == fixed > auto
+//
+// 所有路径最终都过 [minColumnWidth, maxColumnWidth] clamp，长度严格等于 cols。
+// 注释一旦消费立即清空 pendingColWidth，避免泄漏到下一张表。
+func (c *MarkdownToBlock) resolveColumnWidths(headerContents []string, dataRows [][]string, cols int) []int {
+	if cols <= 0 {
+		return nil
+	}
+
+	// 优先级 1：单表注释
+	if len(c.pendingColWidth) > 0 {
+		raw := c.pendingColWidth
+		c.pendingColWidth = nil // 消费即清空
+		c.warnColumnWidthMismatch("注释", raw, cols)
+		return alignAndClampColumnWidths(raw, headerContents, dataRows, cols)
+	}
+
+	// 优先级 2：CLI flag explicit
+	if c.options.ColumnWidthMode == "explicit" && len(c.options.ColumnWidthValues) > 0 {
+		c.warnColumnWidthMismatch("--table-column-width", c.options.ColumnWidthValues, cols)
+		return alignAndClampColumnWidths(c.options.ColumnWidthValues, headerContents, dataRows, cols)
+	}
+
+	// 优先级 3：CLI flag fixed
+	if c.options.ColumnWidthMode == "fixed" {
+		per := defaultDocWidth / cols
+		widths := make([]int, cols)
+		for i := range widths {
+			widths[i] = per
+		}
+		return clampColumnWidths(widths)
+	}
+
+	// 默认 auto：保留启发式
+	return calculateColumnWidths(headerContents, dataRows, cols)
+}
+
+// warnColumnWidthMismatch 当用户给出的列宽数量与表实际列数不一致时，
+// 向 stderr 打印一行提示。默认开启（这是用户显式输入的列宽，应当被告知是否生效）。
+// 不阻塞流程：长度不足走 auto、超出截断（见 alignAndClampColumnWidths）。
+func (c *MarkdownToBlock) warnColumnWidthMismatch(source string, values []int, cols int) {
+	if len(values) == cols {
+		return
+	}
+	if len(values) > cols {
+		fmt.Fprintf(os.Stderr,
+			"[警告] %s 提供了 %d 个列宽，但表只有 %d 列：尾部 %d 项被截断\n",
+			source, len(values), cols, len(values)-cols)
+	} else {
+		fmt.Fprintf(os.Stderr,
+			"[警告] %s 提供了 %d 个列宽，但表有 %d 列：缺失 %d 列将走 auto 计算\n",
+			source, len(values), cols, cols-len(values))
+	}
+}
+
+// alignAndClampColumnWidths 把用户指定值对齐到目标列数：
+//   - 长度不足：缺位走 auto（按当前列内容的 calculateColumnWidths 取值）
+//   - 长度超出：截断尾部
+//   - 0 占位：该列走 auto
+//   - 非零值：clamp 到 [minColumnWidth, maxColumnWidth]
+func alignAndClampColumnWidths(values []int, headers []string, rows [][]string, cols int) []int {
+	if cols <= 0 {
+		return nil
+	}
+	autoWidths := calculateColumnWidths(headers, rows, cols)
+	out := make([]int, cols)
+	for i := 0; i < cols; i++ {
+		if i < len(values) && values[i] > 0 {
+			out[i] = values[i]
+		} else if i < len(autoWidths) {
+			out[i] = autoWidths[i]
+		} else {
+			out[i] = minColumnWidth
+		}
+		if out[i] < minColumnWidth {
+			out[i] = minColumnWidth
+		}
+		if out[i] > maxColumnWidth {
+			out[i] = maxColumnWidth
+		}
+	}
+	return out
+}
+
+// clampColumnWidths 对所有列宽过 [minColumnWidth, maxColumnWidth] 范围。
+func clampColumnWidths(widths []int) []int {
+	for i := range widths {
+		if widths[i] < minColumnWidth {
+			widths[i] = minColumnWidth
+		}
+		if widths[i] > maxColumnWidth {
+			widths[i] = maxColumnWidth
+		}
+	}
+	return widths
+}
+
+// isTableOrColWidthHTMLBlock 判断节点是否是『可消费 pendingColWidth』的两类节点：
+//   - *east.Table：紧邻其下的表格，会消费 pending
+//   - *ast.HTMLBlock 且原文匹配 colWidthCommentRe：列宽注释本身，会写入 pending
+//
+// 其他任何块（Heading/Paragraph/CodeBlock/FencedCodeBlock/TextBlock/List/Blockquote/ThematicBreak/
+// 普通 HTMLBlock 等）都不应保留 pending，必须在主 walk 入口清空，
+// 否则悬浮注释会污染下游无关表格（review fix-1b 防回归）。
+func (c *MarkdownToBlock) isTableOrColWidthHTMLBlock(n ast.Node) bool {
+	if _, ok := n.(*east.Table); ok {
+		return true
+	}
+	if h, ok := n.(*ast.HTMLBlock); ok {
+		raw := c.getHTMLBlockText(h)
+		if colWidthCommentRe.MatchString(raw) {
+			return true
+		}
+	}
+	return false
+}
+
 // MarkdownToBlock converts Markdown to Feishu blocks
 type MarkdownToBlock struct {
 	source       []byte
@@ -155,6 +318,11 @@ type MarkdownToBlock struct {
 	imageSources []string // 记录每个 Image Block 对应的图片来源路径
 	videoStats   VideoStats
 	videoSources []string // 记录每个视频 File Block 对应的视频来源路径
+
+	// pendingColWidth 暂存最近一条 <!-- feishu-colwidth: ... --> 注释解析出的宽度数组，
+	// 由紧邻其下的 ast.Table 消费一次后清空。0 表示该列走 auto。
+	// 当列数与表实际列数不一致时，不足补 minColumnWidth、超出截断。
+	pendingColWidth []int
 }
 
 // NewMarkdownToBlock creates a new converter
@@ -524,6 +692,17 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 			return ast.WalkContinue, nil
 		}
 
+		// pendingColWidth 守护：注释只对紧邻其下的 Table 生效。
+		// 任何 Document 直接子节点（不是 Document 本身），如果不是 Table 也不是命中
+		// colWidthCommentRe 的 HTMLBlock，都要清空 pending —— 防止悬浮注释跨越
+		// Heading/Paragraph/CodeBlock(缩进)/TextBlock(link-ref-def)/List 等节点
+		// 污染下游表格列宽。
+		if n.Parent() == doc {
+			if !c.isTableOrColWidthHTMLBlock(n) {
+				c.pendingColWidth = nil
+			}
+		}
+
 		switch node := n.(type) {
 		case *ast.Heading:
 			block, err := c.convertHeading(node)
@@ -587,6 +766,15 @@ func (c *MarkdownToBlock) ConvertWithTableData() (*ConvertResult, error) {
 		case *ast.HTMLBlock:
 			// 处理块级 HTML 标签（如 <image/>, <callout>...</callout>）
 			raw := c.getHTMLBlockText(node)
+
+			// 优先匹配 <!-- feishu-colwidth: ... --> 注释，命中后暂存到 pendingColWidth，
+			// 由紧邻其下的 ast.Table 消费一次。其他类型块（含其他 HTMLBlock）已在
+			// walk 入口处统一清空 pending（见上方 isTableOrColWidthHTMLBlock 判断）。
+			if m := colWidthCommentRe.FindStringSubmatch(raw); m != nil {
+				c.pendingColWidth = parseColWidthList(m[1])
+				return ast.WalkSkipChildren, nil
+			}
+
 			tag := ParseHTMLTag(raw)
 			if tag != nil {
 				blocks := c.handleBlockHTMLTag(tag)
@@ -1745,6 +1933,18 @@ func extractColumnElements(rowElements [][]*larkdocx.TextElement, colIndices []i
 	return result
 }
 
+// extractIntColumns 与 extractColumns 同形，用于把列宽数组按列拆分索引切片。
+// 索引越界默认补 0（resolveColumnWidths 会把 0 视作 auto）。
+func extractIntColumns(values []int, colIndices []int) []int {
+	result := make([]int, len(colIndices))
+	for i, idx := range colIndices {
+		if idx < len(values) {
+			result[i] = values[idx]
+		}
+	}
+	return result
+}
+
 func (c *MarkdownToBlock) convertTableWithData(node *east.Table) *ConvertTableResult {
 	results := c.convertTableWithDataMultiple(node)
 	if len(results) == 0 {
@@ -1876,11 +2076,18 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 
 	// 无需列拆分：直接走行拆分逻辑
 	if colGroups == nil {
-		columnWidths := calculateColumnWidths(headerContents, dataRows, cols)
+		columnWidths := c.resolveColumnWidths(headerContents, dataRows, cols)
 		return buildRowSplitResults(cols, headerContents, headerElements, dataRows, dataRowElements, columnWidths, hasHeader)
 	}
 
 	// 需要列拆分：对每个列组提取数据，再分别行拆分
+	// 显式指定的 pendingColWidth 也按列组切片：第 i 组取出 pendingColWidth 中对应索引的子集，
+	// 让用户能一次性写完整张表的宽度，而不必关心列拆分。
+	var splitPendingColWidth []int
+	if len(c.pendingColWidth) > 0 {
+		splitPendingColWidth = c.pendingColWidth
+		c.pendingColWidth = nil // 列拆分场景下消费一次，避免泄漏到下一表
+	}
 	var results []*ConvertTableResult
 	for _, colIndices := range colGroups {
 		groupCols := len(colIndices)
@@ -1903,8 +2110,11 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			groupDataRowElements[i] = extractColumnElements(rowElems, colIndices)
 		}
 
-		// 计算该列组的列宽
-		groupColWidths := calculateColumnWidths(groupHeader, groupDataRows, groupCols)
+		// 计算该列组的列宽：先把 pending 切到本组的索引，再走 resolveColumnWidths
+		if splitPendingColWidth != nil {
+			c.pendingColWidth = extractIntColumns(splitPendingColWidth, colIndices)
+		}
+		groupColWidths := c.resolveColumnWidths(groupHeader, groupDataRows, groupCols)
 
 		// 对该列组执行行拆分
 		results = append(results, buildRowSplitResults(groupCols, groupHeader, groupHeaderElems, groupDataRows, groupDataRowElements, groupColWidths, hasHeader)...)
@@ -2394,15 +2604,39 @@ func hasNonEmptyContent(elements []*larkdocx.TextElement) bool {
 	return false
 }
 
-// getHTMLBlockText 从 ast.HTMLBlock 节点提取原始 HTML 文本
+// getHTMLBlockText 从 ast.HTMLBlock 节点提取原始 HTML 文本。
+//
+// 注意 goldmark 的 ast.HTMLBlock.Lines() 在多行 HTML 注释场景下经常只返回首行
+// （例如 `<!-- feishu-colwidth: 80,200\n-->` 只能拿到 `<!-- feishu-colwidth: 80,200`），
+// 直接用 node.Lines() 拼接会丢掉闭合标签。这里先用 node.Lines() 拿到首行 Start，
+// 再扫源码到 `-->` 闭合标记，确保多行注释被完整还原。
 func (c *MarkdownToBlock) getHTMLBlockText(node *ast.HTMLBlock) string {
-	var buf bytes.Buffer
 	lines := node.Lines()
-	for i := 0; i < lines.Len(); i++ {
-		line := lines.At(i)
-		buf.Write(line.Value(c.source))
+	if lines.Len() == 0 {
+		return ""
 	}
-	return strings.TrimSpace(buf.String())
+	first := lines.At(0)
+	last := lines.At(lines.Len() - 1)
+
+	// 累积 Lines() 给出的所有行（在普通情况下就够用）
+	var buf bytes.Buffer
+	for i := 0; i < lines.Len(); i++ {
+		seg := lines.At(i)
+		buf.Write(seg.Value(c.source))
+	}
+	rawJoined := buf.String()
+
+	// 仅对 HTML 注释做"扩展闭合"：首行有 `<!--` 但累积文本里没 `-->` → 沿源码向后查找 `-->`。
+	// 其他类型的 HTMLBlock（标签型）不做扩展，避免误把后续内容卷进来。
+	if strings.Contains(rawJoined, "<!--") && !strings.Contains(rawJoined, "-->") {
+		closingIdx := strings.Index(string(c.source[last.Stop:]), "-->")
+		if closingIdx >= 0 {
+			extEnd := last.Stop + closingIdx + len("-->")
+			extended := string(c.source[first.Start:extEnd])
+			return strings.TrimSpace(extended)
+		}
+	}
+	return strings.TrimSpace(rawJoined)
 }
 
 // handleInlineHTMLTag 处理行内 HTML 标签，返回对应的 TextElement 列表
