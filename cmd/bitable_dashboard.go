@@ -10,7 +10,7 @@ import (
 // ==================== dashboard 仪表盘 ====================
 var bitableDashboardCmd = &cobra.Command{
 	Use:   "dashboard",
-	Short: "仪表盘管理（list/copy）",
+	Short: "仪表盘管理（list/copy/create/get/update/delete/arrange + block 子组）",
 }
 
 var bitableDashboardListCmd = &cobra.Command{

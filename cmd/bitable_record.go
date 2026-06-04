@@ -13,7 +13,7 @@ import (
 // record 子命令组
 var bitableRecordCmd = &cobra.Command{
 	Use:   "record",
-	Short: "记录管理（list/get/search/upsert/batch-create/batch-update/delete/history-list）",
+	Short: "记录管理（list/get/search/upsert/batch-create/batch-update/batch-get/delete/history-list/share-link/*-attachment）",
 }
 
 func bitableRecordPath(baseToken, tableID string, extra ...string) string {

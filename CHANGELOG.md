@@ -4,7 +4,7 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
-## [Unreleased]
+## [v1.30.0] - 2026-06-04
 
 ### 性能与功能 — 表格批量填充提速 25-30x，列宽可自定义
 
@@ -109,7 +109,12 @@
 
 **Markdown（`markdown`）**
 
-- `markdown diff`（下载远端 Markdown 在本地算 unified diff，不改远端；三模式：远端最新 vs 本地 / 远端某版本 vs 最新 / 版本 A vs 版本 B）
+- `markdown diff`（下载远端 Markdown 在本地算 unified diff，不改远端；三模式：远端最新 vs 本地 / 远端某版本 vs 最新 / 版本 A vs 版本 B）；输出支持 `--format`/`--jq`（`-o json` 作兼容别名），默认仍打印 unified diff 文本
+
+**云盘下载（`drive` / `file` / `msg`）**
+
+- `drive download` / `file download` 支持 User Token 直连下载 + 大文件自动 HTTP Range 分片兜底（突破单次下载大小限制；Bot/Tenant 路径仍保留 100MB 客户端上限）
+- `msg resource-download` 支持 `--user-access-token` 用户身份下载消息图片/文件（可取 Bot 不可见的历史资源），大文件同样自动分片
 
 ## [v1.27.0] - 2026-05-21
 

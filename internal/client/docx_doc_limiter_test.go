@@ -257,8 +257,10 @@ func TestDocxLowLevelWritersAcquireDocWriteSlot(t *testing.T) {
 			continue
 		}
 		body := extractBalancedBraceBody(text[idx+braceStart:])
-		if !strings.Contains(body, "AcquireDocWriteSlot(") {
-			t.Errorf("函数 %q 未调用 AcquireDocWriteSlot；新增写 API 必须先 acquire 文档写配额（issue #159）", sig)
+		// 接受直接 AcquireDocWriteSlot 或经 acquireDocWriteSlotWithTimeout 封装——后者内部仍调
+		// AcquireDocWriteSlot，但拿到 token 后立即 cancel context，避免超大文档导入时驻留大量 5min goroutine。
+		if !strings.Contains(body, "AcquireDocWriteSlot(") && !strings.Contains(body, "acquireDocWriteSlotWithTimeout(") {
+			t.Errorf("函数 %q 未调用文档写限流（AcquireDocWriteSlot / acquireDocWriteSlotWithTimeout）；新增写 API 必须先 acquire 文档写配额（issue #159）", sig)
 		}
 	}
 }

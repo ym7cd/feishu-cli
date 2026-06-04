@@ -132,6 +132,19 @@ func AcquireDocWriteSlot(ctx context.Context, documentID string) error {
 	return v.(*docWriteLimiter).acquire(ctx)
 }
 
+// acquireDocWriteSlotWithTimeout 是 AcquireDocWriteSlot 的便捷封装：用独立的限流排队超时 context
+// 获取写配额，拿到后立即 cancel 释放计时器——避免 ContextWithTimeout 的 goroutine-per-call 模式
+// 在超大文档（大量 per-cell 写抢同一文档配额）导入时短时驻留大量 5 分钟 goroutine。
+// docx.go 的 4 个底层写函数（CreateBlock/UpdateBlock/DeleteBlocks/BatchUpdateBlocks）走这个封装。
+func acquireDocWriteSlotWithTimeout(documentID string) error {
+	if documentID == "" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), DocWriteSlotAcquireTimeout)
+	defer cancel()
+	return AcquireDocWriteSlot(ctx, documentID)
+}
+
 // SetDocWriteQPS 调整后续新建 limiter 的 QPS（已存在的不变）。
 // 仅供测试 / 高级用户使用。传入非正值时无效。
 func SetDocWriteQPS(qps int) {
