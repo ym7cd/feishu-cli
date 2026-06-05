@@ -62,12 +62,11 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 ## 绘制工作流（每张图都照做）
 
 1. **照配方写一页自包含 HTML 到 `/tmp/x.html`**。从 `gallery.md` / `geo-3d.md` 取对应骨架 + 配方；统一深色背景、容器固定高度（如 `#chart{height:360px}`）、`width:100%`、监听 `resize` 调 `chart.resize()`。
-2. **本地浏览器验证它真渲染、真在动——这步不能跳**。iframe 里任何顶层 JS 错误会让整张图**白屏且不报错**（未捕获异常走 pageerror，不进 console），光读代码看不出来。用 `agent-browser`（或 `playwright-cli`）打开 `file:///tmp/x.html`，确认 `#chart canvas`/`svg` 数 > 0、状态提示文本已清空、`console` 无 error，再**截图肉眼确认**。排查白屏见 `references/pitfalls.md`。
+2. **本地浏览器验证它真渲染、真在动——这步不能跳**。iframe 里任何顶层 JS 错误会让整张图**白屏且不报错**（未捕获异常走 pageerror、不进 console），光读代码看不出来。直接跑封装好的验证脚本——它用全新浏览器 session 打开页面、抓 page error / console、数 canvas/svg 节点、截图，并据此给通过/未过判定：
    ```bash
-   agent-browser open "file:///tmp/x.html"; sleep 3   # 地图/CDN 类多等到 4s
-   agent-browser eval 'document.querySelectorAll("#chart canvas").length'   # 应 > 0
-   agent-browser console; agent-browser screenshot /tmp/x.png
+   scripts/verify.sh /tmp/x.html        # 地图/CDN 重的加等待秒数：scripts/verify.sh /tmp/x.html 5
    ```
+   退出码 0 才算初步通过；但「画对没画对、在不在动」机器判不了，**务必再肉眼看它打印的那张截图**。排查白屏见 `references/pitfalls.md`。
 3. **落库**：`feishu-cli doc htmlbox create <doc_id> --html-file /tmp/x.html`。
 4. **改图**：`feishu-cli doc htmlbox update <doc_id> <block_id> --html-file /tmp/x2.html`（block_id 会变，后续用返回的 `new_block_id`）。
 
@@ -94,8 +93,9 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 
 文档要交给用户时：按 `feishu-cli-write` 的 owner 授权流程（`perm add full_access` + 视配置 `perm transfer-owner`），并按全局规则发一张飞书卡片通知。
 
-## 参考文档
+## 参考文档与脚本
 
+- `scripts/verify.sh <html> [等待秒数]` — **落库前验证脚本**（工作流第 2 步用它）：全新 session 打开 → 抓 page error/console → 数 canvas/svg → 截图 → 给通过判定；退出码 0 才算初步通过，仍须肉眼看截图
 - `references/gallery.md` — **主力配方库**：4 种通用骨架（ECharts/Canvas/Three.js/SVG-CSS）+ 按图表类型的可直接用配方
 - `references/geo-3d.md` — 地图 / echarts-gl 3D / Three.js 的完整可跑模板（这几类有 CDN/registerMap/坐标系/着色坑）
 - `references/window-magic.md` — **文档小程序运行时**：`window.magic` 能力配方（用户身份 / 读文档 / 持久化 / 多维表 / AI），含判存兜底范式与活数据 Dashboard、文档内 AI 卡等组合配方

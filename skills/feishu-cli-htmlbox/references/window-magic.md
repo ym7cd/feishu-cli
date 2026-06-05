@@ -42,35 +42,45 @@ if (!m) {
 
 ## 单能力配方
 
+> ⚠ 下面片段都含 `await`，**必须跑在 async 函数里**。普通 `<script>` 顶层直接 `await` 会 `SyntaxError`——而顶层语法错误正是 `pitfalls.md` 第 1 条「整图白屏且不报错」最高频的成因。所以每段都已用 `(async () => { … })()` 包好；若想塞进骨架的 `boot()`，记得把它改成 `async function boot()`。
+
 ### 当前用户身份
 ```js
-var m = window.magic;
-var u = m ? (m.user || (m.getCurrentUserInfo && await m.getCurrentUserInfo())) : { name: '访客' };
-el.textContent = '你好，' + (u && u.name);
-// u.open_id / u.union_id 可用于写多维表人员字段：[{ id: u.open_id }]
+(async () => {
+  var m = window.magic;
+  var u = m ? (m.user || (m.getCurrentUserInfo && await m.getCurrentUserInfo())) : { name: '访客' };
+  el.textContent = '你好，' + (u && u.name);
+  // u.open_id / u.union_id 可用于写多维表人员字段：[{ id: u.open_id }]
+})();
 ```
 
 ### 读当前文档全文（喂给 AI / 统计字数）
 ```js
-var md = window.magic && await window.magic.getDocAsMarkdown();
-el.textContent = md ? ('本文档 ' + md.length + ' 字') : '本地预览无文档内容';
+(async () => {
+  var md = window.magic && await window.magic.getDocAsMarkdown();
+  el.textContent = md ? ('本文档 ' + md.length + ' 字') : '本地预览无文档内容';
+})();
 ```
 
 ### 持久化存储（**替代 localStorage**，见 pitfalls 禁区）
 ```js
-var m = window.magic;
-// 复制传播仍共享 → redis；只想当前块私有 → store。global_* = 所有读者共享
-if (m && m.redis) { await m.redis.set('count', n); n = +(await m.redis.get('count')) || 0; }
-else { n = 0; /* 本地兜底，切勿用 localStorage */ }
+(async () => {
+  var m = window.magic;
+  // 复制传播仍共享 → redis；只想当前块私有 → store。global_* = 所有读者共享
+  if (m && m.redis) { await m.redis.set('count', n); n = +(await m.redis.get('count')) || 0; }
+  else { n = 0; /* 本地兜底，切勿用 localStorage */ }
+})();
 ```
 
 ### AI 调用
 ```js
-var m = window.magic;
-if (m && m.ai) {
-  var r = await m.ai({ system: '你是简洁的助手', user: '一句话总结：' + text });
-  el.textContent = r && r.data && r.data.result;
-} else el.textContent = '（本地预览：AI 不可用）';
+(async () => {
+  var m = window.magic;
+  if (m && m.ai) {
+    var r = await m.ai({ system: '你是简洁的助手', user: '一句话总结：' + text });
+    el.textContent = r && r.data && r.data.result;
+  } else el.textContent = '（本地预览：AI 不可用）';
+})();
 ```
 
 ## 组合配方（杀手级场景）
