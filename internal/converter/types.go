@@ -96,9 +96,13 @@ type SheetDataProvider func(spreadsheetToken, sheetID, userAccessToken string) (
 
 // ConvertOptions holds conversion options
 type ConvertOptions struct {
-	DownloadImages      bool
-	AssetsDir           string
-	UploadImages        bool
+	DownloadImages bool
+	AssetsDir      string
+	UploadImages   bool
+	// EmbedTableImages 为 true 时，Markdown 表格单元格内的图片在转换期被收集到 TableData.CellImages，
+	// 由导入层在表格填充后真正嵌入为单元格内的 Image 子块（issue #164）。为 false 时（如 doc content-update），
+	// 单元格图片降级为占位文本/链接，避免静默丢失。
+	EmbedTableImages    bool
 	DocumentID          string
 	UserAccessToken     string // User Access Token，用于下载图片和画板等需要权限的资源
 	Debug               bool   // 为 true 时，输出下载失败等调试信息到 stderr

@@ -257,31 +257,34 @@ type videoResult struct {
 
 // importStats 记录导入统计信息
 type importStats struct {
-	mu              sync.Mutex
-	progress        io.Writer
-	totalBlocks     int
-	diagramTotal    int
-	diagramSuccess  int
-	diagramFailed   int
-	mermaidCount    int // Mermaid 图表数（用于分类统计）
-	plantumlCount   int // PlantUML 图表数（用于分类统计）
-	svgCount        int // SVG 图表数（用于分类统计）
-	tableTotal      int
-	tableSuccess    int
-	tableFailed     int
-	imageTotal      int
-	imageSuccess    int
-	imageFailed     int
-	imageSkipped    int
-	videoTotal      int
-	videoSuccess    int
-	videoFailed     int
-	videoSkipped    int
-	fallbackSuccess int
-	fallbackFailed  int
-	phase1Duration  time.Duration
-	phase2Duration  time.Duration
-	phase3Duration  time.Duration
+	mu               sync.Mutex
+	progress         io.Writer
+	totalBlocks      int
+	diagramTotal     int
+	diagramSuccess   int
+	diagramFailed    int
+	mermaidCount     int // Mermaid 图表数（用于分类统计）
+	plantumlCount    int // PlantUML 图表数（用于分类统计）
+	svgCount         int // SVG 图表数（用于分类统计）
+	tableTotal       int
+	tableSuccess     int
+	tableFailed      int
+	imageTotal       int
+	imageSuccess     int
+	imageFailed      int
+	imageSkipped     int
+	videoTotal       int
+	videoSuccess     int
+	videoFailed      int
+	videoSkipped     int
+	cellImageTotal   int // 表格单元格内待嵌入图片总数（issue #164，阶段 2.5）
+	cellImageSuccess int
+	cellImageFailed  int
+	fallbackSuccess  int
+	fallbackFailed   int
+	phase1Duration   time.Duration
+	phase2Duration   time.Duration
+	phase3Duration   time.Duration
 }
 
 func (s *importStats) progressf(format string, a ...any) {
@@ -492,6 +495,13 @@ var importMarkdownCmd = &cobra.Command{
 				stats.tableSuccess, stats.tableTotal,
 				mediaInfo)
 
+			// === 阶段 2.5: 表格单元格图片嵌入（issue #164）===
+			// 表格已填充完成（含追加行），此时单元格齐全，按最终单元格顺序为带图单元格建 Image 子块并上传。
+			embedTableCellImages(documentID, tTasks, basePath, imageWorkers, stats, verbose, userAccessToken)
+			if stats.cellImageTotal > 0 {
+				fmt.Fprintf(progressOut, "[阶段2.5] 单元格图片: %d/%d 成功\n\n", stats.cellImageSuccess, stats.cellImageTotal)
+			}
+
 			// === 阶段 3/3: 降级处理 ===
 			if len(failedDiagrams) > 0 {
 				fmt.Fprintf(progressOut, "=== 阶段 3/3: 降级处理 (%d 个) ===\n", len(failedDiagrams))
@@ -511,30 +521,33 @@ var importMarkdownCmd = &cobra.Command{
 
 		if output == "json" {
 			if err := printJSON(map[string]any{
-				"document_id":      documentID,
-				"blocks":           stats.totalBlocks,
-				"diagram_total":    stats.diagramTotal,
-				"diagram_success":  stats.diagramSuccess,
-				"diagram_failed":   stats.diagramFailed,
-				"mermaid_count":    stats.mermaidCount,
-				"plantuml_count":   stats.plantumlCount,
-				"svg_count":        stats.svgCount,
-				"diagram_fallback": stats.fallbackSuccess,
-				"table_total":      stats.tableTotal,
-				"table_success":    stats.tableSuccess,
-				"table_failed":     stats.tableFailed,
-				"image_total":      stats.imageTotal,
-				"image_success":    stats.imageSuccess,
-				"image_failed":     stats.imageFailed,
-				"image_skipped":    stats.imageSkipped,
-				"video_total":      stats.videoTotal,
-				"video_success":    stats.videoSuccess,
-				"video_failed":     stats.videoFailed,
-				"video_skipped":    stats.videoSkipped,
-				"duration_seconds": totalDuration.Seconds(),
-				"phase1_seconds":   stats.phase1Duration.Seconds(),
-				"phase2_seconds":   stats.phase2Duration.Seconds(),
-				"phase3_seconds":   stats.phase3Duration.Seconds(),
+				"document_id":        documentID,
+				"blocks":             stats.totalBlocks,
+				"diagram_total":      stats.diagramTotal,
+				"diagram_success":    stats.diagramSuccess,
+				"diagram_failed":     stats.diagramFailed,
+				"mermaid_count":      stats.mermaidCount,
+				"plantuml_count":     stats.plantumlCount,
+				"svg_count":          stats.svgCount,
+				"diagram_fallback":   stats.fallbackSuccess,
+				"table_total":        stats.tableTotal,
+				"table_success":      stats.tableSuccess,
+				"table_failed":       stats.tableFailed,
+				"image_total":        stats.imageTotal,
+				"image_success":      stats.imageSuccess,
+				"image_failed":       stats.imageFailed,
+				"image_skipped":      stats.imageSkipped,
+				"video_total":        stats.videoTotal,
+				"video_success":      stats.videoSuccess,
+				"video_failed":       stats.videoFailed,
+				"video_skipped":      stats.videoSkipped,
+				"cell_image_total":   stats.cellImageTotal,
+				"cell_image_success": stats.cellImageSuccess,
+				"cell_image_failed":  stats.cellImageFailed,
+				"duration_seconds":   totalDuration.Seconds(),
+				"phase1_seconds":     stats.phase1Duration.Seconds(),
+				"phase2_seconds":     stats.phase2Duration.Seconds(),
+				"phase3_seconds":     stats.phase3Duration.Seconds(),
 			}); err != nil {
 				return err
 			}
@@ -570,6 +583,13 @@ var importMarkdownCmd = &cobra.Command{
 			}
 			if stats.tableTotal > 0 {
 				fmt.Printf("  表格: %d/%d 成功\n", stats.tableSuccess, stats.tableTotal)
+			}
+			if stats.cellImageTotal > 0 {
+				if stats.cellImageFailed > 0 {
+					fmt.Printf("  表格单元格图片: %d/%d 成功 (%d 失败)\n", stats.cellImageSuccess, stats.cellImageTotal, stats.cellImageFailed)
+				} else {
+					fmt.Printf("  表格单元格图片: %d/%d 成功\n", stats.cellImageSuccess, stats.cellImageTotal)
+				}
 			}
 			if stats.diagramTotal > 0 {
 				var diagramDetail string
@@ -616,8 +636,9 @@ func phase1CreateBlocks(
 			}
 
 			options := converter.ConvertOptions{
-				UploadImages: uploadImages,
-				DocumentID:   documentID,
+				UploadImages:     uploadImages,
+				EmbedTableImages: true, // 表格单元格图片真嵌入（issue #164），由阶段 2.5 落库
+				DocumentID:       documentID,
 			}
 			applyColumnWidthOptions(&options, colWidthMode, colWidthValues)
 
@@ -1137,6 +1158,131 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 		syncPrintf("  ✓ 图片 %d 成功 (%s)\n", task.index, task.source)
 	}
 	return imageResult{task: task, success: true}
+}
+
+// embedTableCellImages 在表格填充完成后，把 Markdown 表格单元格内的图片真正嵌入为单元格内的 Image 子块
+// （issue #164）。此时表格已填好（含 insert_table_row 追加的行），单元格齐全。流程：
+//  1. 拉一次全块树，取每个表格块的有序子单元格 ID；
+//  2. 按 TableData.CellImages 的行优先索引对齐到 cellID（数量不齐则跳过该表，避免错位）；
+//  3. 为带图单元格 CreateBlock 一个空 Image 子块，再复用 processImageTask 走「上传媒体→替换 token」三步法。
+//
+// 并发受 imageWorkers 限；CreateBlock / ReplaceImage 均已内置 docWriteLimiter（单文档 3 QPS），无需额外限流。
+// 返回 (待嵌入总数, 成功数)。
+func embedTableCellImages(documentID string, tTasks []tableTask, basePath string, imageWorkers int, stats *importStats, verbose bool, userAccessToken string) {
+	// 是否有任意单元格图片需要处理
+	hasWork := false
+	for _, t := range tTasks {
+		if t.tableData == nil {
+			continue
+		}
+		for _, imgs := range t.tableData.CellImages {
+			if len(imgs) > 0 {
+				hasWork = true
+				break
+			}
+		}
+		if hasWork {
+			break
+		}
+	}
+	if !hasWork {
+		return
+	}
+
+	// 拉一次全块树，建立 blockID -> 有序子块ID 列表（表格块的子块即有序单元格）
+	blocks, err := client.GetAllBlocksWithToken(documentID, userAccessToken)
+	if err != nil {
+		if verbose {
+			stats.progressf("[阶段2.5] 获取块树失败，跳过单元格图片嵌入: %v\n", err)
+		}
+		return
+	}
+	childrenOf := make(map[string][]string, len(blocks))
+	for _, b := range blocks {
+		if b == nil || b.BlockId == nil {
+			continue
+		}
+		childrenOf[client.StringVal(b.BlockId)] = b.Children
+	}
+
+	// 收集工作项：(单元格ID, 图片源)
+	type cellImgWork struct {
+		cellID string
+		source string
+	}
+	var works []cellImgWork
+	for _, t := range tTasks {
+		if t.tableData == nil || len(t.tableData.CellImages) == 0 {
+			continue
+		}
+		cellIDs := childrenOf[t.tableBlockID]
+		if len(cellIDs) != len(t.tableData.CellImages) {
+			// 单元格数与图片索引不一致（理论上不应发生），跳过该表避免把图片塞错单元格
+			if verbose {
+				stats.progressf("  ⚠ 表格 %d 单元格数(%d)与图片索引(%d)不一致，跳过单元格图片嵌入\n",
+					t.index, len(cellIDs), len(t.tableData.CellImages))
+			}
+			continue
+		}
+		for ci, imgs := range t.tableData.CellImages {
+			for _, src := range imgs {
+				works = append(works, cellImgWork{cellID: cellIDs[ci], source: src})
+			}
+		}
+	}
+	if len(works) == 0 {
+		return
+	}
+
+	stats.mu.Lock()
+	stats.cellImageTotal += len(works)
+	stats.mu.Unlock()
+
+	if verbose {
+		stats.progressf("=== 阶段 2.5: 表格单元格图片嵌入 (%d 张, ×%d) ===\n", len(works), imageWorkers)
+	}
+
+	bt := int(converter.BlockTypeImage)
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, imageWorkers)
+	for i, w := range works {
+		wg.Add(1)
+		go func(idx int, w cellImgWork) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			// 步骤 1：在单元格内创建一个空 Image 子块
+			created, _, err := client.CreateBlock(documentID, w.cellID, []*larkdocx.Block{{
+				BlockType: &bt,
+				Image:     &larkdocx.Image{},
+			}}, -1, userAccessToken)
+			if err != nil || len(created) == 0 || created[0].BlockId == nil {
+				syncPrintf("  ✗ 单元格图片 %d 建块失败 (%s): %v\n", idx+1, w.source, err)
+				stats.mu.Lock()
+				stats.cellImageFailed++
+				stats.mu.Unlock()
+				return
+			}
+
+			// 步骤 2/3：复用图片三步法（上传媒体 → 替换 token）
+			res := processImageTask(documentID, imageTask{
+				index:        idx + 1,
+				imageBlockID: client.StringVal(created[0].BlockId),
+				source:       w.source,
+				basePath:     basePath,
+			}, verbose, userAccessToken)
+
+			stats.mu.Lock()
+			if res.success {
+				stats.cellImageSuccess++
+			} else {
+				stats.cellImageFailed++
+			}
+			stats.mu.Unlock()
+		}(i, w)
+	}
+	wg.Wait()
 }
 
 // processVideoTask 处理单个视频上传任务（File Block）

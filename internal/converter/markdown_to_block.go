@@ -316,8 +316,11 @@ type MarkdownToBlock struct {
 	basePath     string // base path for resolving relative image paths
 	imageStats   ImageStats
 	imageSources []string // 记录每个 Image Block 对应的图片来源路径
-	videoStats   VideoStats
-	videoSources []string // 记录每个视频 File Block 对应的视频来源路径
+	// cellImageSink 非 nil 时（仅 EmbedTableImages 下的表格单元格提取期间），
+	// extractChildElements 把可嵌入图片源收集到此处并跳过占位文本，留待导入层在单元格内建 Image 子块。
+	cellImageSink *[]string
+	videoStats    VideoStats
+	videoSources  []string // 记录每个视频 File Block 对应的视频来源路径
 
 	// pendingColWidth 暂存最近一条 <!-- feishu-colwidth: ... --> 注释解析出的宽度数组，
 	// 由紧邻其下的 ast.Table 消费一次后清空。0 表示该列走 auto。
@@ -1865,6 +1868,10 @@ type TableData struct {
 	ExtraRowContents [][]string
 	// ExtraRowElements: 超过 maxTableRows 后需追加的数据行（富文本元素，与 ExtraRowContents 对应）
 	ExtraRowElements [][][]*larkdocx.TextElement
+	// CellImages: 各单元格内待嵌入的图片源（本地路径 / URL），按最终表格单元格行优先顺序对齐
+	// （表头单元格 + 初始数据行单元格 + 追加行单元格，长度 = 最终行数 × 列数）。
+	// 仅在 EmbedTableImages 开启且表内确有单元格图片时非 nil；空表示该格无图。导入层据此在单元格内建 Image 子块。
+	CellImages [][]string
 }
 
 // ConvertTableResult contains both the block and the table data for content filling
@@ -1959,8 +1966,10 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 	var cols int
 	var headerContents []string
 	var headerElements [][]*larkdocx.TextElement
+	var headerImages [][]string                     // 各表头单元格的图片源（与 headerElements 对齐）
 	var dataRows [][]string                         // 纯文本，用于列宽计算
 	var dataRowElements [][][]*larkdocx.TextElement // 富文本元素，保留链接等样式
+	var dataRowImages [][][]string                  // 各数据行各单元格的图片源（与 dataRowElements 对齐）
 	hasHeader := false
 
 	for row := node.FirstChild(); row != nil; row = row.NextSibling() {
@@ -1969,8 +1978,10 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			hasHeader = true
 			for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if tc, ok := cell.(*east.TableCell); ok {
+					elems, imgs := c.extractCellElementsCollectingImages(tc)
 					headerContents = append(headerContents, c.getNodeText(tc))
-					headerElements = append(headerElements, c.extractChildElements(tc))
+					headerElements = append(headerElements, elems)
+					headerImages = append(headerImages, imgs)
 				}
 			}
 		} else if tr, ok := row.(*east.TableRow); ok {
@@ -1979,14 +1990,18 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			}
 			var rowContents []string
 			var rowElements [][]*larkdocx.TextElement
+			var rowImages [][]string
 			for cell := tr.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if tc, ok := cell.(*east.TableCell); ok {
+					elems, imgs := c.extractCellElementsCollectingImages(tc)
 					rowContents = append(rowContents, c.getNodeText(tc))
-					rowElements = append(rowElements, c.extractChildElements(tc))
+					rowElements = append(rowElements, elems)
+					rowImages = append(rowImages, imgs)
 				}
 			}
 			dataRows = append(dataRows, rowContents)
 			dataRowElements = append(dataRowElements, rowElements)
+			dataRowImages = append(dataRowImages, rowImages)
 		}
 	}
 
@@ -2003,7 +2018,8 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 
 	// buildRowSplitResults 对一组列的数据执行行拆分，返回拆分后的子表格列表
 	buildRowSplitResults := func(groupCols int, groupHeader []string, groupHeaderElems [][]*larkdocx.TextElement,
-		groupDataRows [][]string, groupDataRowElements [][][]*larkdocx.TextElement, groupColWidths []int, groupHasHeader bool) []*ConvertTableResult {
+		groupDataRows [][]string, groupDataRowElements [][][]*larkdocx.TextElement, groupColWidths []int, groupHasHeader bool,
+		groupHeaderImages [][]string, groupDataImages [][][]string) []*ConvertTableResult {
 
 		groupTotalRows := len(groupDataRows)
 		if groupHasHeader {
@@ -2071,13 +2087,32 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			td.ExtraRowContents = extraDataRows
 			td.ExtraRowElements = extraDataElements
 		}
+
+		// 组装单元格图片源，顺序与最终表格单元格行优先一致：表头 + 初始数据行 + 追加行。
+		// 仅当确有图片时才挂载（保持无图表格 CellImages 为 nil，导入层据此跳过嵌入）。
+		var cellImages [][]string
+		if groupHasHeader {
+			cellImages = append(cellImages, groupHeaderImages...)
+		}
+		for _, row := range groupDataImages[:initialDataRowCount] {
+			cellImages = append(cellImages, row...)
+		}
+		for _, row := range groupDataImages[initialDataRowCount:] {
+			cellImages = append(cellImages, row...)
+		}
+		for _, imgs := range cellImages {
+			if len(imgs) > 0 {
+				td.CellImages = cellImages
+				break
+			}
+		}
 		return []*ConvertTableResult{{Block: block, TableData: td}}
 	}
 
 	// 无需列拆分：直接走行拆分逻辑
 	if colGroups == nil {
 		columnWidths := c.resolveColumnWidths(headerContents, dataRows, cols)
-		return buildRowSplitResults(cols, headerContents, headerElements, dataRows, dataRowElements, columnWidths, hasHeader)
+		return buildRowSplitResults(cols, headerContents, headerElements, dataRows, dataRowElements, columnWidths, hasHeader, headerImages, dataRowImages)
 	}
 
 	// 需要列拆分：对每个列组提取数据，再分别行拆分
@@ -2105,19 +2140,25 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		// 提取该列组的表头
 		var groupHeader []string
 		var groupHeaderElems [][]*larkdocx.TextElement
+		var groupHeaderImages [][]string
 		if hasHeader {
 			groupHeader = extractColumns(headerContents, colIndices)
 			groupHeaderElems = extractColumnElements(headerElements, colIndices)
+			groupHeaderImages = extractColumnImages(headerImages, colIndices)
 		}
 
 		// 提取该列组的数据行
 		groupDataRows := make([][]string, len(dataRows))
 		groupDataRowElements := make([][][]*larkdocx.TextElement, len(dataRowElements))
+		groupDataImages := make([][][]string, len(dataRowImages))
 		for i, row := range dataRows {
 			groupDataRows[i] = extractColumns(row, colIndices)
 		}
 		for i, rowElems := range dataRowElements {
 			groupDataRowElements[i] = extractColumnElements(rowElems, colIndices)
+		}
+		for i, rowImgs := range dataRowImages {
+			groupDataImages[i] = extractColumnImages(rowImgs, colIndices)
 		}
 
 		// 计算该列组的列宽：先把 pending(注释)/explicit(flag) 切到本组的索引，再走 resolveColumnWidths
@@ -2130,7 +2171,7 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		groupColWidths := c.resolveColumnWidths(groupHeader, groupDataRows, groupCols)
 
 		// 对该列组执行行拆分
-		results = append(results, buildRowSplitResults(groupCols, groupHeader, groupHeaderElems, groupDataRows, groupDataRowElements, groupColWidths, hasHeader)...)
+		results = append(results, buildRowSplitResults(groupCols, groupHeader, groupHeaderElems, groupDataRows, groupDataRowElements, groupColWidths, hasHeader, groupHeaderImages, groupDataImages)...)
 	}
 
 	return results
@@ -2516,6 +2557,34 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 					}
 				}
 			}
+		case *ast.Image:
+			dest := string(n.Destination)
+			// 表格单元格真嵌入场景：收集可嵌入图片源，跳过占位文本（导入层会在单元格内建 Image 子块）。
+			if c.cellImageSink != nil && c.options.UploadImages && isEmbeddableImageDest(dest) {
+				*c.cellImageSink = append(*c.cellImageSink, dest)
+				continue
+			}
+			// 其它场景（非单元格 / 关闭上传 / feishu:// 内部引用）：降级为占位文本或链接，避免静默丢失。
+			alt := c.getNodeText(n)
+			if alt == "" {
+				alt = dest
+			}
+			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
+				elem := createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest)
+				if inUnderline && elem.TextRun != nil {
+					underline := true
+					if elem.TextRun.TextElementStyle == nil {
+						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
+					}
+					elem.TextRun.TextElementStyle.Underline = &underline
+				}
+				elements = append(elements, elem)
+			} else {
+				placeholder := fmt.Sprintf("[Image: %s]", dest)
+				elements = append(elements, &larkdocx.TextElement{
+					TextRun: &larkdocx.TextRun{Content: &placeholder},
+				})
+			}
 		default:
 			// 未知内联节点，递归提取子元素
 			childElems := c.extractChildElements(child)
@@ -2534,6 +2603,45 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 		}
 	}
 	return elements
+}
+
+// isEmbeddableImageDest 判断图片地址能否经图片管线上传嵌入：
+// 空地址、飞书内部媒体引用（feishu://media/，token 绑定源文档不可跨文档复用）不可嵌入；
+// 其余本地路径或 http(s) URL 均可（resolveImageSource 会下载 URL / 读取本地文件）。
+func isEmbeddableImageDest(dest string) bool {
+	if dest == "" {
+		return false
+	}
+	if strings.HasPrefix(dest, "feishu://media/") {
+		return false
+	}
+	return true
+}
+
+// extractCellElementsCollectingImages 提取表格单元格的富文本元素。
+// EmbedTableImages 开启时，临时挂上 cellImageSink，把单元格内可嵌入图片源收集出来（同时 extractChildElements
+// 会跳过这些图片的占位文本），返回 (元素, 图片源列表)；关闭时退化为普通 extractChildElements（图片走占位降级）。
+func (c *MarkdownToBlock) extractCellElementsCollectingImages(node ast.Node) ([]*larkdocx.TextElement, []string) {
+	if !c.options.EmbedTableImages {
+		return c.extractChildElements(node), nil
+	}
+	var sink []string
+	prev := c.cellImageSink
+	c.cellImageSink = &sink
+	elems := c.extractChildElements(node)
+	c.cellImageSink = prev
+	return elems, sink
+}
+
+// extractColumnImages 从一行单元格图片源中按列索引取子集（与 extractColumnElements 同形，用于列拆分）。
+func extractColumnImages(rowImages [][]string, colIndices []int) [][]string {
+	result := make([][]string, len(colIndices))
+	for i, idx := range colIndices {
+		if idx < len(rowImages) {
+			result[i] = rowImages[idx]
+		}
+	}
+	return result
 }
 
 // applyTextStyle 向 TextElement 叠加样式（不覆盖已有样式）
