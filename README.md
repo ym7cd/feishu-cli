@@ -820,8 +820,8 @@ feishu-cli minutes download --minute-tokens obcnxxxx --url-only
 
 # 妙搭（Miaoda）应用 —— 一份 HTML 秒级发布成可分享的飞书应用（需 User Token + spark scope）
 feishu-cli auth login --scope "spark:app:read spark:app:write"      # ⚠️ --scope 是替换不是合并，需并入你完整 scope 串
-feishu-cli apps create --name "我的页面" --app-type HTML            # 拿 app_id（data.app.app_id）
-feishu-cli apps html-publish --app-id app_xxx --path ./dist         # 打包目录发布，返回 data.url（一键部署）
+feishu-cli apps create --name "我的页面" --app-type HTML            # 拿 app_id（jq .app.app_id，CLI 已剥掉 data 外层）
+feishu-cli apps html-publish --app-id app_xxx --path ./dist         # 打包目录发布，返回 url（jq .url，一键部署）
 feishu-cli apps html-publish --app-id app_xxx --path ./index.html   # 单文件形态（文件名必须 index.html）
 feishu-cli apps html-publish --app-id app_xxx --path ./dist --dry-run  # 只看打包清单 + 凭证文件扫描
 feishu-cli apps access-scope-set --app-id app_xxx --scope tenant    # 组织内可见

@@ -1555,21 +1555,8 @@ func (c *MarkdownToBlock) extractParagraphLines(node ast.Node) [][]*larkdocx.Tex
 			return ast.WalkSkipChildren, nil
 
 		case *ast.Image:
-			// 内联图片：网络 URL 转为可点击链接，本地路径转为文本占位符
-			dest := string(child.Destination)
-			alt := c.getNodeText(child)
-			if alt == "" {
-				alt = dest
-			}
-			var elem *larkdocx.TextElement
-			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
-				elem = createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest)
-			} else {
-				placeholder := fmt.Sprintf("[Image: %s]", dest)
-				elem = &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{Content: &placeholder},
-				}
-			}
+			// 内联图片：统一降级为「[图片: alt]」占位（http(s) 保留链接，本地路径用 alt 不泄漏原始路径）。
+			elem := c.imageInlinePlaceholder(child)
 			applyUnderlineIfNeeded(elem)
 			currentLine = append(currentLine, elem)
 			return ast.WalkSkipChildren, nil
@@ -1979,7 +1966,7 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			for cell := header.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if tc, ok := cell.(*east.TableCell); ok {
 					elems, imgs := c.extractCellElementsCollectingImages(tc)
-					headerContents = append(headerContents, c.getNodeText(tc))
+					headerContents = append(headerContents, c.cellFallbackContent(tc, elems, imgs))
 					headerElements = append(headerElements, elems)
 					headerImages = append(headerImages, imgs)
 				}
@@ -1994,7 +1981,7 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 			for cell := tr.FirstChild(); cell != nil; cell = cell.NextSibling() {
 				if tc, ok := cell.(*east.TableCell); ok {
 					elems, imgs := c.extractCellElementsCollectingImages(tc)
-					rowContents = append(rowContents, c.getNodeText(tc))
+					rowContents = append(rowContents, c.cellFallbackContent(tc, elems, imgs))
 					rowElements = append(rowElements, elems)
 					rowImages = append(rowImages, imgs)
 				}
@@ -2094,10 +2081,9 @@ func (c *MarkdownToBlock) convertTableWithDataMultiple(node *east.Table) []*Conv
 		if groupHasHeader {
 			cellImages = append(cellImages, groupHeaderImages...)
 		}
-		for _, row := range groupDataImages[:initialDataRowCount] {
-			cellImages = append(cellImages, row...)
-		}
-		for _, row := range groupDataImages[initialDataRowCount:] {
+		// 初始行 + 追加行在 groupDataImages 中本就按最终单元格顺序连续排列，一趟遍历即可
+		// （等价于按 initialDataRowCount 切两段拼接，且避免 initialDataRowCount 越界 panic）。
+		for _, row := range groupDataImages {
 			cellImages = append(cellImages, row...)
 		}
 		for _, imgs := range cellImages {
@@ -2360,20 +2346,8 @@ func (c *MarkdownToBlock) extractTextElements(node ast.Node) []*larkdocx.TextEle
 			return ast.WalkSkipChildren, nil
 
 		case *ast.Image:
-			// 内联图片：网络 URL 转为可点击链接，本地路径转为文本占位符
-			dest := string(child.Destination)
-			alt := c.getNodeText(child)
-			if alt == "" {
-				alt = dest
-			}
-			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
-				elements = append(elements, createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest))
-			} else {
-				placeholder := fmt.Sprintf("[Image: %s]", dest)
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{Content: &placeholder},
-				})
-			}
+			// 内联图片：统一降级为「[图片: alt]」占位（与 extractChildElements / extractParagraphLines 一致）。
+			elements = append(elements, c.imageInlinePlaceholder(child))
 			return ast.WalkSkipChildren, nil
 		}
 
@@ -2565,26 +2539,16 @@ func (c *MarkdownToBlock) extractChildElements(node ast.Node) []*larkdocx.TextEl
 				continue
 			}
 			// 其它场景（非单元格 / 关闭上传 / feishu:// 内部引用）：降级为占位文本或链接，避免静默丢失。
-			alt := c.getNodeText(n)
-			if alt == "" {
-				alt = dest
-			}
-			if strings.HasPrefix(dest, "http://") || strings.HasPrefix(dest, "https://") {
-				elem := createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest)
-				if inUnderline && elem.TextRun != nil {
-					underline := true
-					if elem.TextRun.TextElementStyle == nil {
-						elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
-					}
-					elem.TextRun.TextElementStyle.Underline = &underline
+			// 非嵌入场景（非单元格 / 关闭上传 / feishu:// 内部引用）：降级为统一的「[图片: alt]」占位。
+			elem := c.imageInlinePlaceholder(n)
+			if inUnderline && elem.TextRun != nil {
+				if elem.TextRun.TextElementStyle == nil {
+					elem.TextRun.TextElementStyle = &larkdocx.TextElementStyle{}
 				}
-				elements = append(elements, elem)
-			} else {
-				placeholder := fmt.Sprintf("[Image: %s]", dest)
-				elements = append(elements, &larkdocx.TextElement{
-					TextRun: &larkdocx.TextRun{Content: &placeholder},
-				})
+				underline := true
+				elem.TextRun.TextElementStyle.Underline = &underline
 			}
+			elements = append(elements, elem)
 		default:
 			// 未知内联节点，递归提取子元素
 			childElems := c.extractChildElements(child)
@@ -2631,6 +2595,36 @@ func (c *MarkdownToBlock) extractCellElementsCollectingImages(node ast.Node) ([]
 	elems := c.extractChildElements(node)
 	c.cellImageSink = prev
 	return elems, sink
+}
+
+// cellFallbackContent 返回单元格的纯文本，用于列宽计算 + 富文本为空时的兜底填充。
+// 纯图片单元格（富文本被收集进 imgs 后 elems 为空）返回 ""，避免 getNodeText 的图片 alt
+// 经填充兜底路径泄漏成单元格里多余的标题文字（issue #164 跟进）。
+func (c *MarkdownToBlock) cellFallbackContent(node ast.Node, elems []*larkdocx.TextElement, imgs []string) string {
+	if len(elems) == 0 && len(imgs) > 0 {
+		return ""
+	}
+	return c.getNodeText(node)
+}
+
+// imageInlinePlaceholder 把内联图片降级为统一的占位 TextElement，是 extractChildElements /
+// extractParagraphLines / extractTextElements 三处内联提取器共用的单一实现：
+//   - http(s) 地址：用链接元素「[图片: alt]」保留可点击地址；
+//   - 本地路径 / 其它：纯文本「[图片: alt]」（alt 缺省回退到 dest）。
+//
+// 统一中文前缀「[图片:」并优先用 alt（而非原始路径），避免三处各写一份、格式不一致或泄漏本地路径。
+// 下划线等上下文样式由各调用点按自身状态叠加。
+func (c *MarkdownToBlock) imageInlinePlaceholder(node *ast.Image) *larkdocx.TextElement {
+	dest := string(node.Destination)
+	alt := c.getNodeText(node)
+	if alt == "" {
+		alt = dest
+	}
+	if hasValidURLPrefix(dest) {
+		return createLinkElement(fmt.Sprintf("[图片: %s]", alt), dest)
+	}
+	placeholder := fmt.Sprintf("[图片: %s]", alt)
+	return &larkdocx.TextElement{TextRun: &larkdocx.TextRun{Content: &placeholder}}
 }
 
 // extractColumnImages 从一行单元格图片源中按列索引取子集（与 extractColumnElements 同形，用于列拆分）。

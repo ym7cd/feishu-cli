@@ -64,7 +64,7 @@ var appsAccessScopeSetCmd = &cobra.Command{
 
 		path := appsAppPath(appID, "/access-scope")
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
-			return appsDryRun("PUT", path, nil, body)
+			return appsDryRun(cmd, "PUT", path, nil, body)
 		}
 
 		token, err := requireUserToken(cmd, "apps access-scope-set")

@@ -1162,50 +1162,34 @@ func processImageTask(documentID string, task imageTask, verbose bool, userAcces
 
 // embedTableCellImages 在表格填充完成后，把 Markdown 表格单元格内的图片真正嵌入为单元格内的 Image 子块
 // （issue #164）。此时表格已填好（含 insert_table_row 追加的行），单元格齐全。流程：
-//  1. 拉一次全块树，取每个表格块的有序子单元格 ID；
-//  2. 按 TableData.CellImages 的行优先索引对齐到 cellID（数量不齐则跳过该表，避免错位）；
-//  3. 为带图单元格 CreateBlock 一个空 Image 子块，再复用 processImageTask 走「上传媒体→替换 token」三步法。
+//  1. 对每个含单元格图片的表格，用 GetTableCellIDs（block.Table.Cells，与阶段 2 填充、导出同源）取
+//     有序单元格 ID；不依赖 list-blocks 是否为表格块填充 children；
+//  2. 按 TableData.CellImages 的行优先索引对齐到 cellID（数量不齐则把这些图片计入失败并跳过该表，
+//     既避免错位，也让非 verbose 摘要能反映丢弃、不再静默吞掉——正是 #164 要修的症状）；
+//  3. 为带图单元格 CreateBlock 一个空 Image 子块，再复用 processImageTask 走「上传媒体→替换 token」三步法；
+//     上传失败时删除该空块并补占位 Text，避免单元格里留孤儿空图。
 //
 // 并发受 imageWorkers 限；CreateBlock / ReplaceImage 均已内置 docWriteLimiter（单文档 3 QPS），无需额外限流。
-// 返回 (待嵌入总数, 成功数)。
 func embedTableCellImages(documentID string, tTasks []tableTask, basePath string, imageWorkers int, stats *importStats, verbose bool, userAccessToken string) {
-	// 是否有任意单元格图片需要处理
-	hasWork := false
+	// 统计所有"打算嵌入"的单元格图片总数（含后续可能被跳过的），确保丢弃也计入 total、可观测。
+	totalIntended := 0
 	for _, t := range tTasks {
 		if t.tableData == nil {
 			continue
 		}
 		for _, imgs := range t.tableData.CellImages {
-			if len(imgs) > 0 {
-				hasWork = true
-				break
-			}
-		}
-		if hasWork {
-			break
+			totalIntended += len(imgs)
 		}
 	}
-	if !hasWork {
+	if totalIntended == 0 {
 		return
 	}
 
-	// 拉一次全块树，建立 blockID -> 有序子块ID 列表（表格块的子块即有序单元格）
-	blocks, err := client.GetAllBlocksWithToken(documentID, userAccessToken)
-	if err != nil {
-		if verbose {
-			stats.progressf("[阶段2.5] 获取块树失败，跳过单元格图片嵌入: %v\n", err)
-		}
-		return
-	}
-	childrenOf := make(map[string][]string, len(blocks))
-	for _, b := range blocks {
-		if b == nil || b.BlockId == nil {
-			continue
-		}
-		childrenOf[client.StringVal(b.BlockId)] = b.Children
-	}
+	stats.mu.Lock()
+	stats.cellImageTotal += totalIntended
+	stats.mu.Unlock()
 
-	// 收集工作项：(单元格ID, 图片源)
+	// 收集工作项：(单元格ID, 图片源)。单元格 ID 取自 block.Table.Cells（GetTableCellIDs）。
 	type cellImgWork struct {
 		cellID string
 		source string
@@ -1215,13 +1199,29 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 		if t.tableData == nil || len(t.tableData.CellImages) == 0 {
 			continue
 		}
-		cellIDs := childrenOf[t.tableBlockID]
+		tableImgCount := 0
+		for _, imgs := range t.tableData.CellImages {
+			tableImgCount += len(imgs)
+		}
+		if tableImgCount == 0 {
+			continue
+		}
+		cellIDs, err := client.GetTableCellIDs(documentID, t.tableBlockID, userAccessToken)
+		if err != nil {
+			syncPrintf("  ✗ 表格 %d 获取单元格失败，跳过 %d 张单元格图片: %v\n", t.index, tableImgCount, err)
+			stats.mu.Lock()
+			stats.cellImageFailed += tableImgCount
+			stats.mu.Unlock()
+			continue
+		}
 		if len(cellIDs) != len(t.tableData.CellImages) {
-			// 单元格数与图片索引不一致（理论上不应发生），跳过该表避免把图片塞错单元格
-			if verbose {
-				stats.progressf("  ⚠ 表格 %d 单元格数(%d)与图片索引(%d)不一致，跳过单元格图片嵌入\n",
-					t.index, len(cellIDs), len(t.tableData.CellImages))
-			}
+			// 单元格数与图片索引不一致（理论上不应发生），跳过该表避免把图片塞错单元格；
+			// 计入失败而非静默丢弃，使非 verbose 摘要也能反映。
+			syncPrintf("  ⚠ 表格 %d 单元格数(%d)与图片索引(%d)不一致，跳过 %d 张单元格图片\n",
+				t.index, len(cellIDs), len(t.tableData.CellImages), tableImgCount)
+			stats.mu.Lock()
+			stats.cellImageFailed += tableImgCount
+			stats.mu.Unlock()
 			continue
 		}
 		for ci, imgs := range t.tableData.CellImages {
@@ -1234,16 +1234,13 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 		return
 	}
 
-	stats.mu.Lock()
-	stats.cellImageTotal += len(works)
-	stats.mu.Unlock()
-
 	if verbose {
 		stats.progressf("=== 阶段 2.5: 表格单元格图片嵌入 (%d 张, ×%d) ===\n", len(works), imageWorkers)
 	}
 
 	bt := int(converter.BlockTypeImage)
 	var wg sync.WaitGroup
+	var cellCleanupMu sync.Mutex // 串行化失败占位（按 index 删块），避免同格多图并发清理误删
 	sem := make(chan struct{}, imageWorkers)
 	for i, w := range works {
 		wg.Add(1)
@@ -1266,9 +1263,10 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 			}
 
 			// 步骤 2/3：复用图片三步法（上传媒体 → 替换 token）
+			imageBlockID := client.StringVal(created[0].BlockId)
 			res := processImageTask(documentID, imageTask{
 				index:        idx + 1,
-				imageBlockID: client.StringVal(created[0].BlockId),
+				imageBlockID: imageBlockID,
 				source:       w.source,
 				basePath:     basePath,
 			}, verbose, userAccessToken)
@@ -1280,9 +1278,57 @@ func embedTableCellImages(documentID string, tTasks []tableTask, basePath string
 				stats.cellImageFailed++
 			}
 			stats.mu.Unlock()
+
+			// 上传失败：删除步骤 1 建的空 Image 块并补占位 Text，避免单元格里留孤儿空图。
+			// 串行化所有占位操作：replaceFailedCellImageBlock 内部每次重新拉子块并按 block ID 定位，
+			// 串行后删除用的 index 与刚取的快照一致；步骤 1 的 CreateBlock 是末尾追加（-1），不移动已存在
+			// 块的靠前 index，故无需纳入此锁。这样同一单元格多图同时失败也不会并发误删兄弟块。
+			if !res.success {
+				cellCleanupMu.Lock()
+				replaceFailedCellImageBlock(documentID, w.cellID, imageBlockID, w.source, idx+1, userAccessToken)
+				cellCleanupMu.Unlock()
+			}
 		}(i, w)
 	}
 	wg.Wait()
+}
+
+// replaceFailedCellImageBlock 把上传失败的单元格内空 Image 块替换为可见占位 Text，
+// 避免阶段 2.5 建的空块在单元格里变成孤儿空图（与 EmbedTableImages=off 的占位降级、视频失败的
+// replaceFailedVideoBlock 行为对齐）。按 block ID 定位再"删除+原位插 Text"，占位失败仅记日志、不影响整体导入。
+func replaceFailedCellImageBlock(documentID, cellID, imageBlockID, source string, idx int, userAccessToken string) {
+	children, err := client.GetAllBlockChildren(documentID, cellID, userAccessToken)
+	if err != nil {
+		syncPrintf("  ⚠ 单元格图片 %d 占位失败（无法获取单元格子块）: %v\n", idx, err)
+		return
+	}
+	pos := -1
+	for i, child := range children {
+		if child.BlockId != nil && *child.BlockId == imageBlockID {
+			pos = i
+			break
+		}
+	}
+	if pos < 0 {
+		return // 空块已不在（可能被并发清理），无需处理
+	}
+	if _, err := client.DeleteBlocks(documentID, cellID, pos, pos+1, userAccessToken); err != nil {
+		syncPrintf("  ⚠ 单元格图片 %d 占位失败（删除空 Image 块失败）: %v\n", idx, err)
+		return
+	}
+	placeholder := fmt.Sprintf("[图片上传失败: %s]", source)
+	textBlockType := int(converter.BlockTypeText)
+	textBlock := &larkdocx.Block{
+		BlockType: &textBlockType,
+		Text: &larkdocx.Text{
+			Elements: []*larkdocx.TextElement{
+				{TextRun: &larkdocx.TextRun{Content: &placeholder}},
+			},
+		},
+	}
+	if _, _, err := client.CreateBlock(documentID, cellID, []*larkdocx.Block{textBlock}, pos, userAccessToken); err != nil {
+		syncPrintf("  ⚠ 单元格图片 %d 占位失败（插入 Text 块失败）: %v\n", idx, err)
+	}
 }
 
 // processVideoTask 处理单个视频上传任务（File Block）

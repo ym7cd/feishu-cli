@@ -66,6 +66,25 @@ func TestTableCellImages_EmbedOn(t *testing.T) {
 	if txt := cellElementsText(td, 7); strings.Contains(txt, "[Image:") || strings.Contains(txt, "[图片:") {
 		t.Fatalf("cell[7] 富文本不应含图片占位, got %q", txt)
 	}
+
+	// issue #164 跟进：纯图片单元格的兜底纯文本必须清空，否则图片 alt（如"苹果图"）会经
+	// 填充兜底路径泄漏成单元格里多余的标题文字。cell[4] 带 alt、cell[7] 无 alt，都应为 ""。
+	if len(td.CellContents) != 9 {
+		t.Fatalf("CellContents len = %d, want 9", len(td.CellContents))
+	}
+	if td.CellContents[4] != "" {
+		t.Fatalf("cell[4] 纯图片格的兜底文本应清空（避免 alt 泄漏成标题）, got %q", td.CellContents[4])
+	}
+	if td.CellContents[7] != "" {
+		t.Fatalf("cell[7] 纯图片格的兜底文本应为空, got %q", td.CellContents[7])
+	}
+	// 非图片单元格的文本不应被误清
+	if td.CellContents[0] != "名称" {
+		t.Fatalf("cell[0] 文本不应被清空, got %q", td.CellContents[0])
+	}
+	if td.CellContents[3] != "苹果" {
+		t.Fatalf("cell[3] 文本不应被清空, got %q", td.CellContents[3])
+	}
 }
 
 // TestTableCellImages_EmbedOff_FallsBackToPlaceholder 验证 EmbedTableImages 关闭时（如 doc content-update）
@@ -86,8 +105,9 @@ func TestTableCellImages_EmbedOff_FallsBackToPlaceholder(t *testing.T) {
 		t.Fatalf("EmbedTableImages=false 时 CellImages 应为 nil, got %v", td.CellImages)
 	}
 
-	// 单元格布局：表头 名称(0) 图片(1)；数据行 苹果(2) 图片格(3)。图片格应有 [Image: ...] 占位文本。
-	if txt := cellElementsText(td, 3); !strings.Contains(txt, "[Image:") {
-		t.Fatalf("EmbedTableImages=false 时本地图片格应有占位文本, got %q", txt)
+	// 单元格布局：表头 名称(0) 图片(1)；数据行 苹果(2) 图片格(3)。图片格应有「[图片: ...]」占位文本
+	// （统一中文前缀，与 http 图片降级一致）。
+	if txt := cellElementsText(td, 3); !strings.Contains(txt, "[图片:") {
+		t.Fatalf("EmbedTableImages=false 时本地图片格应有「[图片: ...]」占位文本, got %q", txt)
 	}
 }

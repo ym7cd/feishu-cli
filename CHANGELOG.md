@@ -4,19 +4,34 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
-## [Unreleased]
+## [v1.33.0] - 2026-06-27
 
 ### 新增 — 妙搭（Miaoda）应用：HTML 秒搭一键部署（`apps`）
 
 对齐官方 lark-cli `apps` 域，把妙搭（Miaoda）低代码应用平台的「一份 HTML 秒级发布成可分享的飞书应用」能力搬进 feishu-cli。全部走 User 身份（user_access_token），需要 spark scope。
 
-- `apps create` —— 创建 HTML 妙搭应用（`POST /open-apis/spark/v1/apps`），返回 `data.app.app_id`
-- `apps html-publish` —— 把 `--path`（单 HTML 文件或整目录）打包成 tar.gz，单次 multipart POST 上传并发布（`/apps/{id}/upload_and_release_html_code`），返回 `data.url`（一键部署）。客户端侧：要求根目录有 `index.html`、未压缩 ≤ 200MB / 打包后 tar.gz ≤ 20MB、默认拦截凭证文件（`.env` / `.npmrc` / `.netrc` / `.git-credentials` / `.aws/credentials` / `.docker/config.json` / `.kube/config`，`--allow-sensitive` 放行）
+- `apps create` —— 创建 HTML 妙搭应用（`POST /open-apis/spark/v1/apps`），返回 `app.app_id`（CLI 已剥掉飞书响应的 `data` 外层，jq 用 `.app.app_id`）
+- `apps html-publish` —— 把 `--path`（单 HTML 文件或整目录）打包成 tar.gz，单次 multipart POST 上传并发布（`/apps/{id}/upload_and_release_html_code`），返回 `url`（jq 用 `.url`，一键部署）。客户端侧：要求根目录有 `index.html`、未压缩 ≤ 200MB / 打包后 tar.gz ≤ 20MB、默认拦截凭证文件（`.env` / `.npmrc` / `.netrc` / `.git-credentials` / `.aws/credentials` / `.docker/config.json` / `.kube/config`，`--allow-sensitive` 放行）
 - `apps update` —— 部分更新名称/描述（`PATCH /apps/{id}`）
 - `apps access-scope-get` / `apps access-scope-set` —— 查看/设置访问范围（`specific` / `public` / `tenant`，映射后端 `Range` / `All` / `Tenant`）
 - `apps list` —— 列出当前用户的应用（隐藏命令，游标分页）
 - 统一支持 `--format json|pretty|table|ndjson|csv` + `--jq`；写命令支持 `--dry-run`
 - 权限：`spark:app:write`（create/update/html-publish/access-scope-set）、`spark:app:read`（list/access-scope-get）。⚠️ feishu-cli 的 `auth login --scope` 是「替换」不是「合并」，请把 spark scope 并入完整 scope 串一起登录，避免丢失已有权限
+
+### 改进 — Markdown 表格单元格图片真嵌入（#164）
+
+Markdown 表格单元格内的本地/网络图片此前在转换阶段被静默丢弃（带 alt 只剩 alt 文本、无 alt 整格变空）。现在 `doc import` 会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块。
+
+- 新增 `ConvertOptions.EmbedTableImages` 开关，仅 `doc import` 启用真嵌入；非导入场景（`doc add/content-update`）单元格图片降级为 `[图片: 说明]` 占位文本，杜绝任何路径的静默丢失。
+- 导入 JSON 输出新增 `cell_image_total/success/failed` 统计字段。
+
+### 修复 — 发版前 code review 收尾
+
+- **表格单元格图片（#164）**：纯图片单元格若带 alt（如 `![架构图](./a.png)`），alt 文本不再经填充兜底路径泄漏成单元格里多余的标题；嵌入阶段改用 `GetTableCellIDs`（`block.Table.Cells`，与填充/导出同源）定位单元格，不再依赖 list-blocks 是否为表格块填充 `children`；单元格数与图片索引不一致或获取失败时，被跳过的图片计入失败统计而非静默丢弃；单元格图片上传失败时删除孤儿空 Image 块并补占位文本
+- **`apps` dry-run**：`--dry-run` 预览现在同样尊重 `--format/--jq`（此前固定 JSON，与 help 列出的 flag 不符）
+- **`apps html-publish` 凭证扫描**：目录形态下不再因根的「父目录」恰好叫 `.aws/.docker/.kube` 而把根下普通 `credentials`/`config` 文件误判为凭证
+- **文档**：`apps` 输出 jq 路径勘误（`data.app.app_id` → `.app.app_id`、`data.url` → `.url`，CLI 已剥掉 `data` 外层）
+- **一致性**：内联图片占位统一为中文「[图片: …]」前缀（此前本地路径分支用英文 `[Image:` 且直出原始路径）；`apps html-publish` 打包错误信息改为中文
 
 ## [v1.32.0] - 2026-06-06
 

@@ -42,7 +42,7 @@ var appsUpdateCmd = &cobra.Command{
 
 		path := appsAppPath(appID, "")
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
-			return appsDryRun("PATCH", path, nil, body)
+			return appsDryRun(cmd, "PATCH", path, nil, body)
 		}
 
 		token, err := requireUserToken(cmd, "apps update")

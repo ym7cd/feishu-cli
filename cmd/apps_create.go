@@ -49,7 +49,7 @@ var appsCreateCmd = &cobra.Command{
 
 		path := sparkBasePath + "/apps"
 		if dry, _ := cmd.Flags().GetBool("dry-run"); dry {
-			return appsDryRun("POST", path, nil, body)
+			return appsDryRun(cmd, "POST", path, nil, body)
 		}
 
 		token, err := requireUserToken(cmd, "apps create")

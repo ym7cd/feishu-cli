@@ -30,6 +30,7 @@ allowed-tools: Bash(feishu-cli doc:*), Bash(feishu-cli perm:*), Bash(feishu-cli 
 5. **表格列宽**：默认按内容启发式（中文 14px / 英文 8px，最小 80px，最大 400px）。可通过紧邻表格上方注释 `<!-- feishu-colwidth: 80,200,*,30% -->`（单位 px / 百分比 / `*` 走 auto）或 CLI flag `--table-column-width=auto|fixed|N1,N2,...` 全局覆盖；注释优先级高于 flag
 6. **API 限流自动重试**：画板创建和图表导入遇到 HTTP 429 时自动重试，读取服务端 `x-ogw-ratelimit-reset` 响应头精确计算退避时间，采用指数退避策略，默认最多重试 10 次
 7. **并发控制**：图表和表格分别使用独立的 worker 池（默认图表 5、表格 3 并发）
+8. **表格单元格图片真嵌入（#164）**：Markdown 表格单元格内的本地/网络图片，会在表格填充完成后（阶段 2.5）真正嵌入为单元格内的 Image 子块，而非丢失或退化为文字。细节：纯图片单元格不会把图片说明（alt）串成多余的标题文字；嵌入失败或单元格对不齐的图片计入统计 `cell_image_failed` 并打印，不静默丢弃；上传失败的空图块会被清理并补占位文本。仅 `doc import` 走真嵌入，`doc add/content-update` 等非导入场景的单元格图片降级为 `[图片: 说明]` 占位文本。JSON 输出新增 `cell_image_total/success/failed`
 
 ## 核心概念
 
@@ -127,8 +128,8 @@ feishu-cli doc import ./document.md --title "带图文档" --upload-images
 - **引用块**（支持嵌套引用，自动转换为 QuoteContainer）
 - **Callout 高亮块**（`> [!NOTE]`、`> [!WARNING]` 等 6 种类型）
 - 分割线
-- **图片**（默认通过 `--upload-images` 自动上传本地和网络图片；无此参数时创建占位块；内联图片转为链接或文本占位符）
-- **表格**（行 > 9 用 `insert_table_row` API 追加保持单 block；列 > 9 按列组拆分保留首列）
+- **图片**（默认通过 `--upload-images` 自动上传本地和网络图片；无此参数时创建占位块。**表格单元格内的图片会真正嵌入为单元格内图片**，见核心特性 #164；与文字混排的内联图片统一转为 `[图片: 说明]` 占位，http(s) 为可点击链接）
+- **表格**（行 > 9 用 `insert_table_row` API 追加保持单 block；列 > 9 按列组拆分保留首列；**单元格内可放图片，导入后真正嵌入**）
 - 粗体、斜体、删除线、行内代码、**下划线**（`<u>文本</u>`）
 - 链接
 - **行内公式**（`$E = mc^2$`，支持一段中多个公式）

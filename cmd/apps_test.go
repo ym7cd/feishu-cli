@@ -198,14 +198,30 @@ func TestAppsIsSensitiveRelPath(t *testing.T) {
 }
 
 func TestAppsIsSensitiveCandidate_RootIsCredDir(t *testing.T) {
-	// --path 本身就是 .aws，candidate RelPath 退化成裸 "credentials"，需靠根上下文命中。
+	// 目录形态：--path 本身就是 .aws，candidate RelPath 退化成裸 "credentials"，需靠根 basename 命中。
 	c := appsCandidate{RelPath: "credentials"}
-	if !appsIsSensitiveCandidate("/home/u/.aws", c) {
-		t.Error("root=.aws + credentials should be sensitive")
+	if !appsIsSensitiveCandidate("/home/u/.aws", true, c) {
+		t.Error("dir root=.aws + credentials should be sensitive")
 	}
 	// 普通根目录不应误判 credentials。
-	if appsIsSensitiveCandidate("/home/u/site", c) {
-		t.Error("root=site + credentials should NOT be sensitive")
+	if appsIsSensitiveCandidate("/home/u/site", true, c) {
+		t.Error("dir root=site + credentials should NOT be sensitive")
+	}
+	// 目录形态回归（#8）：根的「父目录」恰好叫 .aws 不应把根下普通 credentials 误判成 .aws/credentials。
+	if appsIsSensitiveCandidate("/home/u/.aws/sub", true, c) {
+		t.Error("dir root=.aws/sub + credentials should NOT be sensitive (grandparent must not anchor in dir form)")
+	}
+	// 单文件形态：--path ./.aws/credentials，RelPath=文件名，需靠根的父目录 basename 命中。
+	if !appsIsSensitiveCandidate("/home/u/.aws/credentials", false, c) {
+		t.Error("single-file .aws/credentials should be sensitive")
+	}
+	// 单文件形态：父目录普通，不应误判。
+	if appsIsSensitiveCandidate("/home/u/site/credentials", false, c) {
+		t.Error("single-file site/credentials should NOT be sensitive")
+	}
+	// 目录形态下嵌套的 .aws/credentials（RelPath 已含完整段）仍应由叶子+完整匹配器命中。
+	if !appsIsSensitiveCandidate("/home/u/proj", true, appsCandidate{RelPath: ".aws/credentials"}) {
+		t.Error("dir form nested .aws/credentials should be sensitive")
 	}
 }
 

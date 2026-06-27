@@ -65,9 +65,11 @@ func renderAppsResult(cmd *cobra.Command, data any) error {
 	return printJSON(data)
 }
 
-// appsDryRun 打印写命令将要发出的请求（不实际调用），固定 JSON 输出。
-func appsDryRun(method, path string, params map[string]any, body any) error {
-	o, err := output.NewOptions(output.FormatJSON, "")
+// appsDryRun 打印写命令将要发出的请求（不实际调用）。
+// dry-run 预览同样尊重 --format/--jq（与实调路径 renderAppsResult 一致），
+// 避免 help 列了 --format/--jq 却在 dry-run 时静默失效（对齐 bitable dry-run 行为）。
+func appsDryRun(cmd *cobra.Command, method, path string, params map[string]any, body any) error {
+	o, err := output.ParseOptions(cmd)
 	if err != nil {
 		return err
 	}

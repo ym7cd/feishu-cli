@@ -62,6 +62,7 @@ Bob --> Alice: Hi
 
 - 行数 > 9：CLI 用 `insert_table_row` 追加到同一个 table block。
 - 列数 > 9：按列组拆分，保留首列用于识别行。
+- **单元格内可放图片**（`| ![图](./a.png) |`）：`doc import` 会在表格填充后真正嵌入为单元格内图片（#164），不丢失也不退化为文字；纯图片单元格不会多出 alt 说明文字。`doc add/content-update` 等非导入场景则降级为 `[图片: 说明]` 文本占位。
 - 数据表、长表和需要排序筛选的内容优先生成 Sheet：`feishu-cli sheet import-md`。
 - **自定义列宽**（v1.29+）：默认按内容启发式（中文 14px / 英文 8px / 最小 80 / 最大 400）。需要精控时两种方式可覆盖：
   - 紧邻表格上方注释（**注释必须独占一行**，中间夹任何 heading/段落/列表/代码块/link-ref-def 都会丢弃注释）：
@@ -95,6 +96,8 @@ Bob --> Alice: Hi
 ```
 
 `doc import` 默认上传本地和网络图片。`doc add/content-update` 要显式传 `--upload-images`。视频/文件类精确插入用 `feishu-cli doc media-insert`。
+
+表格单元格里的图片（`| ![图](./a.png) |`）由 `doc import` 真正嵌入为单元格内图片（#164）；与文字混排的内联图片统一降级为 `[图片: 说明]`（http(s) 为可点击链接，本地路径为纯文本，不泄漏原始路径）。
 
 ## 扩展标签
 

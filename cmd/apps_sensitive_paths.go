@@ -75,24 +75,28 @@ func appsHasParentAnchoredCredentialPair(path string) bool {
 }
 
 // appsIsSensitiveCandidate 是 html-publish 的调用点封装，两道扫描：
-//  1. 用完整匹配器扫 RelPath（覆盖在树内的常见情况，如 ./site/.env）。
-//  2. 在 rootPath 与 candidate 的边界处只用 parent-anchored 匹配器再探一次：
-//     walker 通过 filepath.Rel 剥掉了根段，当 --path 本身就是约定父目录（如 ./.aws）
-//     时 RelPath 退化成裸 "credentials"，第 1 步无父可锚。把根的 basename
-//     （单文件形态再加根父目录 basename）重新前缀回去暴露缺失段。叶子匹配器
-//     不在这步重跑，避免祖先里出现 ".env" 之类时把其下每个文件都误判。
-func appsIsSensitiveCandidate(rootPath string, c appsCandidate) bool {
+//  1. 用完整匹配器扫 RelPath（覆盖在树内的常见情况，如 ./site/.env、嵌套的 .aws/credentials）。
+//  2. 在 rootPath 与 candidate 的边界处只用 parent-anchored 匹配器再探一次，回填 walker 用
+//     filepath.Rel 剥掉的、刚好缺失的那一段父目录上下文。这一步按 --path 形态选 **唯一** 上下文段：
+//     - 目录形态（rootIsDir）：RelPath 已含根下完整相对路径，只需用根 basename 锚定
+//     （--path ./.aws 下裸 "credentials" → ".aws/credentials"）。绝不能借祖父目录，
+//     否则 --path ./.aws/sub 下的普通 "credentials" 会被误判成 .aws/credentials（误报）。
+//     - 单文件形态：Base(rootPath) 是文件名本身、无锚定价值，改用根的父目录 basename
+//     （--path ./.aws/credentials → Dir 为 ./.aws → ".aws/credentials"）。
+//     叶子匹配器不在这步重跑，避免祖先里出现 ".env" 之类时把其下每个文件都误判。
+func appsIsSensitiveCandidate(rootPath string, rootIsDir bool, c appsCandidate) bool {
 	if appsIsSensitiveRelPath(c.RelPath) {
 		return true
 	}
-	for _, ctx := range []string{filepath.Base(rootPath), filepath.Base(filepath.Dir(rootPath))} {
-		switch ctx {
-		case "", ".", "..", "/":
-			continue
-		}
-		if appsHasParentAnchoredCredentialPair(filepath.ToSlash(filepath.Join(ctx, c.RelPath))) {
-			return true
-		}
+	var ctx string
+	if rootIsDir {
+		ctx = filepath.Base(rootPath)
+	} else {
+		ctx = filepath.Base(filepath.Dir(rootPath))
 	}
-	return false
+	switch ctx {
+	case "", ".", "..", "/":
+		return false
+	}
+	return appsHasParentAnchoredCredentialPair(filepath.ToSlash(filepath.Join(ctx, c.RelPath)))
 }

@@ -65,6 +65,11 @@ var appsHTMLPublishCmd = &cobra.Command{
 		dry, _ := cmd.Flags().GetBool("dry-run")
 
 		candidates, walkErr := appsWalkCandidates(pathArg)
+		// --path 是目录还是单文件，决定凭证扫描如何回填缺失的父目录上下文（见 appsIsSensitiveCandidate）。
+		pathIsDir := false
+		if fi, statErr := os.Stat(pathArg); statErr == nil {
+			pathIsDir = fi.IsDir()
+		}
 
 		// 凭证文件拦截：dry-run 和实跑共用同一道闸门（与官方 lark-cli 语义一致，
 		// 命中且未加 --allow-sensitive 时两条路径都非零退出）。walk 失败时跳过，
@@ -72,7 +77,7 @@ var appsHTMLPublishCmd = &cobra.Command{
 		if walkErr == nil && !allowSensitive {
 			var hits []string
 			for _, c := range candidates {
-				if appsIsSensitiveCandidate(pathArg, c) {
+				if appsIsSensitiveCandidate(pathArg, pathIsDir, c) {
 					hits = append(hits, c.RelPath)
 				}
 			}
@@ -82,7 +87,7 @@ var appsHTMLPublishCmd = &cobra.Command{
 		}
 
 		if dry {
-			return appsHTMLPublishDryRun(appID, pathArg, candidates, walkErr, allowSensitive)
+			return appsHTMLPublishDryRun(cmd, appID, pathArg, pathIsDir, candidates, walkErr, allowSensitive)
 		}
 
 		if walkErr != nil {
@@ -121,8 +126,9 @@ var appsHTMLPublishCmd = &cobra.Command{
 }
 
 // appsHTMLPublishDryRun 打印打包清单预览（文件列表/总大小/缺 index.html 提示/放行的凭证文件）。
-func appsHTMLPublishDryRun(appID, pathArg string, candidates []appsCandidate, walkErr error, allowSensitive bool) error {
-	o, err := output.NewOptions(output.FormatJSON, "")
+// dry-run 预览同样尊重 --format/--jq（对齐实调路径与 bitable dry-run），避免 help 列了却静默失效。
+func appsHTMLPublishDryRun(cmd *cobra.Command, appID, pathArg string, pathIsDir bool, candidates []appsCandidate, walkErr error, allowSensitive bool) error {
+	o, err := output.ParseOptions(cmd)
 	if err != nil {
 		return err
 	}
@@ -152,7 +158,7 @@ func appsHTMLPublishDryRun(appID, pathArg string, candidates []appsCandidate, wa
 	if allowSensitive {
 		var waived []string
 		for _, c := range candidates {
-			if appsIsSensitiveCandidate(pathArg, c) {
+			if appsIsSensitiveCandidate(pathArg, pathIsDir, c) {
 				waived = append(waived, c.RelPath)
 			}
 		}
@@ -177,7 +183,7 @@ type appsCandidate struct {
 func appsWalkCandidates(rootPath string) ([]appsCandidate, error) {
 	stat, err := os.Stat(rootPath)
 	if err != nil {
-		return nil, fmt.Errorf("stat %s: %w", rootPath, err)
+		return nil, fmt.Errorf("读取 --path %s 信息失败: %w", rootPath, err)
 	}
 	if !stat.IsDir() {
 		return []appsCandidate{{
@@ -256,10 +262,10 @@ func appsBuildTarball(candidates []appsCandidate) ([]byte, error) {
 	}
 	if err := tw.Close(); err != nil {
 		_ = gz.Close()
-		return nil, fmt.Errorf("tar close: %w", err)
+		return nil, fmt.Errorf("tar 打包关闭失败: %w", err)
 	}
 	if err := gz.Close(); err != nil {
-		return nil, fmt.Errorf("gzip close: %w", err)
+		return nil, fmt.Errorf("gzip 压缩关闭失败: %w", err)
 	}
 	return buf.Bytes(), nil
 }
@@ -270,7 +276,7 @@ func appsWriteTarEntry(tw *tar.Writer, c appsCandidate) error {
 	}
 	src, err := os.Open(c.AbsPath)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", c.AbsPath, err)
+		return fmt.Errorf("打开文件 %s 失败: %w", c.AbsPath, err)
 	}
 	defer src.Close()
 
@@ -281,10 +287,10 @@ func appsWriteTarEntry(tw *tar.Writer, c appsCandidate) error {
 		Typeflag: tar.TypeReg,
 	}
 	if err := tw.WriteHeader(hdr); err != nil {
-		return fmt.Errorf("write header %s: %w", c.RelPath, err)
+		return fmt.Errorf("写入 tar 头 %s 失败: %w", c.RelPath, err)
 	}
 	if _, err := io.Copy(tw, src); err != nil {
-		return fmt.Errorf("copy %s: %w", c.RelPath, err)
+		return fmt.Errorf("写入文件内容 %s 失败: %w", c.RelPath, err)
 	}
 	return nil
 }
