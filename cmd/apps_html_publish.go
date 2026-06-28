@@ -22,8 +22,9 @@ import (
 //	maxAppsRawBytes     —— tar+gzip 进入内存前的「未压缩」总大小上限，防解压炸弹/OOM。
 //	maxAppsTarballBytes —— 打包后 tar.gz 上限，对齐 OAPI「本期接口上限 20MB」约束。
 var (
-	maxAppsRawBytes     int64 = 200 * 1024 * 1024
-	maxAppsTarballBytes int64 = 20 * 1024 * 1024
+	maxAppsRawBytes        int64 = 200 * 1024 * 1024
+	maxAppsTarballBytes    int64 = 20 * 1024 * 1024
+	maxAppsSingleHTMLBytes int64 = 10 * 1024 * 1024 // 单个 .html 文件上限，对齐妙搭服务端 10MB 约束
 )
 
 // maxAppsSensitiveListInError 控制校验错误里最多内联列出多少个凭证文件命中。
@@ -38,7 +39,7 @@ var appsHTMLPublishCmd = &cobra.Command{
 要求:
   - 目录形态：根目录下必须有 index.html（妙搭以它作为应用入口）
   - 单文件形态：文件名必须就是 index.html
-  - 未压缩总大小 ≤ 200MB；打包后 tar.gz ≤ 20MB
+  - 未压缩总大小 ≤ 200MB；打包后 tar.gz ≤ 20MB；单个 .html 文件 ≤ 10MB
   - 默认拦截凭证文件（.env / .npmrc / .netrc / .git-credentials / .aws/credentials /
     .docker/config.json / .kube/config），用 --allow-sensitive 显式放行
 
@@ -71,8 +72,7 @@ var appsHTMLPublishCmd = &cobra.Command{
 			pathIsDir = fi.IsDir()
 		}
 
-		// 凭证文件拦截：dry-run 和实跑共用同一道闸门（与官方 lark-cli 语义一致，
-		// 命中且未加 --allow-sensitive 时两条路径都非零退出）。walk 失败时跳过，
+		// 凭证文件拦截：dry-run 和实跑共用同一道闸门（命中且未加 --allow-sensitive 时两条路径都非零退出）。walk 失败时跳过，
 		// 交给下面的分支用各自更丰富的报错呈现。
 		if walkErr == nil && !allowSensitive {
 			var hits []string
@@ -95,6 +95,9 @@ var appsHTMLPublishCmd = &cobra.Command{
 		}
 		if err := appsEnsureIndexHTML(candidates); err != nil {
 			return err
+		}
+		if oversize := appsOversizeHTMLFiles(candidates); len(oversize) > 0 {
+			return appsOversizeHTMLFilesError(oversize)
 		}
 
 		var rawTotal int64
@@ -142,9 +145,17 @@ func appsHTMLPublishDryRun(cmd *cobra.Command, appID, pathArg string, pathIsDir 
 		m["path_error"] = walkErr.Error()
 		return output.Render(o, m)
 	}
-	// 缺 index.html 在 dry-run 里以字段呈现（仍 0 退出，符合 dry-run「预览」语义）。
+	// 缺 index.html / 单 .html 超限在 dry-run 里以字段呈现（仍 0 退出，符合 dry-run「预览」语义）。
+	// 同时聚合到统一的 would_block / block_reasons：实跑会因这些原因被拒，调用方据此单字段判断是否可发布，
+	// 不必分别解析 validation_error / oversize_html 等细分键。
+	var blockReasons []string
 	if err := appsEnsureIndexHTML(candidates); err != nil {
 		m["validation_error"] = err.Error()
+		blockReasons = append(blockReasons, err.Error())
+	}
+	if oversize := appsOversizeHTMLFiles(candidates); len(oversize) > 0 {
+		m["oversize_html"] = appsOversizeHTMLSummary(oversize)
+		blockReasons = append(blockReasons, appsOversizeHTMLFilesError(oversize).Error())
 	}
 	var total int64
 	names := make([]string, 0, len(candidates))
@@ -167,10 +178,13 @@ func appsHTMLPublishDryRun(cmd *cobra.Command, appID, pathArg string, pathIsDir 
 			m["sensitive_waived_summary"] = fmt.Sprintf("%d 个凭证文件因 --allow-sensitive 被放行", len(waived))
 		}
 	}
+	m["would_block"] = len(blockReasons) > 0
+	if len(blockReasons) > 0 {
+		m["block_reasons"] = blockReasons
+	}
 	return output.Render(o, m)
 }
 
-// appsCandidate 是待打包的一个文件条目。
 type appsCandidate struct {
 	RelPath string // tar 内的相对路径（forward-slash）
 	AbsPath string // 磁盘绝对/相对路径
@@ -243,6 +257,47 @@ func appsEnsureIndexHTML(candidates []appsCandidate) error {
 		}
 	}
 	return fmt.Errorf("--path 中缺少 index.html；妙搭以 index.html 作为应用入口（目录形态把首页放根目录命名 index.html，单文件形态把文件命名为 index.html）")
+}
+
+// appsOversizeHTMLFiles 返回扩展名为 .html（大小写不敏感）且超过单文件上限的候选，
+// 对齐妙搭服务端单个 .html 文件 ≤10MB 约束，在客户端提前拦截并点名文件。
+func appsOversizeHTMLFiles(candidates []appsCandidate) []appsCandidate {
+	var oversize []appsCandidate
+	for _, c := range candidates {
+		if strings.EqualFold(filepath.Ext(c.RelPath), ".html") && c.Size > maxAppsSingleHTMLBytes {
+			oversize = append(oversize, c)
+		}
+	}
+	return oversize
+}
+
+// appsOversizeHTMLFilesError 构造单 .html 文件超限错误（点名文件 + 大小 + 拆分/裁剪提示）。
+func appsOversizeHTMLFilesError(oversize []appsCandidate) error {
+	names := make([]string, 0, len(oversize))
+	for _, c := range oversize {
+		names = append(names, fmt.Sprintf("%s (%d 字节)", c.RelPath, c.Size))
+	}
+	var sample string
+	if len(names) <= maxAppsSensitiveListInError {
+		sample = strings.Join(names, ", ")
+	} else {
+		sample = strings.Join(names[:maxAppsSensitiveListInError], ", ") +
+			fmt.Sprintf("（还有 %d 个）", len(names)-maxAppsSensitiveListInError)
+	}
+	return fmt.Errorf("%d 个 .html 文件超过 %d 字节（10MB）单文件上限: %s\n妙搭服务端限制单个 .html 文件 ≤10MB，拆分或裁剪这些文件后重试", len(oversize), maxAppsSingleHTMLBytes, sample)
+}
+
+// appsOversizeHTMLSummary 供 dry-run 回填 oversize_html 字段。
+func appsOversizeHTMLSummary(oversize []appsCandidate) []map[string]any {
+	out := make([]map[string]any, 0, len(oversize))
+	for _, c := range oversize {
+		out = append(out, map[string]any{
+			"path":  c.RelPath,
+			"size":  c.Size,
+			"limit": maxAppsSingleHTMLBytes,
+		})
+	}
+	return out
 }
 
 // appsBuildTarball 把 candidates 打包成内存中的 tar.gz。

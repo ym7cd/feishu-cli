@@ -62,7 +62,7 @@ feishu-cli apps html-publish --app-id app_xxx --path ./dist --allow-sensitive  #
 ```
 
 - **必须有 index.html**：目录形态根目录下要有 `index.html`；单文件形态文件名必须就是 `index.html`（妙搭以它作为应用入口）
-- **打包方式**：`--path` 整个打包成单个 in-memory tar.gz，单次 multipart 上传；未压缩 ≤ 200MB、打包后 tar.gz ≤ 20MB
+- **打包方式**：`--path` 整个打包成单个 in-memory tar.gz，单次 multipart 上传；未压缩 ≤ 200MB、打包后 tar.gz ≤ 20MB、单个 `.html` 文件 ≤ 10MB（妙搭服务端硬约束，超限客户端提前拦截并点名文件，`--dry-run` 回填 `oversize_html`）
 - **凭证文件防呆**：默认拦截 `.env` / `.env.*` / `.npmrc` / `.netrc` / `.git-credentials` / `.aws/credentials` / `.docker/config.json` / `.kube/config`，命中即非零退出（`--dry-run` 也拦）；确实要发布加 `--allow-sensitive`
 - 返回里取 `.url` 就是访问地址（CLI 只白名单提取 url 一个字段）
 

@@ -320,7 +320,7 @@ func TestSplitAppsAccessScopeTargets(t *testing.T) {
 	assertStrSlice(t, chats, []string{"oc_d"})
 }
 
-// ---- html-publish size cap 拦截测试（补齐官方 lark-cli v1.0.47 的 parity） ----
+// ---- html-publish size cap 拦截测试 ----
 // 两道上限是 html-publish 仅有的防御闸门，且都在 requireUserToken/网络调用之前 return，
 // 因此可不接网络直接驱动 RunE 验证拦截路径（调小包级 var 触发）。
 
@@ -404,6 +404,86 @@ func TestAppsSizeCapDefaults(t *testing.T) {
 	}
 	if maxAppsTarballBytes != 20*1024*1024 {
 		t.Errorf("maxAppsTarballBytes 默认 = %d, want %d (20MiB)", maxAppsTarballBytes, 20*1024*1024)
+	}
+	if maxAppsSingleHTMLBytes != 10*1024*1024 {
+		t.Errorf("maxAppsSingleHTMLBytes 默认 = %d, want %d (10MiB)", maxAppsSingleHTMLBytes, 10*1024*1024)
+	}
+}
+
+// TestAppsOversizeHTMLFiles 覆盖纯匹配器：仅 .html（大小写不敏感）且超限的文件命中，
+// .htm / 非 html / 未超限的 .html 不算。
+func TestAppsOversizeHTMLFiles(t *testing.T) {
+	orig := maxAppsSingleHTMLBytes
+	maxAppsSingleHTMLBytes = 100
+	t.Cleanup(func() { maxAppsSingleHTMLBytes = orig })
+
+	cases := []appsCandidate{
+		{RelPath: "index.html", Size: 10},     // .html 未超限
+		{RelPath: "big.html", Size: 200},      // .html 超限
+		{RelPath: "BIG.HTML", Size: 200},      // .HTML 大小写不敏感，超限
+		{RelPath: "data.json", Size: 500},     // 非 .html
+		{RelPath: "sub/page.htm", Size: 500},  // .htm 不等于 .html
+		{RelPath: "sub/deep.html", Size: 200}, // 嵌套 .html 超限
+	}
+	got := appsOversizeHTMLFiles(cases)
+	if len(got) != 3 {
+		t.Fatalf("期望 3 个超限 .html（big.html/BIG.HTML/sub/deep.html），实际 %d: %+v", len(got), got)
+	}
+}
+
+// TestAppsHTMLPublish_RejectsOversizeSingleHTML 验证单 .html 10MB 上限在 RunE 实际流程里生效：
+// big.html 超限但未触 raw/tarball 上限时，应被客户端提前拦截并点名文件。
+func TestAppsHTMLPublish_RejectsOversizeSingleHTML(t *testing.T) {
+	initAppsTestConfig(t)
+	orig := maxAppsSingleHTMLBytes
+	maxAppsSingleHTMLBytes = 10
+	t.Cleanup(func() { maxAppsSingleHTMLBytes = orig })
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "big.html"), []byte(strings.Repeat("y", 200)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := newAppsHTMLPublishTestCmd()
+	mustSet(t, c, "app-id", "app_x")
+	mustSet(t, c, "path", dir)
+
+	err := appsHTMLPublishCmd.RunE(c, nil)
+	if err == nil {
+		t.Fatal("超单 .html 上限应报错，client 不应被调用")
+	}
+	if !strings.Contains(err.Error(), "big.html") || !strings.Contains(err.Error(), "单文件上限") {
+		t.Fatalf("err 应点名 big.html 且含「单文件上限」，得到: %v", err)
+	}
+}
+
+// TestAppsHTMLPublish_DryRunOversizeHTML 验证 dry-run 回填 oversize_html 字段（不阻断，0 退出）。
+func TestAppsHTMLPublish_DryRunOversizeHTML(t *testing.T) {
+	initAppsTestConfig(t)
+	orig := maxAppsSingleHTMLBytes
+	maxAppsSingleHTMLBytes = 10
+	t.Cleanup(func() { maxAppsSingleHTMLBytes = orig })
+
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "big.html"), []byte(strings.Repeat("y", 200)), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	c := newAppsHTMLPublishTestCmd()
+	mustSet(t, c, "app-id", "app_x")
+	mustSet(t, c, "path", dir)
+	mustSet(t, c, "dry-run", "true")
+
+	out, err := captureAppsStdout(t, func() error { return appsHTMLPublishCmd.RunE(c, nil) })
+	if err != nil {
+		t.Fatalf("dry-run 不应报错（即使有超限 .html）: %v", err)
+	}
+	if !strings.Contains(out, "oversize_html") || !strings.Contains(out, "big.html") {
+		t.Errorf("dry-run 应回填 oversize_html 含 big.html，实际输出:\n%s", out)
 	}
 }
 
