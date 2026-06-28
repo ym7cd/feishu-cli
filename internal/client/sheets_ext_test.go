@@ -638,3 +638,27 @@ func TestDeleteDropdown_APIErrorCode(t *testing.T) {
 		t.Fatalf("API code!=0 应返回携带 code 的错误，got: %v", err)
 	}
 }
+
+// TestSheetMediaParentType 覆盖上传图片到电子表格时的 parent_type 选择：
+// 原生飞书表格用 sheet_image；导入型 office 表格（token 以 fake_office_ 开头）用
+// office_sheet_file。
+func TestSheetMediaParentType(t *testing.T) {
+	cases := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{"原生表格 token", "shtcnABC123", "sheet_image"},
+		{"导入 office 表格 token", "fake_office_abc123", "office_sheet_file"},
+		{"仅 fake_office_ 前缀本身", "fake_office_", "office_sheet_file"},
+		{"前缀出现在中间不匹配", "shtfake_office_abc", "sheet_image"},
+		{"空 token 回落 sheet_image", "", "sheet_image"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := sheetMediaParentType(c.token); got != c.want {
+				t.Errorf("sheetMediaParentType(%q) = %q, want %q", c.token, got, c.want)
+			}
+		})
+	}
+}
