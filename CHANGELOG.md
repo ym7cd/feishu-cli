@@ -4,6 +4,47 @@
 
 版本格式：[MAJOR.MINOR.PATCH](https://semver.org/lang/zh-CN/)
 
+## [v1.34.0] - 2026-06-28
+
+新增 5 项能力 + 1 项修复，全部经真实飞书 API round-trip 验证。
+
+### 新增 — 电子表格按列类型保真写入（`sheet table-put`）
+
+把 pandas DataFrame 形状的 JSON（`to_json(orient="split")`）按列 dtype 写入电子表格，让数字/日期/文本列不被误判类型。
+
+- 日期列写 Excel 序列号 + 给该列设日期 formatter（`yyyy/MM/dd`），飞书识别为「真日期」（可排序/可透视/ISNUMBER=TRUE），而非文本
+- 数字列保数值精度（大整数不退化为科学计数法）；文本列用 `@` formatter 防止 ID/邮编等数字串被识别为数字（前导零保真，如 `007`）
+- dtype 映射：`int*/uint*/float*/complex*`→number（`interval*` 除外，按文本）、`bool/boolean`→bool、`datetime*`→date、其他→string
+- 空值（null/NaN）写空文本元素；单批 ≤ 5000 单元格自动按行分批
+- ⚠️ 当前为写侧实现：**就地覆盖 A1 起的矩形区域、不清除区域外旧行、不自动扩容**（写入前用 `sheet add-rows` 预扩容）；仅支持单 sheet；读侧 round-trip（`table-get`）与 auto-grow 待后续
+
+### 新增 — 画板服务端 SVG 导出（`board svg-export`）
+
+`POST /board/v1/whiteboards/{id}/export`（export_type=svg），由服务端整板渲染为 SVG（base64 解码）。
+
+- 与 `board export-code` 的区别：export-code 仅拼接 svg 节点的 svg_code，对 mermaid/plantuml/原生节点无效；svg-export 对任意画板有效，产出可二次编辑的完整 SVG
+- 配合 `board import` / `svg_to_board.py` 实现「导出 → 编辑 → 回写」闭环
+- 读类命令，登录后自动用 User Token，未登录回落 App Token
+
+### 新增 — 审批实例指定节点审批人/抄送人（`approval instance create`）
+
+- `--node-approver` / `--node-approver-file`、`--node-cc` / `--node-cc-file`：发起审批时按节点指定审批人/抄送人，格式 `[{"node_id":"n1","value":["ou_xxx"]}]`
+- 新增 `skills/feishu-cli-approval/references/form-control-values.md`：14 类表单控件 value 结构速查 + 不支持清单 + 取值来源
+
+### 新增 — `schema` pretty 输出渲染枚举值
+
+`schema <service>.<resource>.<method>` 的 pretty 模式现在渲染字段的枚举取值（来自飞书归一化端点的 `options`/`enum`，含枚举描述），此前白白丢弃。数字型枚举值也正确渲染。
+
+### 新增 — `apps html-publish` 单 .html 文件 10MB 上限
+
+对齐妙搭服务端「单个 `.html` 文件 ≤ 10MB」硬约束，客户端提前拦截并点名超限文件。
+
+- 实跑超限直接拒绝；`--dry-run` 回填 `oversize_html` 详情，并新增统一的 `would_block` / `block_reasons` 字段，便于脚本/Agent 单字段判断是否可发布
+
+### 修复 — 电子表格图片上传适配 office 导入表格
+
+`UploadSheetImageMedia` 的 `parent_type` 此前固定 `sheet_image`，对从 `.xlsx` 等导入的 office 表格（token 以 `fake_office_` 开头）会上传失败。现按 token 前缀自动选择 `office_sheet_file` / `sheet_image`。
+
 ## [v1.33.0] - 2026-06-27
 
 ### 新增 — 妙搭（Miaoda）应用：HTML 秒搭一键部署（`apps`）
