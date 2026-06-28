@@ -14,7 +14,9 @@ description: >-
   务必读 references/pitfalls.md 排障。
   写类（add-board/create-notes/update/delete/clone/svg-import/upload-image/import）使用 App Token（默认 Bot 身份），
   无需登录；即使用户已 auth login，写类命令仍保持 App 身份不切换。
-  读类（image/nodes/export-code/lint）登录后自动用 User Token，未登录回落 App Token。
+  读类（image/nodes/export-code/svg-export/lint）登录后自动用 User Token，未登录回落 App Token。
+  svg-export 导出整板 SVG 视觉快照（POST /export，base64 解码），对任意画板有效（不限 svg 节点），
+  配合 svg_to_board.py / board import 可实现「导出 → 编辑 → 回写」闭环。
 argument-hint: "[whiteboard_id]"
 user-invocable: true
 allowed-tools: Bash(feishu-cli board:*), Bash(feishu-cli doc:*), Bash(feishu-cli media:*), Bash(python3:*), Bash(whiteboard-cli:*), Read, Write

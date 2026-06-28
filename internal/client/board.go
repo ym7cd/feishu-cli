@@ -1,6 +1,7 @@
 package client
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -59,6 +60,70 @@ func GetBoardImage(whiteboardID string, outputPath string, userAccessToken ...st
 	}
 
 	return nil
+}
+
+// ExportWhiteboardSVGResult 是导出画板 SVG 的结果。
+type ExportWhiteboardSVGResult struct {
+	SVG      string // base64 解码后的 SVG 文本
+	MimeType string // 服务端返回的 mime_type（通常 image/svg+xml）
+}
+
+// ExportWhiteboardSVG 调用 POST /open-apis/board/v1/whiteboards/{id}/export（export_type=svg），
+// 返回服务端整板渲染的 SVG 视觉快照（base64 解码后）。对任意画板有效（不限于 svg 节点），
+// 适用于「导出 SVG → 本地编辑 → board import / svg_to_board.py 回写」闭环。
+func ExportWhiteboardSVG(whiteboardID string, userAccessToken ...string) (*ExportWhiteboardSVGResult, error) {
+	c, err := GetClient()
+	if err != nil {
+		return nil, err
+	}
+	apiPath := fmt.Sprintf("/open-apis/board/v1/whiteboards/%s/export", whiteboardID)
+	body := map[string]any{"export_type": "svg"}
+
+	tokenType := larkcore.AccessTokenTypeTenant
+	var opts []larkcore.RequestOptionFunc
+	if len(userAccessToken) > 0 && userAccessToken[0] != "" {
+		tokenType = larkcore.AccessTokenTypeUser
+		opts = UserTokenOption(userAccessToken[0])
+	}
+
+	resp, err := c.Post(Context(), apiPath, body, tokenType, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("导出画板 SVG 失败: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("导出画板 SVG 失败: HTTP %d, body: %s", resp.StatusCode, string(resp.RawBody))
+	}
+	return parseExportWhiteboardSVGResponse(resp.RawBody)
+}
+
+// parseExportWhiteboardSVGResponse 解析 /export 响应信封并 base64 解码 SVG。
+// 抽出便于单测（无需真实网络）。
+func parseExportWhiteboardSVGResponse(rawBody []byte) (*ExportWhiteboardSVGResult, error) {
+	var apiResp struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+		Data struct {
+			Content  string `json:"content"`
+			MimeType string `json:"mime_type"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(rawBody, &apiResp); err != nil {
+		return nil, fmt.Errorf("解析导出响应失败: %w", err)
+	}
+	if apiResp.Code != 0 {
+		return nil, fmt.Errorf("导出画板 SVG 失败: code=%d, msg=%s", apiResp.Code, apiResp.Msg)
+	}
+	if apiResp.Data.Content == "" {
+		return nil, fmt.Errorf("导出响应 data.content 为空（画板可能为空或无导出权限）")
+	}
+	decoded, err := base64.StdEncoding.DecodeString(apiResp.Data.Content)
+	if err != nil {
+		return nil, fmt.Errorf("base64 解码 SVG 失败: %w", err)
+	}
+	return &ExportWhiteboardSVGResult{
+		SVG:      string(decoded),
+		MimeType: apiResp.Data.MimeType,
+	}, nil
 }
 
 // ImportDiagramOptions contains options for importing diagram to whiteboard
