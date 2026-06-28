@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/riba2534/feishu-cli/internal/registry"
@@ -286,6 +288,7 @@ func printMethodDetail(w io.Writer, spec map[string]interface{}, resName, method
 			if ex := registry.GetStrFromMap(pm, "example"); ex != "" {
 				fmt.Fprintf(w, "      e.g. %s\n", ex)
 			}
+			printFieldEnum(w, pm, "      ")
 		}
 		fmt.Fprintln(w)
 	}
@@ -368,9 +371,70 @@ func printNestedFields(w io.Writer, fields map[string]interface{}, indent, prefi
 		if ex := registry.GetStrFromMap(f, "example"); ex != "" {
 			fmt.Fprintf(w, "%s    e.g. %s\n", indent, ex)
 		}
+		printFieldEnum(w, f, indent+"    ")
 		if props, ok := f["properties"].(map[string]interface{}); ok && len(props) > 0 {
 			printNestedFields(w, props, indent+"  ", fullName)
 		}
+	}
+}
+
+// printFieldEnum 渲染字段的枚举取值：优先用 options（含 value + description），
+// 回退 enum（纯值列表）。对应 meta_data.json 的 options/enum 字段（数据来自飞书
+// 官方归一化端点，已含枚举描述），pretty 模式此前未渲染、白白丢弃。
+// value/enum 成员既可能是字符串也可能是数字（如整数型 type 枚举），统一转字符串渲染。
+func printFieldEnum(w io.Writer, f map[string]interface{}, indent string) {
+	if opts, ok := f["options"].([]interface{}); ok && len(opts) > 0 {
+		var parts []string
+		for _, o := range opts {
+			om, ok := o.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			val := scalarToString(om["value"])
+			if val == "" {
+				continue
+			}
+			if desc := registry.GetStrFromMap(om, "description"); desc != "" {
+				parts = append(parts, val+" ("+desc+")")
+			} else {
+				parts = append(parts, val)
+			}
+		}
+		if len(parts) > 0 {
+			fmt.Fprintf(w, "%senum: %s\n", indent, strings.Join(parts, ", "))
+		}
+		return
+	}
+	if enum, ok := f["enum"].([]interface{}); ok && len(enum) > 0 {
+		var parts []string
+		for _, e := range enum {
+			if s := scalarToString(e); s != "" {
+				parts = append(parts, s)
+			}
+		}
+		if len(parts) > 0 {
+			fmt.Fprintf(w, "%senum: %s\n", indent, strings.Join(parts, ", "))
+		}
+	}
+}
+
+// scalarToString 把一个 JSON 标量（字符串/数字/布尔）渲染成字符串。
+// 整数型数字（如枚举值 0/1/2）去掉 JSON 解析引入的 .0 小数尾巴。非标量返回空串。
+func scalarToString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case bool:
+		return strconv.FormatBool(t)
+	case json.Number:
+		return t.String()
+	case float64:
+		if t == math.Trunc(t) {
+			return strconv.FormatInt(int64(t), 10)
+		}
+		return strconv.FormatFloat(t, 'g', -1, 64)
+	default:
+		return ""
 	}
 }
 
