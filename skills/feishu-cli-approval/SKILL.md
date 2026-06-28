@@ -138,6 +138,8 @@ feishu-cli approval task transfer \
 
 widget 的 `id` / `type` 从 `approval get --output raw-json` 的 form 字段读，**不要手编**。常见 type：`input` / `textarea` / `number` / `radio` / `checkbox` / `date` / `attachmentV2` / `fieldList`（明细控件，value 是数组的数组）。
 
+各控件 `value` 结构与 JSON 示例速查见 [references/form-control-values.md](references/form-control-values.md)（14 类控件 value 结构 + 不支持清单 + 取值来源），发起审批填表单时参考。
+
 ### `--cc-user-ids`（`instance cc` 必填）
 
 逗号分隔列表，例如 `ou_a,ou_b,ou_a`。CLI 通过 `parseCommaSeparatedIDs` 自动 trim + 去重，保留首次出现顺序，所以重复传同一个 ID 只会抄送一次。空字符串会被过滤。

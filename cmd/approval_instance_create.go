@@ -23,6 +23,8 @@ var approvalInstanceCreateCmd = &cobra.Command{
   --user-id-type    open_id（默认）/user_id（v4/instances endpoint 不支持 union_id）
   --department-id   发起人部门 ID（可选）
   --open-chat-id    审批结果推送到的群（可选）
+  --node-approver   节点指定审批人 JSON，如 [{"node_id":"n1","value":["ou_xxx"]}]（可选，与 --node-approver-file 二选一）
+  --node-cc         节点指定抄送人 JSON，格式同 --node-approver（可选，与 --node-cc-file 二选一）
   --output, -o      输出格式：json
 
 示例:
@@ -62,15 +64,21 @@ var approvalInstanceCreateCmd = &cobra.Command{
 		}
 		departmentID, _ := cmd.Flags().GetString("department-id")
 		openChatID, _ := cmd.Flags().GetString("open-chat-id")
+		nodeApproverRaw, nodeCCRaw, err := loadNodeApproverCC(cmd)
+		if err != nil {
+			return err
+		}
 		output, _ := cmd.Flags().GetString("output")
 
 		opts := client.CreateApprovalInstanceOptions{
-			ApprovalCode: approvalCode,
-			UserID:       userID,
-			Form:         formData,
-			UserIDType:   userIDType,
-			DepartmentID: departmentID,
-			OpenChatID:   openChatID,
+			ApprovalCode:           approvalCode,
+			UserID:                 userID,
+			Form:                   formData,
+			UserIDType:             userIDType,
+			DepartmentID:           departmentID,
+			OpenChatID:             openChatID,
+			NodeApproverUserIDList: nodeApproverRaw,
+			NodeCCUserIDList:       nodeCCRaw,
 		}
 
 		if err := config.Validate(); err != nil {
@@ -101,6 +109,44 @@ func init() {
 	approvalInstanceCreateCmd.Flags().String("user-id-type", "open_id", "用户 ID 类型：open_id/user_id（endpoint 不支持 union_id）")
 	approvalInstanceCreateCmd.Flags().String("department-id", "", "发起人部门 ID（可选）")
 	approvalInstanceCreateCmd.Flags().String("open-chat-id", "", "结果推送的群 ID（可选）")
+	approvalInstanceCreateCmd.Flags().String("node-approver", "", "节点指定审批人 JSON，如 [{\"node_id\":\"n1\",\"value\":[\"ou_xxx\"]}]（可选）")
+	approvalInstanceCreateCmd.Flags().String("node-approver-file", "", "节点指定审批人 JSON 文件路径")
+	approvalInstanceCreateCmd.Flags().String("node-cc", "", "节点指定抄送人 JSON，格式同 --node-approver（可选）")
+	approvalInstanceCreateCmd.Flags().String("node-cc-file", "", "节点指定抄送人 JSON 文件路径")
 	approvalInstanceCreateCmd.Flags().StringP("output", "o", "", "输出格式（json）")
 	mustMarkFlagRequired(approvalInstanceCreateCmd, "approval-code", "user-id")
+}
+
+// loadNodeApproverCC 读取 --node-approver/--node-approver-file 与 --node-cc/--node-cc-file，
+// 返回节点指定审批人/抄送人的 JSON 原文；两者都为空时对应返回 nil（不写入 body）。
+// 格式：[{"node_id":"<节点ID>","value":["ou_xxx", ...]}]。
+func loadNodeApproverCC(cmd *cobra.Command) (json.RawMessage, json.RawMessage, error) {
+	approverRaw, err := loadNodeJSONArrayFlag(cmd, "node-approver", "node-approver-file", "节点指定审批人")
+	if err != nil {
+		return nil, nil, err
+	}
+	ccRaw, err := loadNodeJSONArrayFlag(cmd, "node-cc", "node-cc-file", "节点指定抄送人")
+	if err != nil {
+		return nil, nil, err
+	}
+	return approverRaw, ccRaw, nil
+}
+
+// loadNodeJSONArrayFlag 读取一对 inline/file flag，校验其内容为 JSON 数组并返回原文；
+// 两者都为空时返回 nil（不写入 body）。
+func loadNodeJSONArrayFlag(cmd *cobra.Command, inlineFlag, fileFlag, label string) (json.RawMessage, error) {
+	inline, _ := cmd.Flags().GetString(inlineFlag)
+	file, _ := cmd.Flags().GetString(fileFlag)
+	if inline == "" && file == "" {
+		return nil, nil
+	}
+	s, err := loadJSONInput(inline, file, inlineFlag, fileFlag, label)
+	if err != nil {
+		return nil, err
+	}
+	var arr []any
+	if err := json.Unmarshal([]byte(s), &arr); err != nil {
+		return nil, fmt.Errorf("--%s 必须是 JSON 数组: %w", inlineFlag, err)
+	}
+	return json.RawMessage(s), nil
 }
