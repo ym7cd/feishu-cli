@@ -227,6 +227,7 @@ feishu-cli sheet filter-view list --token $TOKEN --sheet-id $SHEET -o json | \
 | 创建 / 元信息 | `create` / `get` / `meta` / `list-sheets` |
 | 读取（普通 + 富文本） | `read` / `read-plain` / `read-rich` |
 | 写入 / 追加 / 插入 / 清除 | `write` / `write-rich` / `append` / `append-rich` / `insert` / `clear` |
+| 按列 dtype 类型保真写入（日期写 Excel 序列号+日期 formatter 成真日期、数字保数值、文本 @ 防误判） | `table-put`（对齐官方 +table-put，pandas to_json(orient=split) 形状 JSON；读侧 `table-get` 待后续） |
 | 行列管理 | `add-rows` / `add-cols` / `insert-rows` / `delete-rows` / `delete-cols` |
 | 工作表管理 | `add-sheet` / `copy-sheet` / `delete-sheet` |
 | 单范围样式 / 合并 / 保护 | `style` / `merge` / `unmerge` / `protect` / `unprotect`（多范围批量样式走本 skill `batch-set-style`） |
